@@ -19,6 +19,18 @@ export interface Word {
   wrongGuessCount: number
 }
 
+// Card type from backend (no stats, includes word_id)
+export interface Card {
+  word_id: number
+  form: string
+  hint: string
+  context: string
+  context_translation: string
+  grammar: string | null
+  politeness: string | null
+  notes: string[]
+}
+
 // Theme types
 export type Theme = 'light' | 'dark' | 'system'
 

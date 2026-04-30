@@ -1,38 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Word } from '@/lib/types'
+import type { Card } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { Card, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, getPercentageColor, splitSentence } from '@/lib/utils'
-import { useSettings } from '@/components/settings-provider'
+import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
+import { cn, splitSentence } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 
 interface FlashcardProps {
-  word: Word
-  onNext: () => void
+  card: Card
+  onReview: (rating: number) => void
 }
 
-export function Flashcard({ word, onNext }: FlashcardProps) {
-  const { settings } = useSettings()
+export function Flashcard({ card, onReview }: FlashcardProps) {
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const percentage = Math.round(word.correctRate * 100)
-  const rateColor = getPercentageColor(percentage, settings)
-
   const handleAdvance = useCallback(() => {
     if (answered) {
-      onNext()
+      // Submit review: 1 = Again (wrong), 3 = Good (correct)
+      const rating = correct ? 3 : 1
+      onReview(rating)
     }
-  }, [answered, onNext])
+  }, [answered, correct, onReview])
 
   useEffect(() => {
     setInput('')
     setAnswered(false)
     setCorrect(false)
     inputRef.current?.focus()
-  }, [word])
+  }, [card])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,36 +43,28 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [answered, handleAdvance])
 
-  const { before, after } = splitSentence(word.context, word.form)
+  const { before, after } = splitSentence(card.context, card.form)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (answered) return
-    const isCorrect = input.trim() === word.form
+    const isCorrect = input.trim() === card.form
     setCorrect(isCorrect)
     setAnswered(true)
   }
 
   return (
-    <Card className="w-full max-w-xl">
+    <UICard className="w-full max-w-xl">
       <CardHeader className="relative">
-        {settings.showPercentage && (
-          <div className="absolute top-4 right-4">
-            <span className={cn("text-xs font-semibold", rateColor)}>
-              {percentage}%
-            </span>
-          </div>
-        )}
-
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
-          {word.grammar && (
+          {card.grammar && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {word.grammar}
+              {card.grammar}
             </span>
           )}
-          {word.politeness && (
+          {card.politeness && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {word.politeness}
+              {card.politeness}
             </span>
           )}
         </div>
@@ -85,15 +74,15 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
             <span>{before}</span>
             {answered ? (
               correct ? (
-                <span className="text-green-600">{word.form}</span>
+                <span className="text-green-600">{card.form}</span>
               ) : (
                 <span className="inline-flex flex-wrap items-baseline gap-0">
                   {input.split('').map((char, i) => (
-                    <span key={i} className={char === word.form[i] ? 'text-green-600' : 'text-destructive'}>
+                    <span key={i} className={char === card.form[i] ? 'text-green-600' : 'text-destructive'}>
                       {char}
                     </span>
                   ))}
-                  <span className="text-muted-foreground/50 ml-1">({word.form})</span>
+                  <span className="text-muted-foreground/50 ml-1">({card.form})</span>
                 </span>
               )
             ) : (
@@ -117,10 +106,10 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
         </form>
 
         <p className="text-sm text-muted-foreground text-center mt-2">
-          {word.hint}
+          {card.hint}
         </p>
         <p className="text-xs text-muted-foreground/70 text-center italic">
-          {word.contextTranslation}
+          {card.context_translation}
         </p>
       </CardHeader>
 
@@ -132,21 +121,21 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
         ) : (
           <>
             <p className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
-              {correct ? "Correct!" : `The answer was: ${word.form}`}
+              {correct ? "Correct!" : `The answer was: ${card.form}`}
             </p>
-            {word.notes.length > 0 && (
+            {card.notes.length > 0 && (
               <div className="text-xs text-muted-foreground space-y-1">
-                {word.notes.map((note, i) => (
+                {card.notes.map((note, i) => (
                   <p key={i}>{note}</p>
                 ))}
               </div>
             )}
-            <Button onClick={onNext} variant="outline" className="w-full">
+            <Button onClick={handleAdvance} variant="outline" className="w-full">
               Next
             </Button>
           </>
         )}
       </CardFooter>
-    </Card>
+    </UICard>
   )
 }

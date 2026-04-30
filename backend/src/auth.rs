@@ -135,26 +135,45 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        debug!("AuthUser extractor called");
+        
         // Extract Authorization header
         let auth_header = parts
             .headers
             .get("Authorization")
             .and_then(|h| h.to_str().ok())
-            .ok_or(AppError::InvalidCredentials)?;
+            .ok_or_else(|| {
+                warn!("Missing Authorization header");
+                AppError::InvalidCredentials
+            })?;
+
+        debug!("Authorization header present");
 
         // Remove "Bearer " prefix
         let token = auth_header
             .strip_prefix("Bearer ")
-            .ok_or(AppError::InvalidCredentials)?;
+            .ok_or_else(|| {
+                warn!("Invalid Authorization header format (missing Bearer prefix)");
+                AppError::InvalidCredentials
+            })?;
 
-        // Decode and validate token
+        debug!("Token extracted, attempting to decode");
+
+        // Decode and validate token (no expiration check since tokens never expire)
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.required_spec_claims.clear(); // Don't require exp, iat, etc.
+        
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(SECRET.as_bytes()),
-            &Validation::new(Algorithm::HS256),
+            &validation,
         )
-        .map_err(|_| AppError::InvalidCredentials)?;
+        .map_err(|e| {
+            warn!("Token validation failed: {:?}", e);
+            AppError::InvalidCredentials
+        })?;
 
+        info!("Token validated successfully for user_id: {}", token_data.claims.sub);
         Ok(AuthUser(token_data.claims.sub))
     }
 }
