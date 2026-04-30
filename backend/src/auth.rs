@@ -239,6 +239,7 @@ where
 }
 
 // Admin auth extractor - extracts user_id from JWT token and verifies admin status
+#[allow(dead_code)]
 pub struct AdminUser(pub i64);
 
 impl FromRequestParts<SqlitePool> for AdminUser

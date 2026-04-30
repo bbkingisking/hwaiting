@@ -67,12 +67,14 @@ pub struct SetLanguageResponse {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ImportData {
     pub exported_at: String,
     pub words: Vec<ImportWord>,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ImportWord {
     pub word_id: i64,
     pub form: String,
