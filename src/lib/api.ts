@@ -9,6 +9,9 @@ interface CardResponse {
   grammar: string | null
   politeness: string | null
   notes: string[]
+  correct_rate: number
+  guess_count: number
+  wrong_guess_count: number
 }
 
 interface ReviewRequest {

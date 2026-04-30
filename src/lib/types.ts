@@ -20,7 +20,7 @@ export interface Word {
   wrongGuessCount: number
 }
 
-// Card type from backend (no stats, includes word_id)
+// Card type from backend (includes stats and word_id)
 export interface Card {
   word_id: number
   form: string
@@ -30,6 +30,9 @@ export interface Card {
   grammar: string | null
   politeness: string | null
   notes: string[]
+  correct_rate: number
+  guess_count: number
+  wrong_guess_count: number
 }
 
 // Theme types

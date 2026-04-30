@@ -25,6 +25,9 @@ pub struct NextCardResponse {
     grammar: Option<String>,
     politeness: Option<String>,
     notes: Vec<String>,
+    correct_rate: f64,
+    guess_count: i64,
+    wrong_guess_count: i64,
 }
 
 #[derive(Serialize)]
@@ -96,6 +99,30 @@ pub async fn get_next_card(
 
     debug!("Selected word_id: {} ({})", word_id, form);
 
+    // Get card statistics from review history
+    let stats = sqlx::query(
+        r#"
+        SELECT 
+            COUNT(*) as guess_count,
+            SUM(CASE WHEN rating < 3 THEN 1 ELSE 0 END) as wrong_guess_count
+        FROM review_history
+        WHERE user_id = ? AND word_id = ?
+        "#,
+    )
+    .bind(user_id)
+    .bind(word_id)
+    .fetch_one(&pool)
+    .await?;
+
+    let guess_count: i64 = stats.get("guess_count");
+    let wrong_guess_count: i64 = stats.get("wrong_guess_count");
+    
+    let correct_rate = if guess_count > 0 {
+        ((guess_count - wrong_guess_count) as f64 / guess_count as f64) * 100.0
+    } else {
+        0.0
+    };
+
     Ok(Json(NextCardResponse {
         word_id,
         form,
@@ -105,6 +132,9 @@ pub async fn get_next_card(
         grammar,
         politeness,
         notes,
+        correct_rate,
+        guess_count,
+        wrong_guess_count,
     }))
 }
 
