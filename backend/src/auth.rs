@@ -8,6 +8,7 @@ use argon2::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
+use tracing::{debug, info, warn};
 
 use crate::error::AppError;
 
@@ -30,14 +31,20 @@ pub async fn login(
     let username = payload.who.trim();
     let password = payload.really.trim();
 
+    info!("Login attempt for user: {}", username);
+
     // Check if user exists
     let user = sqlx::query("SELECT id, username, password_hash FROM users WHERE username = ?")
         .bind(username)
         .fetch_optional(&pool)
         .await?;
 
+    debug!("User lookup result: {}", if user.is_some() { "found" } else { "not found" });
+
     match user {
         Some(row) => {
+            debug!("Existing user found, verifying password");
+            
             // User exists - verify password
             let user_id: i64 = row.get("id");
             let stored_username: String = row.get("username");
@@ -52,6 +59,7 @@ pub async fn login(
                 .is_ok();
             
             if password_matches {
+                info!("Password verified successfully for user: {}", username);
                 // Generate JWT token
                 let token = generate_token(user_id)?;
                 Ok(Json(AuthResponse {
@@ -59,10 +67,13 @@ pub async fn login(
                     username: stored_username,
                 }))
             } else {
+                warn!("Invalid password attempt for user: {}", username);
                 Err(AppError::InvalidCredentials)
             }
         }
         None => {
+            info!("Creating new user: {}", username);
+            
             // User doesn't exist - create new user
             let salt = SaltString::generate(&mut OsRng);
             let argon2 = Argon2::default();
@@ -77,6 +88,7 @@ pub async fn login(
                 .await?;
 
             let user_id = result.last_insert_rowid();
+            info!("User created successfully with id: {}", user_id);
             
             // Generate JWT token
             let token = generate_token(user_id)?;

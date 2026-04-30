@@ -3,6 +3,8 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
+use tower_http::services::{ServeDir, ServeFile};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
 mod db;
@@ -10,6 +12,17 @@ mod error;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize tracing
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "annyeong_backend=debug,tower_http=debug,axum=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    tracing::info!("Starting Annyeong backend...");
+
     // Initialize database
     let pool = db::init().await?;
 
@@ -19,11 +32,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .with_state(pool);
 
-    // Combine routes
-    let app = Router::new().nest("/api", api_routes);
+    // Serve static files from ../dist
+    let serve_dir = ServeDir::new("../dist")
+        .not_found_service(ServeFile::new("../dist/index.html"));
+
+    // Combine routes - API takes precedence over static files
+    let app = Router::new()
+        .nest("/api", api_routes)
+        .fallback_service(serve_dir);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("Backend listening on {}", addr);
+    tracing::info!("Backend listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

@@ -1,5 +1,7 @@
 shadcn_docs/
 backend/target/
+backend/annyeong.db
+
 # dependencies
 node_modules/
 .pnp
