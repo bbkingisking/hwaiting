@@ -1,4 +1,4 @@
-import { Settings, Trash2, Copy } from 'lucide-react'
+import { Trash2, Copy } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -7,7 +7,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
@@ -24,7 +23,12 @@ interface InviteCode {
   used_by_username: string | null
 }
 
-export function SettingsDialog() {
+interface SettingsDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
   const { token, isAdmin } = useAuth()
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
@@ -108,11 +112,7 @@ export function SettingsDialog() {
   }, [isAdmin])
 
   return (
-    <Dialog>
-      <DialogTrigger render={<Button variant="outline" size="icon" />}>
-        <Settings className="h-[1.2rem] w-[1.2rem]" />
-        <span className="sr-only">Settings</span>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
