@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -34,7 +34,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/signup", post(auth::signup))
         .route("/cards/next", get(cards::get_next_card))
         .route("/cards/{word_id}/review", post(cards::submit_review))
-        .route("/admin/generate-invites", post(admin::generate_invites))
+        .route("/admin/invites", get(admin::list_invites))
+        .route("/admin/invites", post(admin::generate_invites))
+        .route("/admin/invites/{code}", delete(admin::delete_invite))
         .route("/health", get(health_check))
         .with_state(pool);
 

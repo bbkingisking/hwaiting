@@ -25,6 +25,9 @@ pub enum AppError {
     #[error("Unauthorized")]
     Unauthorized,
     
+    #[error("Not found")]
+    NotFound,
+    
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -57,6 +60,9 @@ impl IntoResponse for AppError {
             }
             AppError::Unauthorized => {
                 (StatusCode::FORBIDDEN, "Unauthorized")
+            }
+            AppError::NotFound => {
+                (StatusCode::NOT_FOUND, "Not found")
             }
             AppError::Internal(ref msg) => {
                 eprintln!("Internal error: {}", msg);

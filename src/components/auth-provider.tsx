@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface AuthContextType {
   token: string | null
   username: string | null
+  isAdmin: boolean
   login: (who: string, really: string) => Promise<{ success: boolean; error?: string }>
   signup: (who: string, really: string, inviteCode: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [username, setUsername] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // Load token from localStorage on mount
@@ -23,6 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedToken && storedUsername) {
       setToken(storedToken)
       setUsername(storedUsername)
+      // Always check username to determine admin status
+      setIsAdmin(storedUsername === 'seok')
+      localStorage.setItem('annyeong-isadmin', storedUsername === 'seok' ? 'true' : 'false')
     }
     setLoading(false)
   }, [])
@@ -56,8 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(data.token)
     setUsername(data.username)
+    setIsAdmin(data.username === 'seok')
     localStorage.setItem('annyeong-token', data.token)
     localStorage.setItem('annyeong-username', data.username)
+    localStorage.setItem('annyeong-isadmin', data.username === 'seok' ? 'true' : 'false')
 
     return { success: true }
   }
@@ -91,8 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(data.token)
     setUsername(data.username)
+    setIsAdmin(false)
     localStorage.setItem('annyeong-token', data.token)
     localStorage.setItem('annyeong-username', data.username)
+    localStorage.setItem('annyeong-isadmin', 'false')
 
     return { success: true }
   }
@@ -100,8 +109,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setToken(null)
     setUsername(null)
+    setIsAdmin(false)
     localStorage.removeItem('annyeong-token')
     localStorage.removeItem('annyeong-username')
+    localStorage.removeItem('annyeong-isadmin')
   }
 
   return (
@@ -109,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         token,
         username,
+        isAdmin,
         login,
         signup,
         logout,
