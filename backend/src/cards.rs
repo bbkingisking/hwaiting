@@ -40,7 +40,19 @@ pub async fn get_next_card(
     let user_id = auth.0;
     info!("Getting next card for user_id: {}", user_id);
 
+    // Get user's target language
+    let target_language_id: Option<i64> = sqlx::query_scalar(
+        "SELECT target_language_id FROM users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
+    let target_language_id = target_language_id
+        .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
+
     // Get next due card (prioritize new cards, then due cards by date)
+    // Filter by user's target language
     let row = sqlx::query(
         r#"
         SELECT 
@@ -49,7 +61,8 @@ pub async fn get_next_card(
             cs.due_date
         FROM words w
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE cs.due_date IS NULL OR cs.due_date <= datetime('now')
+        WHERE w.language_id = ?
+        AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
         ORDER BY 
             CASE WHEN cs.due_date IS NULL THEN 0 ELSE 1 END,
             cs.due_date ASC
@@ -57,6 +70,7 @@ pub async fn get_next_card(
         "#,
     )
     .bind(user_id)
+    .bind(target_language_id)
     .fetch_optional(&pool)
     .await?;
 

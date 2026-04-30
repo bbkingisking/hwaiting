@@ -1,4 +1,4 @@
-// API module for card operations
+// API module for card operations and user management
 
 interface CardResponse {
   word_id: number
@@ -16,6 +16,21 @@ interface ReviewRequest {
 }
 
 interface ReviewResponse {
+  success: boolean
+}
+
+interface LanguageInfo {
+  id: number
+  code: string
+  name: string
+}
+
+interface UserProfile {
+  username: string
+  target_language: LanguageInfo | null
+}
+
+interface SetLanguageResponse {
   success: boolean
 }
 
@@ -63,5 +78,34 @@ export async function submitReview(wordId: number, rating: number): Promise<Revi
   })
 }
 
+export async function getUserProfile(): Promise<UserProfile> {
+  const url = `${window.location.origin}/api/user/me`
+  return fetchWithAuth(url)
+}
+
+export async function getLanguages(): Promise<LanguageInfo[]> {
+  const url = `${window.location.origin}/api/languages`
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new ApiError(response.status, error.error || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function setUserLanguage(languageId: number): Promise<SetLanguageResponse> {
+  const url = `${window.location.origin}/api/user/language`
+  return fetchWithAuth(url, {
+    method: 'POST',
+    body: JSON.stringify({ language_id: languageId }),
+  })
+}
+
 export { ApiError }
-export type { CardResponse, ReviewRequest, ReviewResponse }
+export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile }

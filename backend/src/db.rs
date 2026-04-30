@@ -51,16 +51,24 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
-    // Create admin user
+    // Get Korean language ID
+    let korean_id: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM languages WHERE code = 'ko'"
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    // Create admin user with Korean as target language
     sqlx::query(
-        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)"
+        "INSERT INTO users (username, password_hash, is_admin, target_language_id) VALUES (?, ?, 1, ?)"
     )
     .bind("seok")
     .bind(&password_hash)
+    .bind(korean_id)
     .execute(pool)
     .await?;
 
-    info!("Admin user created successfully");
+    info!("Admin user created successfully with Korean as target language");
 
     Ok(())
 }
@@ -77,6 +85,13 @@ async fn seed_words_if_empty(pool: &SqlitePool) -> anyhow::Result<()> {
     }
 
     info!("Seeding words from words.json...");
+
+    // Get Korean language ID
+    let korean_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM languages WHERE code = 'ko'"
+    )
+    .fetch_one(pool)
+    .await?;
 
     // Read and parse words.json
     let words_json = include_str!("../../words.json");
@@ -128,10 +143,10 @@ async fn seed_words_if_empty(pool: &SqlitePool) -> anyhow::Result<()> {
         
         let notes_json = serde_json::to_string(&notes)?;
         
-        // Insert word
+        // Insert word with language_id
         sqlx::query(
-            "INSERT INTO words (form, hint, context, context_translation, grammar, politeness, notes) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO words (form, hint, context, context_translation, grammar, politeness, notes, language_id) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(form)
         .bind(hint)
@@ -140,6 +155,7 @@ async fn seed_words_if_empty(pool: &SqlitePool) -> anyhow::Result<()> {
         .bind(grammar)
         .bind(politeness)
         .bind(&notes_json)
+        .bind(korean_id)
         .execute(pool)
         .await?;
     }

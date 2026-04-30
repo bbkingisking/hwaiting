@@ -11,6 +11,7 @@ mod auth;
 mod cards;
 mod db;
 mod error;
+mod user;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -34,6 +35,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/signup", post(auth::signup))
         .route("/cards/next", get(cards::get_next_card))
         .route("/cards/{word_id}/review", post(cards::submit_review))
+        .route("/user/me", get(user::get_profile))
+        .route("/user/language", post(user::set_language))
+        .route("/languages", get(user::get_languages))
         .route("/admin/invites", get(admin::list_invites))
         .route("/admin/invites", post(admin::generate_invites))
         .route("/admin/invites/{code}", delete(admin::delete_invite))
