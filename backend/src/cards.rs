@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use chrono::Utc;
@@ -59,13 +59,24 @@ pub struct StatsResponse {
     percentage: Option<i64>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct NextCardQuery {
+    // Optional word_id to exclude from the result (used by client prefetch
+    // to skip the card currently being shown to the user).
+    exclude: Option<i64>,
+}
+
 // Get next card due for review
 pub async fn get_next_card(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
+    Query(params): Query<NextCardQuery>,
 ) -> Result<Json<NextCardResponse>, AppError> {
     let user_id = auth.0;
-    info!("Getting next card for user_id: {}", user_id);
+    info!(
+        "Getting next card for user_id: {} (exclude: {:?})",
+        user_id, params.exclude
+    );
 
     // Get user's target language
     let target_language_id: Option<i64> = sqlx::query_scalar(
@@ -79,7 +90,10 @@ pub async fn get_next_card(
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
 
     // Get next due card (prioritize new cards, then due cards by date)
-    // Filter by user's target language and exclude suppressed cards
+    // Filter by user's target language and exclude suppressed cards.
+    // Optionally skip a specific word_id (used for client-side prefetch so
+    // the prefetched card isn't the same as the one currently displayed).
+    let exclude_id = params.exclude.unwrap_or(-1);
     let row = sqlx::query(
         r#"
         SELECT 
@@ -92,6 +106,7 @@ pub async fn get_next_card(
         AND (w.user_id IS NULL OR w.user_id = ?)
         AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        AND w.id != ?
         ORDER BY 
             CASE WHEN cs.due_date IS NULL THEN 0 ELSE 1 END,
             cs.due_date ASC
@@ -101,6 +116,7 @@ pub async fn get_next_card(
     .bind(user_id)
     .bind(target_language_id)
     .bind(user_id)
+    .bind(exclude_id)
     .fetch_optional(&pool)
     .await?;
 
@@ -231,10 +247,13 @@ pub async fn submit_review(
         _ => next_states.good,
     };
 
-    // Calculate due date
-    let interval_days = scheduled_state.interval.round().max(1.0) as i64;
+    // Calculate due date. Use seconds resolution so sub-day intervals from
+    // FSRS (typical for "Again" on new/young cards) are honored rather than
+    // being floored to a full day. 60s floor guards against pathological
+    // zero/negative values.
+    let interval_secs = (scheduled_state.interval as f64 * 86_400.0).max(60.0) as i64;
     let now = Utc::now();
-    let due_date = now + chrono::Duration::days(interval_days);
+    let due_date = now + chrono::Duration::seconds(interval_secs);
 
     // Update or insert card state (only FSRS essentials)
     sqlx::query(

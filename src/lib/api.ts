@@ -58,6 +58,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    signal: options.signal,
   })
 
   if (!response.ok) {
@@ -68,9 +69,19 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json()
 }
 
-export async function getNextCard(): Promise<CardResponse> {
-  const url = `${window.location.origin}/api/cards/next`
-  return fetchWithAuth(url)
+interface GetNextCardOptions {
+  excludeWordId?: number
+  signal?: AbortSignal
+}
+
+export async function getNextCard(options: GetNextCardOptions = {}): Promise<CardResponse> {
+  const params = new URLSearchParams()
+  if (options.excludeWordId !== undefined) {
+    params.set('exclude', String(options.excludeWordId))
+  }
+  const qs = params.toString()
+  const url = `${window.location.origin}/api/cards/next${qs ? `?${qs}` : ''}`
+  return fetchWithAuth(url, { signal: options.signal })
 }
 
 export async function submitReview(wordId: number, rating: number): Promise<ReviewResponse> {
