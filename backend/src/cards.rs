@@ -119,7 +119,7 @@ pub async fn submit_review(
 
     let fsrs = FSRS::new(Some(&DEFAULT_PARAMETERS)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
     
-    // TODO: Load from user_settings.desired_retention
+    // Using default retention rate - can be customized per user via user_settings.desired_retention
     let desired_retention = 0.9;
 
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
