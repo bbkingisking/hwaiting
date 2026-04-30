@@ -107,5 +107,38 @@ export async function setUserLanguage(languageId: number): Promise<SetLanguageRe
   })
 }
 
+interface ImportResponse {
+  success: boolean
+  words_imported: number
+  reviews_imported: number
+}
+
+export async function importUserData(file: File): Promise<ImportResponse> {
+  const text = await file.text()
+  const data = JSON.parse(text)
+  
+  const url = `${window.location.origin}/api/user/import`
+  return fetchWithAuth(url, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function exportUserData(): Promise<void> {
+  const url = `${window.location.origin}/api/user/export`
+  const data = await fetchWithAuth(url)
+  
+  // Create a blob and download it
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const downloadUrl = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = downloadUrl
+  link.download = `annyeong-export-${new Date().toISOString().split('T')[0]}.json`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(downloadUrl)
+}
+
 export { ApiError }
-export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile }
+export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile, ImportResponse }

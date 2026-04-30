@@ -1,4 +1,4 @@
-import { Trash2, Copy } from 'lucide-react'
+import { Trash2, Copy, Download, Upload } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
 import { THRESHOLD_CONSTRAINTS } from '@/lib/constants'
+import { exportUserData, importUserData, type ImportResponse } from '@/lib/api'
 
 interface InviteCode {
   code: string
@@ -34,6 +35,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
   const [isLoadingInvites, setIsLoadingInvites] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [showImportAlert, setShowImportAlert] = useState(false)
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
 
   const fetchInviteCodes = async () => {
     if (!isAdmin || !token) return
@@ -103,6 +109,57 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } catch (error) {
       console.error('Failed to copy to clipboard:', error)
     }
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      await exportUserData()
+    } catch (error) {
+      console.error('Failed to export data:', error)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleImportFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Store the file and show confirmation alert
+    setPendingImportFile(file)
+    setShowImportAlert(true)
+    // Reset the file input
+    event.target.value = ''
+  }
+
+  const handleImportConfirm = async () => {
+    if (!pendingImportFile) return
+
+    setShowImportAlert(false)
+    setIsImporting(true)
+    setImportMessage(null)
+    try {
+      const result: ImportResponse = await importUserData(pendingImportFile)
+      setImportMessage({
+        type: 'success',
+        text: `Successfully imported ${result.words_imported} words and ${result.reviews_imported} reviews`
+      })
+    } catch (error) {
+      console.error('Failed to import data:', error)
+      setImportMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to import data'
+      })
+    } finally {
+      setIsImporting(false)
+      setPendingImportFile(null)
+    }
+  }
+
+  const handleImportCancel = () => {
+    setShowImportAlert(false)
+    setPendingImportFile(null)
   }
 
   useEffect(() => {
@@ -175,6 +232,47 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             </>
           )}
+
+          {/* Export Data Section */}
+          <Separator />
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold">Export Data</h3>
+              <p className="text-sm text-muted-foreground">
+                Download your learning history as JSON
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleExport}
+                disabled={isExporting}
+                variant="outline"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                {isExporting ? 'Exporting...' : 'Export Data'}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={isImporting}
+                onClick={() => document.getElementById('import-file')?.click()}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                {isImporting ? 'Importing...' : 'Import Data'}
+              </Button>
+              <input
+                id="import-file"
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFileSelect}
+                className="hidden"
+              />
+            </div>
+            {importMessage && (
+              <div className={`text-sm ${importMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                {importMessage.text}
+              </div>
+            )}
+          </div>
 
           {/* Admin Section */}
           {isAdmin && (
@@ -253,6 +351,44 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           )}
         </div>
       </DialogContent>
+
+      {/* Import Confirmation Dialog */}
+      <Dialog open={showImportAlert} onOpenChange={setShowImportAlert}>
+        <DialogContent className="sm:max-w-106.25">
+          <DialogHeader>
+            <DialogTitle>⚠️ Warning: Import Data</DialogTitle>
+            <DialogDescription>
+              This will replace all of your current learning data with the data from the imported file.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              The following will be replaced:
+            </p>
+            <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+              <li>Card states (FSRS stability, difficulty, due dates)</li>
+              <li>Review history (all past review records)</li>
+            </ul>
+            <p className="text-sm font-semibold">
+              This action cannot be undone. Make sure you have a backup of your current data before proceeding.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={handleImportCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleImportConfirm}
+            >
+              Import and Replace Data
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

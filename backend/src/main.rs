@@ -37,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/cards/{word_id}/review", post(cards::submit_review))
         .route("/user/me", get(user::get_profile))
         .route("/user/language", post(user::set_language))
+        .route("/user/export", get(user::export_data))
+        .route("/user/import", post(user::import_data))
         .route("/languages", get(user::get_languages))
         .route("/admin/invites", get(admin::list_invites))
         .route("/admin/invites", post(admin::generate_invites))
