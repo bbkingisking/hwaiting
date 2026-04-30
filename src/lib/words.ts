@@ -6,6 +6,9 @@ export interface Word {
   grammar: string | null
   politeness: string | null
   notes: string[]
+  correctRate: number
+  guessCount: number
+  wrongGuessCount: number
 }
 
 function parseWords(raw: string): Word[] {
@@ -43,7 +46,11 @@ function parseWords(raw: string): Word[] {
         !politenessPatterns.some(p => c.toLowerCase().includes(p))
       )
 
-      words.push({ form, hint, context, contextTranslation, grammar, politeness, notes })
+      const correctRate = entry.correct_rate ?? 0
+      const guessCount = entry.guess_count ?? 0
+      const wrongGuessCount = entry.wrong_guess_count ?? 0
+
+      words.push({ form, hint, context, contextTranslation, grammar, politeness, notes, correctRate, guessCount, wrongGuessCount })
     } catch {
       // skip malformed lines
     }

@@ -15,6 +15,13 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
   const [correct, setCorrect] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const percentage = Math.round(word.correctRate * 100)
+  const getRateColor = () => {
+    if (percentage < 50) return 'text-destructive'
+    if (percentage < 70) return 'text-yellow-600 dark:text-yellow-500'
+    return 'text-green-600 dark:text-green-500'
+  }
+
   useEffect(() => {
     setInput('')
     setAnswered(false)
@@ -43,7 +50,14 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
 
   return (
     <Card className="w-full max-w-xl">
-      <CardHeader>
+      <CardHeader className="relative">
+        {/* Correct rate percentage */}
+        <div className="absolute top-4 right-4">
+          <span className={cn("text-xs font-semibold", getRateColor())}>
+            {percentage}%
+          </span>
+        </div>
+
         {/* Tags */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
           {word.grammar && (
