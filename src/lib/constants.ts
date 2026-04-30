@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   YELLOW_THRESHOLD: 70,
   DAY_BOUNDARY_HOUR: 4,
   AUTO_PROGRESS_ON_CORRECT: true,
+  AUTO_PROGRESS_DELAY: 0,
 } as const
 
 // Color thresholds
@@ -24,4 +25,11 @@ export const THRESHOLD_CONSTRAINTS = {
   MIN: 0,
   MAX: 100,
   STEP: 5,
+} as const
+
+// Auto-progress delay constraints (in milliseconds)
+export const AUTO_PROGRESS_DELAY_CONSTRAINTS = {
+  MIN: 0,
+  MAX: 3000,
+  STEP: 100,
 } as const

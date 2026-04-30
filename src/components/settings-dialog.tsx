@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
-import { THRESHOLD_CONSTRAINTS } from '@/lib/constants'
+import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS } from '@/lib/constants'
 import { exportUserData, importUserData, type ImportResponse } from '@/lib/api'
 
 interface InviteCode {
@@ -194,6 +194,29 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               Skip feedback screen and move to next card when answered correctly
             </p>
           </div>
+
+          {/* Auto-progress Delay */}
+          {settings.autoProgressOnCorrect && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-progress-delay">Auto-progress delay</Label>
+                <span className="text-sm text-muted-foreground">
+                  {settings.autoProgressDelay === 0 ? 'Instant' : `${(settings.autoProgressDelay / 1000).toFixed(1)}s`}
+                </span>
+              </div>
+              <Slider
+                id="auto-progress-delay"
+                min={AUTO_PROGRESS_DELAY_CONSTRAINTS.MIN}
+                max={AUTO_PROGRESS_DELAY_CONSTRAINTS.MAX}
+                step={AUTO_PROGRESS_DELAY_CONSTRAINTS.STEP}
+                value={settings.autoProgressDelay}
+                onValueChange={(value) => updateSettings({ autoProgressDelay: value as number })}
+              />
+              <p className="text-xs text-muted-foreground">
+                How long to show correct answer before moving to next card
+              </p>
+            </div>
+          )}
 
           {/* Show Percentage Toggle */}
           <div className="flex items-center justify-between">

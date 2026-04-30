@@ -194,6 +194,7 @@ interface UserSettings {
   yellow_threshold: number
   day_boundary_hour: number
   auto_progress_on_correct: boolean
+  auto_progress_delay?: number
 }
 
 interface UpdateSettingsRequest {
@@ -202,6 +203,7 @@ interface UpdateSettingsRequest {
   yellow_threshold?: number
   day_boundary_hour?: number
   auto_progress_on_correct?: boolean
+  auto_progress_delay?: number
 }
 
 interface UpdateSettingsResponse {

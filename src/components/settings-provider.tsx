@@ -15,6 +15,7 @@ const defaultSettings: Settings = {
   yellowThreshold: DEFAULT_SETTINGS.YELLOW_THRESHOLD,
   dayBoundaryHour: DEFAULT_SETTINGS.DAY_BOUNDARY_HOUR,
   autoProgressOnCorrect: DEFAULT_SETTINGS.AUTO_PROGRESS_ON_CORRECT,
+  autoProgressDelay: DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -40,6 +41,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           yellowThreshold: userSettings.yellow_threshold,
           dayBoundaryHour: userSettings.day_boundary_hour,
           autoProgressOnCorrect: userSettings.auto_progress_on_correct,
+          autoProgressDelay: userSettings.auto_progress_delay ?? DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)
@@ -76,6 +78,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           yellow_threshold: updates.yellowThreshold,
           day_boundary_hour: updates.dayBoundaryHour,
           auto_progress_on_correct: updates.autoProgressOnCorrect,
+          auto_progress_delay: updates.autoProgressDelay,
         })
       } catch (err) {
         console.error('Failed to update settings:', err)

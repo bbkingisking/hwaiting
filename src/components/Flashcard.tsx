@@ -25,6 +25,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
   const [suppressing, setSuppressing] = useState(false)
+  const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const hasAutoProgressedRef = useRef(false)
@@ -41,6 +42,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     setInput('')
     setAnswered(false)
     setCorrect(false)
+    setIsAutoProgressing(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
   }, [card])
@@ -64,15 +66,18 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     if (answered) return
     const isCorrect = input.trim() === card.form
     setCorrect(isCorrect)
-    setAnswered(true)
     
     // Auto-progress if correct and setting is enabled
     if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
       hasAutoProgressedRef.current = true
-      // Use a small delay to ensure state is updated before progressing
+      setIsAutoProgressing(true)
+      // Use configurable delay before progressing
       setTimeout(() => {
         onReview(3) // 3 = Good (correct)
-      }, 0)
+      }, settings.autoProgressDelay)
+    } else {
+      // Only set answered state if not auto-progressing
+      setAnswered(true)
     }
   }
 
@@ -117,7 +122,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                 </Button>
               }
             />
-            <DropdownMenuContent align="end" className="min-w-[200px]">
+            <DropdownMenuContent align="end" className="min-w-50">
               <DropdownMenuItem
                 onClick={handleSuppress}
                 disabled={suppressing}
@@ -144,7 +149,10 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
         <form onSubmit={handleSubmit}>
           <p className="text-2xl md:text-3xl font-semibold leading-snug text-center flex flex-wrap items-baseline justify-center gap-1">
             <span>{before}</span>
-            {answered ? (
+            {isAutoProgressing ? (
+              // Show green answer during auto-progress for positive feedback
+              <span className="text-green-600">{card.form}</span>
+            ) : answered ? (
               correct ? (
                 <span className="text-green-600">{card.form}</span>
               ) : (
@@ -168,7 +176,8 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                   'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
                   'text-center text-2xl md:text-3xl font-semibold',
                   'outline-none pb-0.5',
-                  'focus:border-primary transition-colors',
+                  'focus:border-primary',
+                  !settings.autoProgressOnCorrect && 'transition-colors',
                 )}
                 autoFocus
               />
@@ -185,8 +194,8 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
         </p>
       </CardHeader>
 
-      <CardFooter className="flex-col gap-3">
-        {!answered ? (
+      <CardFooter className={cn("flex-col gap-3", isAutoProgressing && "invisible")}>
+        {!answered && !isAutoProgressing ? (
           <Button type="submit" onClick={handleSubmit} className="w-full">
             Check
           </Button>
