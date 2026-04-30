@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Word } from '@/lib/words'
 import { Button } from '@/components/ui/button'
 import { Card, CardFooter, CardHeader } from '@/components/ui/card'
@@ -24,12 +24,30 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     return 'text-green-600 dark:text-green-500'
   }
 
+  const handleAdvance = useCallback(() => {
+    if (answered) {
+      onNext()
+    }
+  }, [answered, onNext])
+
   useEffect(() => {
     setInput('')
     setAnswered(false)
     setCorrect(false)
     inputRef.current?.focus()
   }, [word])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (answered && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault()
+        handleAdvance()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [answered, handleAdvance])
 
   const idx = word.context.indexOf(word.form)
   const before = idx >= 0 ? word.context.slice(0, idx) : word.context
@@ -43,12 +61,7 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     setAnswered(true)
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && answered) {
-      e.preventDefault()
-      onNext()
-    }
-  }
+
 
   return (
     <Card className="w-full max-w-xl">
@@ -99,7 +112,6 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
                 size={Math.max(input.length, 1)}
                 className={cn(
                   'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
