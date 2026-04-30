@@ -4,6 +4,7 @@ interface AuthContextType {
   token: string | null
   username: string | null
   login: (who: string, really: string) => Promise<{ success: boolean; error?: string }>
+  signup: (who: string, really: string, inviteCode: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -61,6 +62,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true }
   }
 
+  const signup = async (who: string, really: string, inviteCode: string): Promise<{ success: boolean; error?: string }> => {
+    let response
+    try {
+      const url = `${window.location.origin}/api/auth/signup`
+      
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ who, really, invite_code: inviteCode }),
+      })
+    } catch (error) {
+      return { success: false, error: 'Network error - could not connect to server' }
+    }
+
+    // Parse JSON response
+    let data
+    try {
+      data = await response.json()
+    } catch (e) {
+      return { success: false, error: 'Invalid response from server' }
+    }
+
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Signup failed' }
+    }
+    setToken(data.token)
+    setUsername(data.username)
+    localStorage.setItem('annyeong-token', data.token)
+    localStorage.setItem('annyeong-username', data.username)
+
+    return { success: true }
+  }
+
   const logout = () => {
     setToken(null)
     setUsername(null)
@@ -74,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         username,
         login,
+        signup,
         logout,
         isAuthenticated: !!token && !loading,
       }}

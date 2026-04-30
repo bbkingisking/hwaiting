@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/components/auth-provider'
 
 interface AuthDialogProps {
@@ -11,28 +12,52 @@ interface AuthDialogProps {
 }
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
-  const [who, setWho] = useState('')
-  const [really, setReally] = useState('')
-  const [error, setError] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  const [loginWho, setLoginWho] = useState('')
+  const [loginReally, setLoginReally] = useState('')
+  const [signupWho, setSignupWho] = useState('')
+  const [signupReally, setSignupReally] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [signupError, setSignupError] = useState('')
+  const [isLoginLoading, setIsLoginLoading] = useState(false)
+  const [isSignupLoading, setIsSignupLoading] = useState(false)
+  const { login, signup } = useAuth()
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    setIsLoading(true)
+    setLoginError('')
+    setIsLoginLoading(true)
 
-    const result = await login(who, really)
+    const result = await login(loginWho, loginReally)
 
     if (result.success) {
       onOpenChange(false)
-      setWho('')
-      setReally('')
+      setLoginWho('')
+      setLoginReally('')
     } else {
-      setError(result.error || 'Authentication failed')
+      setLoginError(result.error || 'Authentication failed')
     }
 
-    setIsLoading(false)
+    setIsLoginLoading(false)
+  }
+
+  const handleSignupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSignupError('')
+    setIsSignupLoading(true)
+
+    const result = await signup(signupWho, signupReally, inviteCode)
+
+    if (result.success) {
+      onOpenChange(false)
+      setSignupWho('')
+      setSignupReally('')
+      setInviteCode('')
+    } else {
+      setSignupError(result.error || 'Signup failed')
+    }
+
+    setIsSignupLoading(false)
   }
 
   return (
@@ -41,39 +66,92 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         <DialogHeader>
           <DialogTitle>Welcome</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="who">who?</Label>
-            <Input
-              id="who"
-              type="text"
-              value={who}
-              onChange={(e) => setWho(e.target.value)}
-              placeholder="username"
-              autoComplete="username"
-              autoFocus
-              disabled={isLoading}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="really">really?</Label>
-            <Input
-              id="really"
-              type="password"
-              value={really}
-              onChange={(e) => setReally(e.target.value)}
-              placeholder="password"
-              autoComplete="current-password"
-              disabled={isLoading}
-            />
-          </div>
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
-          <Button type="submit" className="w-full" disabled={isLoading || !who || !really}>
-            {isLoading ? 'Authenticating...' : 'Enter'}
-          </Button>
-        </form>
+        <Tabs defaultValue="login" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="login">Login</TabsTrigger>
+            <TabsTrigger value="signup">Sign Up</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login">
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-who">who?</Label>
+                <Input
+                  id="login-who"
+                  type="text"
+                  value={loginWho}
+                  onChange={(e) => setLoginWho(e.target.value)}
+                  placeholder="username"
+                  autoComplete="username"
+                  disabled={isLoginLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-really">really?</Label>
+                <Input
+                  id="login-really"
+                  type="password"
+                  value={loginReally}
+                  onChange={(e) => setLoginReally(e.target.value)}
+                  placeholder="password"
+                  autoComplete="current-password"
+                  disabled={isLoginLoading}
+                />
+              </div>
+              {loginError && (
+                <p className="text-sm text-destructive">{loginError}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={isLoginLoading || !loginWho || !loginReally}>
+                {isLoginLoading ? 'Authenticating...' : 'Enter'}
+              </Button>
+            </form>
+          </TabsContent>
+          <TabsContent value="signup">
+            <form onSubmit={handleSignupSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="signup-who">who?</Label>
+                <Input
+                  id="signup-who"
+                  type="text"
+                  value={signupWho}
+                  onChange={(e) => setSignupWho(e.target.value)}
+                  placeholder="username"
+                  autoComplete="username"
+                  disabled={isSignupLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-really">really?</Label>
+                <Input
+                  id="signup-really"
+                  type="password"
+                  value={signupReally}
+                  onChange={(e) => setSignupReally(e.target.value)}
+                  placeholder="password"
+                  autoComplete="new-password"
+                  disabled={isSignupLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-code">invite code</Label>
+                <Input
+                  id="invite-code"
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="your invite code"
+                  autoComplete="off"
+                  disabled={isSignupLoading}
+                />
+              </div>
+              {signupError && (
+                <p className="text-sm text-destructive">{signupError}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={isSignupLoading || !signupWho || !signupReally || !inviteCode}>
+                {isSignupLoading ? 'Creating account...' : 'Sign Up'}
+              </Button>
+            </form>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

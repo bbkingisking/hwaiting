@@ -14,10 +14,55 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
     // Run migrations
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    // Seed admin user if doesn't exist
+    seed_admin_user(&pool).await?;
+
     // Seed words if table is empty
     seed_words_if_empty(&pool).await?;
 
     Ok(pool)
+}
+
+async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
+    use argon2::{
+        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+        Argon2,
+    };
+
+    // Check if admin user already exists
+    let admin_exists: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE username = 'seok'"
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if admin_exists.is_some() {
+        info!("Admin user already exists, skipping seed");
+        return Ok(());
+    }
+
+    info!("Creating admin user: seok");
+
+    // Hash the password "long"
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(b"long", &salt)
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
+        .to_string();
+
+    // Create admin user
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)"
+    )
+    .bind("seok")
+    .bind(&password_hash)
+    .execute(pool)
+    .await?;
+
+    info!("Admin user created successfully");
+
+    Ok(())
 }
 
 async fn seed_words_if_empty(pool: &SqlitePool) -> anyhow::Result<()> {

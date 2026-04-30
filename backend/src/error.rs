@@ -16,6 +16,15 @@ pub enum AppError {
     #[error("Invalid credentials")]
     InvalidCredentials,
     
+    #[error("Invalid invite code")]
+    InvalidInviteCode,
+    
+    #[error("Username already exists")]
+    UsernameExists,
+    
+    #[error("Unauthorized")]
+    Unauthorized,
+    
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -39,6 +48,15 @@ impl IntoResponse for AppError {
             }
             AppError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials")
+            }
+            AppError::InvalidInviteCode => {
+                (StatusCode::BAD_REQUEST, "Invalid or already used invite code")
+            }
+            AppError::UsernameExists => {
+                (StatusCode::CONFLICT, "Username already exists")
+            }
+            AppError::Unauthorized => {
+                (StatusCode::FORBIDDEN, "Unauthorized")
             }
             AppError::Internal(ref msg) => {
                 eprintln!("Internal error: {}", msg);
