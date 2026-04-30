@@ -4,6 +4,7 @@ export interface Settings {
   redThreshold: number
   yellowThreshold: number
   dayBoundaryHour: number
+  autoProgressOnCorrect: boolean
 }
 
 // Word types

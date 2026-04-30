@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
   RED_THRESHOLD: 50,
   YELLOW_THRESHOLD: 70,
   DAY_BOUNDARY_HOUR: 4,
+  AUTO_PROGRESS_ON_CORRECT: true,
 } as const
 
 // Color thresholds

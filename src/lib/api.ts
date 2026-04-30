@@ -160,6 +160,7 @@ interface UserSettings {
   red_threshold: number
   yellow_threshold: number
   day_boundary_hour: number
+  auto_progress_on_correct: boolean
 }
 
 interface UpdateSettingsRequest {
@@ -167,6 +168,7 @@ interface UpdateSettingsRequest {
   red_threshold?: number
   yellow_threshold?: number
   day_boundary_hour?: number
+  auto_progress_on_correct?: boolean
 }
 
 interface UpdateSettingsResponse {

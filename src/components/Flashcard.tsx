@@ -17,6 +17,7 @@ export function Flashcard({ card, onReview }: FlashcardProps) {
   const [correct, setCorrect] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
+  const hasAutoProgressedRef = useRef(false)
 
   const handleAdvance = useCallback(() => {
     if (answered) {
@@ -30,6 +31,7 @@ export function Flashcard({ card, onReview }: FlashcardProps) {
     setInput('')
     setAnswered(false)
     setCorrect(false)
+    hasAutoProgressedRef.current = false
     inputRef.current?.focus()
   }, [card])
 
@@ -53,6 +55,15 @@ export function Flashcard({ card, onReview }: FlashcardProps) {
     const isCorrect = input.trim() === card.form
     setCorrect(isCorrect)
     setAnswered(true)
+    
+    // Auto-progress if correct and setting is enabled
+    if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
+      hasAutoProgressedRef.current = true
+      // Use a small delay to ensure state is updated before progressing
+      setTimeout(() => {
+        onReview(3) // 3 = Good (correct)
+      }, 0)
+    }
   }
 
   const getPercentageColor = () => {

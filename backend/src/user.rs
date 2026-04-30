@@ -115,6 +115,7 @@ pub struct UserSettings {
     pub red_threshold: i64,
     pub yellow_threshold: i64,
     pub day_boundary_hour: i64,
+    pub auto_progress_on_correct: bool,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +124,7 @@ pub struct UpdateSettingsRequest {
     pub red_threshold: Option<i64>,
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
+    pub auto_progress_on_correct: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -475,7 +477,7 @@ pub async fn get_settings(
 
     let row = sqlx::query(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct
         FROM user_settings
         WHERE user_id = ?
         "#
@@ -489,6 +491,7 @@ pub async fn get_settings(
         red_threshold: row.get("red_threshold"),
         yellow_threshold: row.get("yellow_threshold"),
         day_boundary_hour: row.get("day_boundary_hour"),
+        auto_progress_on_correct: row.get("auto_progress_on_correct"),
     }))
 }
 
@@ -545,6 +548,14 @@ pub async fn update_settings(
         }
         sqlx::query("UPDATE user_settings SET day_boundary_hour = ? WHERE user_id = ?")
             .bind(day_boundary_hour)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(auto_progress_on_correct) = payload.auto_progress_on_correct {
+        sqlx::query("UPDATE user_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
+            .bind(auto_progress_on_correct)
             .bind(user_id)
             .execute(&pool)
             .await?;

@@ -178,6 +178,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-6 py-4">
+          {/* Auto-progress on Correct Toggle */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="auto-progress" className="flex-1">
+                Auto-progress on correct
+              </Label>
+              <Switch
+                id="auto-progress"
+                checked={settings.autoProgressOnCorrect}
+                onCheckedChange={(checked) => updateSettings({ autoProgressOnCorrect: checked })}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Skip feedback screen and move to next card when answered correctly
+            </p>
+          </div>
+
           {/* Show Percentage Toggle */}
           <div className="flex items-center justify-between">
             <Label htmlFor="show-percentage" className="flex-1">
