@@ -9,7 +9,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { Settings, Moon, Sun, LogOut } from 'lucide-react'
+import { CustomCardsDialog } from '@/components/custom-cards-dialog'
+import { Settings, Moon, Sun, LogOut, Plus } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 // Map language codes to flag-icons classes
@@ -27,6 +28,7 @@ export function AppHeader() {
   const { theme, setTheme } = useTheme()
   const [targetLanguage, setTargetLanguage] = useState<LanguageInfo | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [customCardsOpen, setCustomCardsOpen] = useState(false)
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -60,6 +62,10 @@ export function AppHeader() {
             <span className="text-sm font-medium">{username}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => setCustomCardsOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Custom Cards
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -87,6 +93,7 @@ export function AppHeader() {
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
     </>
   )
 }

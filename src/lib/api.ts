@@ -188,5 +188,107 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
   })
 }
 
+// Custom Cards API
+
+interface CustomCard {
+  id: number
+  form: string
+  hint: string
+  context: string
+  context_translation: string
+  grammar: string | null
+  politeness: string | null
+  notes: string[]
+  created_at: string
+  language_id: number
+}
+
+interface CreateCustomCardRequest {
+  form: string
+  hint: string
+  context: string
+  context_translation: string
+  grammar?: string | null
+  politeness?: string | null
+  notes?: string[]
+}
+
+interface CreateCustomCardResponse {
+  id: number
+  success: boolean
+}
+
+interface ListCustomCardsResponse {
+  cards: CustomCard[]
+}
+
+interface UpdateCustomCardRequest {
+  form?: string
+  hint?: string
+  context?: string
+  context_translation?: string
+  grammar?: string | null
+  politeness?: string | null
+  notes?: string[]
+}
+
+interface UpdateCustomCardResponse {
+  success: boolean
+}
+
+interface DeleteCustomCardResponse {
+  success: boolean
+}
+
+export async function createCustomCard(card: CreateCustomCardRequest): Promise<CreateCustomCardResponse> {
+  const url = `${window.location.origin}/api/custom-cards`
+  return fetchWithAuth(url, {
+    method: 'POST',
+    body: JSON.stringify(card),
+  })
+}
+
+export async function listCustomCards(): Promise<ListCustomCardsResponse> {
+  const url = `${window.location.origin}/api/custom-cards`
+  return fetchWithAuth(url)
+}
+
+export async function getCustomCard(cardId: number): Promise<CustomCard> {
+  const url = `${window.location.origin}/api/custom-cards/${cardId}`
+  return fetchWithAuth(url)
+}
+
+export async function updateCustomCard(cardId: number, updates: UpdateCustomCardRequest): Promise<UpdateCustomCardResponse> {
+  const url = `${window.location.origin}/api/custom-cards/${cardId}`
+  return fetchWithAuth(url, {
+    method: 'POST',
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {
+  const url = `${window.location.origin}/api/custom-cards/${cardId}`
+  return fetchWithAuth(url, {
+    method: 'DELETE',
+  })
+}
+
 export { ApiError }
-export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile, ImportResponse, StatsResponse, UserSettings, UpdateSettingsRequest }
+export type { 
+  CardResponse, 
+  ReviewRequest, 
+  ReviewResponse, 
+  LanguageInfo, 
+  UserProfile, 
+  ImportResponse, 
+  StatsResponse, 
+  UserSettings, 
+  UpdateSettingsRequest,
+  CustomCard,
+  CreateCustomCardRequest,
+  CreateCustomCardResponse,
+  ListCustomCardsResponse,
+  UpdateCustomCardRequest,
+  UpdateCustomCardResponse,
+  DeleteCustomCardResponse,
+}

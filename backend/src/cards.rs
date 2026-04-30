@@ -73,6 +73,7 @@ pub async fn get_next_card(
         FROM words w
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
+        AND (w.user_id IS NULL OR w.user_id = ?)
         AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
         ORDER BY 
             CASE WHEN cs.due_date IS NULL THEN 0 ELSE 1 END,
@@ -82,6 +83,7 @@ pub async fn get_next_card(
     )
     .bind(user_id)
     .bind(target_language_id)
+    .bind(user_id)
     .fetch_optional(&pool)
     .await?;
 
@@ -276,11 +278,13 @@ pub async fn get_stats(
         FROM words w
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
+        AND (w.user_id IS NULL OR w.user_id = ?)
         AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
         "#,
     )
     .bind(user_id)
     .bind(target_language_id)
+    .bind(user_id)
     .fetch_one(&pool)
     .await?;
 
