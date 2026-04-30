@@ -3,6 +3,7 @@ import type { Word } from '@/lib/words'
 import { Button } from '@/components/ui/button'
 import { Card, CardFooter, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/components/settings-provider'
 
 interface FlashcardProps {
   word: Word
@@ -10,6 +11,7 @@ interface FlashcardProps {
 }
 
 export function Flashcard({ word, onNext }: FlashcardProps) {
+  const { settings } = useSettings()
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
@@ -17,8 +19,8 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
 
   const percentage = Math.round(word.correctRate * 100)
   const getRateColor = () => {
-    if (percentage < 50) return 'text-destructive'
-    if (percentage < 70) return 'text-yellow-600 dark:text-yellow-500'
+    if (percentage < settings.redThreshold) return 'text-destructive'
+    if (percentage < settings.yellowThreshold) return 'text-yellow-600 dark:text-yellow-500'
     return 'text-green-600 dark:text-green-500'
   }
 
@@ -52,11 +54,13 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     <Card className="w-full max-w-xl">
       <CardHeader className="relative">
         {/* Correct rate percentage */}
-        <div className="absolute top-4 right-4">
-          <span className={cn("text-xs font-semibold", getRateColor())}>
-            {percentage}%
-          </span>
-        </div>
+        {settings.showPercentage && (
+          <div className="absolute top-4 right-4">
+            <span className={cn("text-xs font-semibold", getRateColor())}>
+              {percentage}%
+            </span>
+          </div>
+        )}
 
         {/* Tags */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
