@@ -140,5 +140,48 @@ export async function exportUserData(): Promise<void> {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
+interface StatsResponse {
+  due_count: number
+  reviews_today: number
+  correct_today: number
+  percentage: number | null
+}
+
+export async function getStats(): Promise<StatsResponse> {
+  const url = `${window.location.origin}/api/cards/stats`
+  return fetchWithAuth(url)
+}
+
+interface UserSettings {
+  show_percentage: boolean
+  red_threshold: number
+  yellow_threshold: number
+  day_boundary_hour: number
+}
+
+interface UpdateSettingsRequest {
+  show_percentage?: boolean
+  red_threshold?: number
+  yellow_threshold?: number
+  day_boundary_hour?: number
+}
+
+interface UpdateSettingsResponse {
+  success: boolean
+}
+
+export async function getUserSettings(): Promise<UserSettings> {
+  const url = `${window.location.origin}/api/user/settings`
+  return fetchWithAuth(url)
+}
+
+export async function updateUserSettings(settings: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
+  const url = `${window.location.origin}/api/user/settings`
+  return fetchWithAuth(url, {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  })
+}
+
 export { ApiError }
-export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile, ImportResponse }
+export type { CardResponse, ReviewRequest, ReviewResponse, LanguageInfo, UserProfile, ImportResponse, StatsResponse, UserSettings, UpdateSettingsRequest }

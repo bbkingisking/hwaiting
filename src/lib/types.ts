@@ -3,6 +3,7 @@ export interface Settings {
   showPercentage: boolean
   redThreshold: number
   yellowThreshold: number
+  dayBoundaryHour: number
 }
 
 // Word types

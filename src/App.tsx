@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
+
 import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { LanguageSelector } from '@/components/language-selector'
+import { StatusIndicator } from '@/components/status-indicator'
 import { getNextCard, submitReview, getUserProfile, ApiError } from '@/lib/api'
 import type { Card } from '@/lib/types'
 
@@ -15,6 +17,7 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [needsLanguage, setNeedsLanguage] = useState<boolean | null>(null)
+  const [statsKey, setStatsKey] = useState(0)
   const { isAuthenticated } = useAuth()
 
   useEffect(() => {
@@ -77,6 +80,8 @@ function AppContent() {
       await submitReview(card.word_id, rating)
       // Fetch next card after successful review
       await fetchCard()
+      // Trigger stats refresh
+      setStatsKey(prev => prev + 1)
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message)
@@ -136,6 +141,7 @@ function AppContent() {
           </div>
         )}
       </div>
+      {isAuthenticated && needsLanguage === false && <StatusIndicator key={statsKey} />}
     </>
   )
 }

@@ -109,6 +109,27 @@ pub struct ImportResponse {
     pub reviews_imported: usize,
 }
 
+#[derive(Serialize)]
+pub struct UserSettings {
+    pub show_percentage: bool,
+    pub red_threshold: i64,
+    pub yellow_threshold: i64,
+    pub day_boundary_hour: i64,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSettingsRequest {
+    pub show_percentage: Option<bool>,
+    pub red_threshold: Option<i64>,
+    pub yellow_threshold: Option<i64>,
+    pub day_boundary_hour: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct UpdateSettingsResponse {
+    pub success: bool,
+}
+
 // Get current user's profile
 pub async fn get_profile(
     State(pool): State<SqlitePool>,
@@ -430,4 +451,106 @@ pub async fn import_data(
         words_imported,
         reviews_imported,
     }))
+}
+
+// Get user settings
+pub async fn get_settings(
+    State(pool): State<SqlitePool>,
+    auth: AuthUser,
+) -> Result<Json<UserSettings>, AppError> {
+    let user_id = auth.0;
+    info!("Getting settings for user_id: {}", user_id);
+
+    // Ensure user_settings row exists
+    sqlx::query(
+        r#"
+        INSERT INTO user_settings (user_id)
+        VALUES (?)
+        ON CONFLICT(user_id) DO NOTHING
+        "#
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour
+        FROM user_settings
+        WHERE user_id = ?
+        "#
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
+    Ok(Json(UserSettings {
+        show_percentage: row.get("show_percentage"),
+        red_threshold: row.get("red_threshold"),
+        yellow_threshold: row.get("yellow_threshold"),
+        day_boundary_hour: row.get("day_boundary_hour"),
+    }))
+}
+
+// Update user settings
+pub async fn update_settings(
+    State(pool): State<SqlitePool>,
+    auth: AuthUser,
+    Json(payload): Json<UpdateSettingsRequest>,
+) -> Result<Json<UpdateSettingsResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Updating settings for user_id: {}", user_id);
+
+    // Ensure user_settings row exists
+    sqlx::query(
+        r#"
+        INSERT INTO user_settings (user_id)
+        VALUES (?)
+        ON CONFLICT(user_id) DO NOTHING
+        "#
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await?;
+
+    // Update individual fields if provided
+    if let Some(show_percentage) = payload.show_percentage {
+        sqlx::query("UPDATE user_settings SET show_percentage = ? WHERE user_id = ?")
+            .bind(show_percentage)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(red_threshold) = payload.red_threshold {
+        sqlx::query("UPDATE user_settings SET red_threshold = ? WHERE user_id = ?")
+            .bind(red_threshold)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(yellow_threshold) = payload.yellow_threshold {
+        sqlx::query("UPDATE user_settings SET yellow_threshold = ? WHERE user_id = ?")
+            .bind(yellow_threshold)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(day_boundary_hour) = payload.day_boundary_hour {
+        // Validate hour is between 0 and 23
+        if day_boundary_hour < 0 || day_boundary_hour > 23 {
+            return Err(AppError::Internal("day_boundary_hour must be between 0 and 23".to_string()));
+        }
+        sqlx::query("UPDATE user_settings SET day_boundary_hour = ? WHERE user_id = ?")
+            .bind(day_boundary_hour)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    info!("Settings updated successfully");
+
+    Ok(Json(UpdateSettingsResponse { success: true }))
 }

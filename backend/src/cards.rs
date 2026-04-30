@@ -32,6 +32,14 @@ pub struct ReviewResponse {
     success: bool,
 }
 
+#[derive(Serialize)]
+pub struct StatsResponse {
+    due_count: i64,
+    reviews_today: i64,
+    correct_today: i64,
+    percentage: Option<i64>,
+}
+
 // Get next card due for review
 pub async fn get_next_card(
     State(pool): State<SqlitePool>,
@@ -211,4 +219,90 @@ pub async fn submit_review(
     info!("Review submitted successfully. Next due: {}", due_date);
 
     Ok(Json(ReviewResponse { success: true }))
+}
+
+// Get stats about due cards
+pub async fn get_stats(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<StatsResponse>, AppError> {
+    let user_id = auth.0;
+
+    // Get user's target language
+    let target_language_id: Option<i64> = sqlx::query_scalar(
+        "SELECT target_language_id FROM users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
+    let target_language_id = target_language_id
+        .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
+
+    // Count due cards (new + due)
+    let due_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM words w
+        LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
+        WHERE w.language_id = ?
+        AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_language_id)
+    .fetch_one(&pool)
+    .await?;
+
+    // Get user's day boundary setting
+    let day_boundary_hour: i64 = sqlx::query_scalar(
+        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?
+    .unwrap_or(4);
+
+    // Get today's review stats (adjusted for user's day boundary)
+    let reviews_today: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM review_history
+        WHERE user_id = ?
+        AND DATE(datetime(reviewed_at, printf('-%d hours', ?))) = DATE(datetime('now', printf('-%d hours', ?)))
+        "#,
+    )
+    .bind(user_id)
+    .bind(day_boundary_hour)
+    .bind(day_boundary_hour)
+    .fetch_one(&pool)
+    .await?;
+
+    let correct_today: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM review_history
+        WHERE user_id = ?
+        AND DATE(datetime(reviewed_at, printf('-%d hours', ?))) = DATE(datetime('now', printf('-%d hours', ?)))
+        AND rating >= 3
+        "#,
+    )
+    .bind(user_id)
+    .bind(day_boundary_hour)
+    .bind(day_boundary_hour)
+    .fetch_one(&pool)
+    .await?;
+
+    let percentage = if reviews_today > 0 {
+        Some((correct_today * 100) / reviews_today)
+    } else {
+        None
+    };
+
+    Ok(Json(StatsResponse {
+        due_count,
+        reviews_today,
+        correct_today,
+        percentage,
+    }))
 }

@@ -233,6 +233,27 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </>
           )}
 
+          {/* Day Boundary Hour */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="day-boundary">Day ends at</Label>
+              <span className="text-sm text-muted-foreground">
+                {settings.dayBoundaryHour.toString().padStart(2, '0')}:00
+              </span>
+            </div>
+            <Slider
+              id="day-boundary"
+              min={0}
+              max={23}
+              step={1}
+              value={settings.dayBoundaryHour}
+              onValueChange={(value) => updateSettings({ dayBoundaryHour: value as number })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Reviews before this hour count as the previous day
+            </p>
+          </div>
+
           {/* Export Data Section */}
           <Separator />
           <div className="space-y-4">

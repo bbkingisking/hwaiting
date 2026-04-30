@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { Settings } from '@/lib/types'
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
+import { DEFAULT_SETTINGS } from '@/lib/constants'
+import { getUserSettings, updateUserSettings } from '@/lib/api'
+import { useAuth } from '@/components/auth-provider'
 
 interface SettingsContextType {
   settings: Settings
@@ -11,28 +13,44 @@ const defaultSettings: Settings = {
   showPercentage: DEFAULT_SETTINGS.SHOW_PERCENTAGE,
   redThreshold: DEFAULT_SETTINGS.RED_THRESHOLD,
   yellowThreshold: DEFAULT_SETTINGS.YELLOW_THRESHOLD,
+  dayBoundaryHour: DEFAULT_SETTINGS.DAY_BOUNDARY_HOUR,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(() => {
-    const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS)
-    if (stored) {
+  const [settings, setSettings] = useState<Settings>(defaultSettings)
+  const [loading, setLoading] = useState(true)
+  const { isAuthenticated } = useAuth()
+
+  // Fetch settings from backend when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false)
+      return
+    }
+
+    const fetchSettings = async () => {
       try {
-        return { ...defaultSettings, ...JSON.parse(stored) }
-      } catch {
-        return defaultSettings
+        const userSettings = await getUserSettings()
+        setSettings({
+          showPercentage: userSettings.show_percentage,
+          redThreshold: userSettings.red_threshold,
+          yellowThreshold: userSettings.yellow_threshold,
+          dayBoundaryHour: userSettings.day_boundary_hour,
+        })
+      } catch (err) {
+        console.error('Failed to fetch settings:', err)
+      } finally {
+        setLoading(false)
       }
     }
-    return defaultSettings
-  })
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings))
-  }, [settings])
+    fetchSettings()
+  }, [isAuthenticated])
 
-  const updateSettings = (updates: Partial<Settings>) => {
+  const updateSettings = async (updates: Partial<Settings>) => {
+    // Optimistic update
     setSettings((prev) => {
       const updated = { ...prev, ...updates }
       
@@ -46,11 +64,26 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       
       return updated
     })
+
+    // Sync to backend if authenticated
+    if (isAuthenticated) {
+      try {
+        await updateUserSettings({
+          show_percentage: updates.showPercentage,
+          red_threshold: updates.redThreshold,
+          yellow_threshold: updates.yellowThreshold,
+          day_boundary_hour: updates.dayBoundaryHour,
+        })
+      } catch (err) {
+        console.error('Failed to update settings:', err)
+        // Could revert optimistic update here if needed
+      }
+    }
   }
 
   return (
     <SettingsContext.Provider value={{ settings, updateSettings }}>
-      {children}
+      {loading ? null : children}
     </SettingsContext.Provider>
   )
 }
