@@ -31,6 +31,22 @@ pub struct NextCardResponse {
 }
 
 #[derive(Serialize)]
+pub struct SuppressedCard {
+    word_id: i64,
+    form: String,
+    hint: String,
+    context: String,
+    context_translation: String,
+    grammar: Option<String>,
+    politeness: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SuppressedCardsResponse {
+    cards: Vec<SuppressedCard>,
+}
+
+#[derive(Serialize)]
 pub struct ReviewResponse {
     success: bool,
 }
@@ -63,7 +79,7 @@ pub async fn get_next_card(
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
 
     // Get next due card (prioritize new cards, then due cards by date)
-    // Filter by user's target language
+    // Filter by user's target language and exclude suppressed cards
     let row = sqlx::query(
         r#"
         SELECT 
@@ -75,6 +91,7 @@ pub async fn get_next_card(
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
         AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
+        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         ORDER BY 
             CASE WHEN cs.due_date IS NULL THEN 0 ELSE 1 END,
             cs.due_date ASC
@@ -271,7 +288,7 @@ pub async fn get_stats(
     let target_language_id = target_language_id
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
 
-    // Count due cards (new + due)
+    // Count due cards (new + due), excluding suppressed
     let due_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
@@ -280,6 +297,7 @@ pub async fn get_stats(
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
         AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
+        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         "#,
     )
     .bind(user_id)
@@ -339,4 +357,100 @@ pub async fn get_stats(
         correct_today,
         percentage,
     }))
+}
+
+// Suppress a card (don't show again)
+pub async fn suppress_card(
+    State(pool): State<SqlitePool>,
+    Path(word_id): Path<i64>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<ReviewResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Suppressing card for user_id: {}, word_id: {}", user_id, word_id);
+
+    // Insert or update card_states to mark as suppressed
+    sqlx::query(
+        r#"
+        INSERT INTO card_states (user_id, word_id, stability, difficulty, last_review, due_date, suppressed)
+        VALUES (?, ?, 0.0, 0.0, datetime('now'), datetime('now'), 1)
+        ON CONFLICT(user_id, word_id) DO UPDATE SET
+            suppressed = 1
+        "#,
+    )
+    .bind(user_id)
+    .bind(word_id)
+    .execute(&pool)
+    .await?;
+
+    info!("Card suppressed successfully");
+
+    Ok(Json(ReviewResponse { success: true }))
+}
+
+// List all suppressed cards for the user
+pub async fn list_suppressed_cards(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<SuppressedCardsResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Listing suppressed cards for user_id: {}", user_id);
+
+    let rows = sqlx::query(
+        r#"
+        SELECT 
+            w.id, w.form, w.hint, w.context, w.context_translation,
+            w.grammar, w.politeness
+        FROM words w
+        INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
+        WHERE cs.suppressed = 1
+        ORDER BY w.form ASC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    let cards: Vec<SuppressedCard> = rows
+        .iter()
+        .map(|row| SuppressedCard {
+            word_id: row.get("id"),
+            form: row.get("form"),
+            hint: row.get("hint"),
+            context: row.get("context"),
+            context_translation: row.get("context_translation"),
+            grammar: row.get("grammar"),
+            politeness: row.get("politeness"),
+        })
+        .collect();
+
+    info!("Found {} suppressed cards", cards.len());
+
+    Ok(Json(SuppressedCardsResponse { cards }))
+}
+
+// Unsuppress a card (restore it to the review queue)
+pub async fn unsuppress_card(
+    State(pool): State<SqlitePool>,
+    Path(word_id): Path<i64>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<ReviewResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Unsuppressing card for user_id: {}, word_id: {}", user_id, word_id);
+
+    // Update card_states to mark as not suppressed
+    sqlx::query(
+        r#"
+        UPDATE card_states 
+        SET suppressed = 0 
+        WHERE user_id = ? AND word_id = ?
+        "#,
+    )
+    .bind(user_id)
+    .bind(word_id)
+    .execute(&pool)
+    .await?;
+
+    info!("Card unsuppressed successfully");
+
+    Ok(Json(ReviewResponse { success: true }))
 }

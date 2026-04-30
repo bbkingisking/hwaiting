@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { getUserProfile, type LanguageInfo } from '@/lib/api'
+import { getUserProfile, listSuppressedCards, type LanguageInfo } from '@/lib/api'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { CustomCardsDialog } from '@/components/custom-cards-dialog'
-import { Settings, Moon, Sun, LogOut, Plus } from 'lucide-react'
+import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
+import { Settings, Moon, Sun, LogOut, Plus, EyeOff } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 // Map language codes to flag-icons classes
@@ -29,14 +30,25 @@ export function AppHeader() {
   const [targetLanguage, setTargetLanguage] = useState<LanguageInfo | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [customCardsOpen, setCustomCardsOpen] = useState(false)
+  const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
+  const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
+
+  const checkSuppressedCards = () => {
+    listSuppressedCards()
+      .then(response => setHasSuppressedCards(response.cards.length > 0))
+      .catch(err => console.error('Error checking suppressed cards:', err))
+  }
 
   useEffect(() => {
     if (isAuthenticated) {
       getUserProfile()
         .then(profile => setTargetLanguage(profile.target_language))
         .catch(err => console.error('Error fetching user profile:', err))
+      
+      checkSuppressedCards()
     } else {
       setTargetLanguage(null)
+      setHasSuppressedCards(false)
     }
   }, [isAuthenticated])
 
@@ -66,6 +78,12 @@ export function AppHeader() {
               <Plus className="mr-2 h-4 w-4" />
               Custom Cards
             </DropdownMenuItem>
+            {hasSuppressedCards && (
+              <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
+                <EyeOff className="mr-2 h-4 w-4" />
+                Suppressed Cards
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -94,6 +112,16 @@ export function AppHeader() {
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
+      <SuppressedCardsDialog 
+        open={suppressedCardsOpen} 
+        onOpenChange={(open) => {
+          setSuppressedCardsOpen(open)
+          if (!open) {
+            // Refresh the check when dialog closes
+            checkSuppressedCards()
+          }
+        }} 
+      />
     </>
   )
 }

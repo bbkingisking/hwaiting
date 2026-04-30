@@ -5,16 +5,26 @@ import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
 import { cn, splitSentence } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MoreVertical } from 'lucide-react'
+import { suppressCard } from '@/lib/api'
 
 interface FlashcardProps {
   card: Card
   onReview: (rating: number) => void
+  onSuppress?: () => void
 }
 
-export function Flashcard({ card, onReview }: FlashcardProps) {
+export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
+  const [suppressing, setSuppressing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const hasAutoProgressedRef = useRef(false)
@@ -73,16 +83,51 @@ export function Flashcard({ card, onReview }: FlashcardProps) {
     return 'text-destructive'
   }
 
+  const handleSuppress = async () => {
+    if (suppressing) return
+    setSuppressing(true)
+    try {
+      await suppressCard(card.word_id)
+      onSuppress?.()
+    } catch (err) {
+      console.error('Error suppressing card:', err)
+      setSuppressing(false)
+    }
+  }
+
   return (
     <UICard className="w-full max-w-xl">
       <CardHeader className="relative">
-        {settings.showPercentage && card.guess_count > 0 && (
-          <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {settings.showPercentage && card.guess_count > 0 && (
             <span className={cn("text-sm font-medium", getPercentageColor())}>
               {Math.round(card.correct_rate)}%
             </span>
-          </div>
-        )}
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  disabled={suppressing}
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="min-w-[200px]">
+              <DropdownMenuItem
+                onClick={handleSuppress}
+                disabled={suppressing}
+                variant="destructive"
+              >
+                Don't show this card again
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
           {card.grammar && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">

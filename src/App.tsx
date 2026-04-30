@@ -92,6 +92,13 @@ function AppContent() {
     }
   }
 
+  const handleSuppress = async () => {
+    // Fetch next card after suppressing
+    await fetchCard()
+    // Trigger stats refresh
+    setStatsKey(prev => prev + 1)
+  }
+
   // Show language selector if authenticated and needs to select language
   if (isAuthenticated && needsLanguage === true) {
     return (
@@ -134,6 +141,7 @@ function AppContent() {
             key={card.word_id}
             card={card}
             onReview={handleReview}
+            onSuppress={handleSuppress}
           />
         ) : (
           <div className="text-center text-muted-foreground">

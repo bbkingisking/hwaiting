@@ -1,5 +1,5 @@
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -36,6 +36,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/signup", post(auth::signup))
         .route("/cards/next", get(cards::get_next_card))
         .route("/cards/{word_id}/review", post(cards::submit_review))
+        .route("/cards/{word_id}/suppress", put(cards::suppress_card))
+        .route("/cards/suppressed", get(cards::list_suppressed_cards))
+        .route("/cards/{word_id}/unsuppress", put(cards::unsuppress_card))
         .route("/cards/stats", get(cards::get_stats))
         .route("/user/me", get(user::get_profile))
         .route("/user/language", post(user::set_language))

@@ -81,6 +81,39 @@ export async function submitReview(wordId: number, rating: number): Promise<Revi
   })
 }
 
+export async function suppressCard(wordId: number): Promise<ReviewResponse> {
+  const url = `${window.location.origin}/api/cards/${wordId}/suppress`
+  return fetchWithAuth(url, {
+    method: 'PUT',
+  })
+}
+
+interface SuppressedCard {
+  word_id: number
+  form: string
+  hint: string
+  context: string
+  context_translation: string
+  grammar: string | null
+  politeness: string | null
+}
+
+interface SuppressedCardsResponse {
+  cards: SuppressedCard[]
+}
+
+export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
+  const url = `${window.location.origin}/api/cards/suppressed`
+  return fetchWithAuth(url)
+}
+
+export async function unsuppressCard(wordId: number): Promise<ReviewResponse> {
+  const url = `${window.location.origin}/api/cards/${wordId}/unsuppress`
+  return fetchWithAuth(url, {
+    method: 'PUT',
+  })
+}
+
 export async function getUserProfile(): Promise<UserProfile> {
   const url = `${window.location.origin}/api/user/me`
   return fetchWithAuth(url)
@@ -291,4 +324,6 @@ export type {
   UpdateCustomCardRequest,
   UpdateCustomCardResponse,
   DeleteCustomCardResponse,
+  SuppressedCard,
+  SuppressedCardsResponse,
 }
