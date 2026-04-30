@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useSettings } from '@/components/settings-provider'
+import { THRESHOLD_CONSTRAINTS } from '@/lib/constants'
 
 export function SettingsDialog() {
   const { settings, updateSettings } = useSettings()
@@ -52,9 +53,9 @@ export function SettingsDialog() {
                 </div>
                 <Slider
                   id="red-threshold"
-                  min={0}
-                  max={100}
-                  step={5}
+                  min={THRESHOLD_CONSTRAINTS.MIN}
+                  max={THRESHOLD_CONSTRAINTS.MAX}
+                  step={THRESHOLD_CONSTRAINTS.STEP}
                   value={settings.redThreshold}
                   onValueChange={(value) => updateSettings({ redThreshold: value as number })}
                   className="**:[[role=slider]]:bg-destructive"
@@ -71,9 +72,9 @@ export function SettingsDialog() {
                 </div>
                 <Slider
                   id="yellow-threshold"
-                  min={0}
-                  max={100}
-                  step={5}
+                  min={THRESHOLD_CONSTRAINTS.MIN}
+                  max={THRESHOLD_CONSTRAINTS.MAX}
+                  step={THRESHOLD_CONSTRAINTS.STEP}
                   value={settings.yellowThreshold}
                   onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
                   className="**:[[role=slider]]:bg-yellow-600"

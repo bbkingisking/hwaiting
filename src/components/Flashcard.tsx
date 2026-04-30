@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Word } from '@/lib/words'
+import type { Word } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { cn, getPercentageColor, splitSentence } from '@/lib/utils'
 import { useSettings } from '@/components/settings-provider'
+import { KEYS } from '@/lib/constants'
 
 interface FlashcardProps {
   word: Word
@@ -18,11 +19,7 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const percentage = Math.round(word.correctRate * 100)
-  const getRateColor = () => {
-    if (percentage < settings.redThreshold) return 'text-destructive'
-    if (percentage < settings.yellowThreshold) return 'text-yellow-600 dark:text-yellow-500'
-    return 'text-green-600 dark:text-green-500'
-  }
+  const rateColor = getPercentageColor(percentage, settings)
 
   const handleAdvance = useCallback(() => {
     if (answered) {
@@ -39,7 +36,7 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (answered && (e.key === 'Enter' || e.key === ' ')) {
+      if (answered && (e.key === KEYS.ENTER || e.key === KEYS.SPACE)) {
         e.preventDefault()
         handleAdvance()
       }
@@ -49,9 +46,7 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [answered, handleAdvance])
 
-  const idx = word.context.indexOf(word.form)
-  const before = idx >= 0 ? word.context.slice(0, idx) : word.context
-  const after = idx >= 0 ? word.context.slice(idx + word.form.length) : ''
+  const { before, after } = splitSentence(word.context, word.form)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -61,21 +56,17 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
     setAnswered(true)
   }
 
-
-
   return (
     <Card className="w-full max-w-xl">
       <CardHeader className="relative">
-        {/* Correct rate percentage */}
         {settings.showPercentage && (
           <div className="absolute top-4 right-4">
-            <span className={cn("text-xs font-semibold", getRateColor())}>
+            <span className={cn("text-xs font-semibold", rateColor)}>
               {percentage}%
             </span>
           </div>
         )}
 
-        {/* Tags */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
           {word.grammar && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
@@ -89,7 +80,6 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
           )}
         </div>
 
-        {/* Sentence with inline input */}
         <form onSubmit={handleSubmit}>
           <p className="text-2xl md:text-3xl font-semibold leading-snug text-center flex flex-wrap items-baseline justify-center gap-1">
             <span>{before}</span>
@@ -126,7 +116,6 @@ export function Flashcard({ word, onNext }: FlashcardProps) {
           </p>
         </form>
 
-        {/* Hint + translation */}
         <p className="text-sm text-muted-foreground text-center mt-2">
           {word.hint}
         </p>

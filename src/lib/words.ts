@@ -1,15 +1,6 @@
-export interface Word {
-  form: string
-  hint: string
-  context: string
-  contextTranslation: string
-  grammar: string | null
-  politeness: string | null
-  notes: string[]
-  correctRate: number
-  guessCount: number
-  wrongGuessCount: number
-}
+import type { Word } from './types'
+
+export type { Word }
 
 function parseWords(raw: string): Word[] {
   const lines = raw.trim().split('\n')

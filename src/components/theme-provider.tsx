@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
-
-type Theme = 'light' | 'dark' | 'system'
+import type { Theme } from '@/lib/types'
+import { STORAGE_KEYS } from '@/lib/constants'
 
 interface ThemeContextValue {
   theme: Theme
@@ -21,12 +21,12 @@ function applyTheme(theme: Theme) {
 export function ThemeProvider({ children, defaultTheme = 'system' }: { children: ReactNode; defaultTheme?: Theme }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return defaultTheme
-    return (localStorage.getItem('theme') as Theme) || defaultTheme
+    return (localStorage.getItem(STORAGE_KEYS.THEME) as Theme) || defaultTheme
   })
 
   useEffect(() => {
     applyTheme(theme)
-    localStorage.setItem('theme', theme)
+    localStorage.setItem(STORAGE_KEYS.THEME, theme)
   }, [theme])
 
   useEffect(() => {
