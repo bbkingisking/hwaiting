@@ -51,11 +51,7 @@ function AppContent() {
         setNeedsLanguage(true)
       } else {
         setNeedsLanguage(false)
-        // Small delay to ensure everything is set up
-        const timer = setTimeout(() => {
-          loadCardCold()
-        }, 100)
-        return () => clearTimeout(timer)
+        loadCardCold()
       }
     } catch (err) {
       console.error('Error checking user language:', err)
