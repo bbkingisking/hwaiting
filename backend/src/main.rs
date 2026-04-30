@@ -7,6 +7,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
+mod cards;
 mod db;
 mod error;
 
@@ -29,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
     // Build API routes
     let api_routes = Router::new()
         .route("/auth/login", post(auth::login))
+        .route("/cards/next", get(cards::get_next_card))
+        .route("/cards/{word_id}/review", post(cards::submit_review))
         .route("/health", get(health_check))
         .with_state(pool);
 

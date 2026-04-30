@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS user_settings (
     red_threshold INTEGER NOT NULL DEFAULT 50,
     yellow_threshold INTEGER NOT NULL DEFAULT 70,
     theme TEXT NOT NULL DEFAULT 'system',
+    -- FSRS parameters (can be customized per user later)
+    desired_retention REAL NOT NULL DEFAULT 0.9,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -33,15 +35,12 @@ CREATE TABLE IF NOT EXISTS card_states (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     word_id INTEGER NOT NULL,
-    stability REAL NOT NULL DEFAULT 0.0,
-    difficulty REAL NOT NULL DEFAULT 0.0,
-    elapsed_days INTEGER NOT NULL DEFAULT 0,
-    scheduled_days INTEGER NOT NULL DEFAULT 0,
-    reps INTEGER NOT NULL DEFAULT 0,
-    lapses INTEGER NOT NULL DEFAULT 0,
-    state TEXT NOT NULL DEFAULT 'New',
-    last_review DATETIME,
-    due_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- FSRS MemoryState
+    stability REAL NOT NULL,
+    difficulty REAL NOT NULL,
+    -- Scheduling
+    last_review DATETIME NOT NULL,
+    due_date DATETIME NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE,
     UNIQUE(user_id, word_id)
