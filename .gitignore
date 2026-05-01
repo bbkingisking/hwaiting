@@ -1,7 +1,6 @@
 shadcn_docs/
 backend/target/
 backend/annyeong.db
-backend/decks/
 
 # dependencies
 node_modules/
