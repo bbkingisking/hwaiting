@@ -102,13 +102,33 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
 
   return (
     <UICard className="w-full max-w-xl">
-      <CardHeader className="relative">
-        <div className="absolute top-4 right-4 flex items-center gap-2">
-          {settings.showPercentage && card.guess_count > 0 && (
-            <span className={cn("text-sm font-medium", getPercentageColor())}>
-              {Math.round(card.correct_rate)}%
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5">
+          {card.guess_count === 0 ? (
+            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+              New
+            </span>
+          ) : (
+            settings.showPercentage && (
+              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getPercentageColor())}>
+                {Math.round(card.correct_rate)}%
+              </span>
+            )
+          )}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
+          {card.grammar && (
+            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              {card.grammar}
             </span>
           )}
+          {card.politeness && (
+            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              {card.politeness}
+            </span>
+          )}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -132,18 +152,6 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
-          {card.grammar && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {card.grammar}
-            </span>
-          )}
-          {card.politeness && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {card.politeness}
-            </span>
-          )}
         </div>
 
         <form onSubmit={handleSubmit}>
