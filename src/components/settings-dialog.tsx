@@ -11,7 +11,12 @@ import {
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import { Separator } from '@/components/ui/separator'
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@/components/ui/accordion'
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS } from '@/lib/constants'
@@ -170,183 +175,185 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-106.25">
+      <DialogContent className="sm:max-w-106.25 flex flex-col max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
             Customize your flashcard experience
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-6 py-4">
-          {/* Auto-progress on Correct Toggle */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="auto-progress" className="flex-1">
-                Auto-progress on correct
-              </Label>
-              <Switch
-                id="auto-progress"
-                checked={settings.autoProgressOnCorrect}
-                onCheckedChange={(checked) => updateSettings({ autoProgressOnCorrect: checked })}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Skip feedback screen and move to next card when answered correctly
-            </p>
-          </div>
+        <Accordion className="overflow-y-auto pr-1">
+          {/* App Behavior */}
+          <AccordionItem value="app-behavior">
+            <AccordionTrigger>App behavior</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auto-progress" className="flex-1">
+                    Auto-progress on correct
+                  </Label>
+                  <Switch
+                    id="auto-progress"
+                    checked={settings.autoProgressOnCorrect}
+                    onCheckedChange={(checked) => updateSettings({ autoProgressOnCorrect: checked })}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Skip feedback screen and move to next card when answered correctly
+                </p>
+              </div>
 
-          {/* Auto-progress Delay */}
-          {settings.autoProgressOnCorrect && (
-            <div className="space-y-2">
+              {settings.autoProgressOnCorrect && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="auto-progress-delay">Auto-progress delay</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {settings.autoProgressDelay === 0 ? 'Instant' : `${(settings.autoProgressDelay / 1000).toFixed(1)}s`}
+                    </span>
+                  </div>
+                  <Slider
+                    id="auto-progress-delay"
+                    min={AUTO_PROGRESS_DELAY_CONSTRAINTS.MIN}
+                    max={AUTO_PROGRESS_DELAY_CONSTRAINTS.MAX}
+                    step={AUTO_PROGRESS_DELAY_CONSTRAINTS.STEP}
+                    value={settings.autoProgressDelay}
+                    onValueChange={(value) => updateSettings({ autoProgressDelay: value as number })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How long to show correct answer before moving to next card
+                  </p>
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* Card Look */}
+          <AccordionItem value="card-look">
+            <AccordionTrigger>Card look</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <Label htmlFor="auto-progress-delay">Auto-progress delay</Label>
-                <span className="text-sm text-muted-foreground">
-                  {settings.autoProgressDelay === 0 ? 'Instant' : `${(settings.autoProgressDelay / 1000).toFixed(1)}s`}
-                </span>
+                <Label htmlFor="show-percentage" className="flex-1">
+                  Show correct rate percentage
+                </Label>
+                <Switch
+                  id="show-percentage"
+                  checked={settings.showPercentage}
+                  onCheckedChange={(checked) => updateSettings({ showPercentage: checked })}
+                />
               </div>
-              <Slider
-                id="auto-progress-delay"
-                min={AUTO_PROGRESS_DELAY_CONSTRAINTS.MIN}
-                max={AUTO_PROGRESS_DELAY_CONSTRAINTS.MAX}
-                step={AUTO_PROGRESS_DELAY_CONSTRAINTS.STEP}
-                value={settings.autoProgressDelay}
-                onValueChange={(value) => updateSettings({ autoProgressDelay: value as number })}
-              />
-              <p className="text-xs text-muted-foreground">
-                How long to show correct answer before moving to next card
-              </p>
-            </div>
-          )}
 
-          {/* Show Percentage Toggle */}
-          <div className="flex items-center justify-between">
-            <Label htmlFor="show-percentage" className="flex-1">
-              Show correct rate percentage
-            </Label>
-            <Switch
-              id="show-percentage"
-              checked={settings.showPercentage}
-              onCheckedChange={(checked) => updateSettings({ showPercentage: checked })}
-            />
-          </div>
+              {settings.showPercentage && (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="red-threshold">Red threshold (below)</Label>
+                      <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
+                    </div>
+                    <Slider
+                      id="red-threshold"
+                      min={THRESHOLD_CONSTRAINTS.MIN}
+                      max={THRESHOLD_CONSTRAINTS.MAX}
+                      step={THRESHOLD_CONSTRAINTS.STEP}
+                      value={settings.redThreshold}
+                      onValueChange={(value) => updateSettings({ redThreshold: value as number })}
+                      className="**:[[role=slider]]:bg-destructive"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Cards below this percentage will be red
+                    </p>
+                  </div>
 
-          {/* Color Thresholds */}
-          {settings.showPercentage && (
-            <>
-              <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="yellow-threshold">Yellow threshold (below)</Label>
+                      <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
+                    </div>
+                    <Slider
+                      id="yellow-threshold"
+                      min={THRESHOLD_CONSTRAINTS.MIN}
+                      max={THRESHOLD_CONSTRAINTS.MAX}
+                      step={THRESHOLD_CONSTRAINTS.STEP}
+                      value={settings.yellowThreshold}
+                      onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
+                      className="**:[[role=slider]]:bg-yellow-600"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Cards below this percentage will be yellow
+                    </p>
+                  </div>
+                </>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* Review Settings */}
+          <AccordionItem value="review-settings">
+            <AccordionTrigger>Review settings</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="red-threshold">Red threshold (below)</Label>
-                  <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
+                  <Label htmlFor="day-boundary">Day ends at</Label>
+                  <span className="text-sm text-muted-foreground">
+                    {settings.dayBoundaryHour.toString().padStart(2, '0')}:00
+                  </span>
                 </div>
                 <Slider
-                  id="red-threshold"
-                  min={THRESHOLD_CONSTRAINTS.MIN}
-                  max={THRESHOLD_CONSTRAINTS.MAX}
-                  step={THRESHOLD_CONSTRAINTS.STEP}
-                  value={settings.redThreshold}
-                  onValueChange={(value) => updateSettings({ redThreshold: value as number })}
-                  className="**:[[role=slider]]:bg-destructive"
+                  id="day-boundary"
+                  min={0}
+                  max={23}
+                  step={1}
+                  value={settings.dayBoundaryHour}
+                  onValueChange={(value) => updateSettings({ dayBoundaryHour: value as number })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Cards below this percentage will be red
+                  Reviews before this hour count as the previous day
                 </p>
               </div>
+            </AccordionContent>
+          </AccordionItem>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="yellow-threshold">Yellow threshold (below)</Label>
-                  <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
+          {/* Data */}
+          <AccordionItem value="data">
+            <AccordionTrigger>Data</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  variant="outline"
+                >
+                  <Download data-icon="inline-start" />
+                  {isExporting ? 'Exporting...' : 'Export Data'}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={isImporting}
+                  onClick={() => document.getElementById('import-file')?.click()}
+                >
+                  <Upload data-icon="inline-start" />
+                  {isImporting ? 'Importing...' : 'Import Data'}
+                </Button>
+                <input
+                  id="import-file"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={handleImportFileSelect}
+                  className="hidden"
+                />
+              </div>
+              {importMessage && (
+                <div className={`text-sm ${importMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                  {importMessage.text}
                 </div>
-                <Slider
-                  id="yellow-threshold"
-                  min={THRESHOLD_CONSTRAINTS.MIN}
-                  max={THRESHOLD_CONSTRAINTS.MAX}
-                  step={THRESHOLD_CONSTRAINTS.STEP}
-                  value={settings.yellowThreshold}
-                  onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
-                  className="**:[[role=slider]]:bg-yellow-600"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Cards below this percentage will be yellow
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* Day Boundary Hour */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="day-boundary">Day ends at</Label>
-              <span className="text-sm text-muted-foreground">
-                {settings.dayBoundaryHour.toString().padStart(2, '0')}:00
-              </span>
-            </div>
-            <Slider
-              id="day-boundary"
-              min={0}
-              max={23}
-              step={1}
-              value={settings.dayBoundaryHour}
-              onValueChange={(value) => updateSettings({ dayBoundaryHour: value as number })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Reviews before this hour count as the previous day
-            </p>
-          </div>
-
-          {/* Export Data Section */}
-          <Separator />
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold">Export Data</h3>
-              <p className="text-sm text-muted-foreground">
-                Download your learning history as JSON
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleExport}
-                disabled={isExporting}
-                variant="outline"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                {isExporting ? 'Exporting...' : 'Export Data'}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={isImporting}
-                onClick={() => document.getElementById('import-file')?.click()}
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                {isImporting ? 'Importing...' : 'Import Data'}
-              </Button>
-              <input
-                id="import-file"
-                type="file"
-                accept="application/json,.json"
-                onChange={handleImportFileSelect}
-                className="hidden"
-              />
-            </div>
-            {importMessage && (
-              <div className={`text-sm ${importMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
-                {importMessage.text}
-              </div>
-            )}
-          </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
 
           {/* Admin Section */}
           {isAdmin && (
-            <>
-              <Separator />
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold">Admin Stuff</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Manage invite codes
-                  </p>
-                </div>
-
+            <AccordionItem value="admin">
+              <AccordionTrigger>Admin stuff</AccordionTrigger>
+              <AccordionContent className="flex flex-col gap-4">
                 <div className="flex gap-2">
                   <Button
                     onClick={generateInvites}
@@ -364,7 +371,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </Button>
                 </div>
 
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
                   {isLoadingInvites ? (
                     <p className="text-sm text-muted-foreground">Loading...</p>
                   ) : inviteCodes.length === 0 ? (
@@ -407,10 +414,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     ))
                   )}
                 </div>
-              </div>
-            </>
+              </AccordionContent>
+            </AccordionItem>
           )}
-        </div>
+        </Accordion>
       </DialogContent>
 
       {/* Import Confirmation Dialog */}
