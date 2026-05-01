@@ -89,7 +89,7 @@ pub async fn get_next_card(
     let target_language_id = target_language_id
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
 
-    // Get next due card (prioritize new cards, then due cards by date)
+    // Get next due card (prioritize due cards by date, then new cards)
     // Filter by user's target language and exclude suppressed cards.
     // Optionally skip a specific word_id (used for client-side prefetch so
     // the prefetched card isn't the same as the one currently displayed).
@@ -108,7 +108,7 @@ pub async fn get_next_card(
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         AND w.id != ?
         ORDER BY 
-            CASE WHEN cs.due_date IS NULL THEN 0 ELSE 1 END,
+            CASE WHEN cs.due_date IS NULL THEN 1 ELSE 0 END,
             cs.due_date ASC
         LIMIT 1
         "#,
