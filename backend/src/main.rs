@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api", api_routes)
         .fallback_service(serve_dir);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 15000));
     tracing::info!("Backend listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
