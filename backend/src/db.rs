@@ -1,11 +1,15 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
+use std::env;
 use tracing::info;
 use std::fs;
 use std::path::Path;
 
 pub async fn init() -> anyhow::Result<SqlitePool> {
-    let options = SqliteConnectOptions::from_str("sqlite:annyeong.db")?
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL environment variable must be set");
+    
+    let options = SqliteConnectOptions::from_str(&database_url)?
         .create_if_missing(true);
 
     let pool = SqlitePoolOptions::new()

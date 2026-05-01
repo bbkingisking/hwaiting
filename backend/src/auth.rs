@@ -10,6 +10,7 @@ use argon2::{
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
+use std::env;
 use tracing::{debug, info, warn};
 
 use crate::error::AppError;
@@ -166,6 +167,9 @@ pub async fn signup(
 fn generate_token(user_id: i64) -> Result<String, AppError> {
     use jsonwebtoken::{encode, EncodingKey, Header};
     
+    let jwt_secret = env::var("JWT_SECRET")
+        .expect("JWT_SECRET environment variable must be set");
+    
     let claims = Claims { sub: user_id };
     
     let mut header = Header::default();
@@ -174,7 +178,7 @@ fn generate_token(user_id: i64) -> Result<String, AppError> {
     encode(
         &header,
         &claims,
-        &EncodingKey::from_secret(SECRET.as_bytes()),
+        &EncodingKey::from_secret(jwt_secret.as_bytes()),
     )
     .map_err(|e| AppError::Internal(format!("Failed to generate token: {}", e)))
 }
@@ -220,12 +224,15 @@ where
         debug!("Token extracted, attempting to decode");
 
         // Decode and validate token (no expiration check since tokens never expire)
+        let jwt_secret = env::var("JWT_SECRET")
+            .expect("JWT_SECRET environment variable must be set");
+        
         let mut validation = Validation::new(Algorithm::HS256);
         validation.required_spec_claims.clear(); // Don't require exp, iat, etc.
         
         let token_data = decode::<Claims>(
             token,
-            &DecodingKey::from_secret(SECRET.as_bytes()),
+            &DecodingKey::from_secret(jwt_secret.as_bytes()),
             &validation,
         )
         .map_err(|e| {
@@ -269,4 +276,3 @@ impl FromRequestParts<SqlitePool> for AdminUser
     }
 }
 
-const SECRET: &str = "your-secret-key-change-this-in-production";

@@ -3,6 +3,7 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
+use std::env;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -58,16 +59,31 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .with_state(pool);
 
-    // Serve static files from ../dist
-    let serve_dir = ServeDir::new("../dist")
-        .not_found_service(ServeFile::new("../dist/index.html"));
+    // Serve static files from STATIC_DIR
+    let static_dir = env::var("STATIC_DIR")
+        .expect("STATIC_DIR environment variable must be set");
+    let index_path = format!("{}/index.html", static_dir);
+    
+    let serve_dir = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(index_path));
 
     // Combine routes - API takes precedence over static files
     let app = Router::new()
         .nest("/api", api_routes)
         .fallback_service(serve_dir);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 15000));
+    // Read HOST and PORT from environment variables
+    let host = env::var("HOST")
+        .expect("HOST environment variable must be set");
+    let port: u16 = env::var("PORT")
+        .expect("PORT environment variable must be set")
+        .parse()
+        .expect("PORT must be a valid u16 number");
+
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("Failed to parse HOST:PORT into SocketAddr");
+
     tracing::info!("Backend listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
