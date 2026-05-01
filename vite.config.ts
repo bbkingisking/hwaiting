@@ -8,6 +8,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    outDir: process.env.STATIC_DIR || 'dist',
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
