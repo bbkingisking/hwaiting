@@ -208,6 +208,7 @@ interface UserSettings {
   day_boundary_hour: number
   auto_progress_on_correct: boolean
   auto_progress_delay?: number
+  suppress_new_cards: boolean
 }
 
 interface UpdateSettingsRequest {
@@ -217,6 +218,7 @@ interface UpdateSettingsRequest {
   day_boundary_hour?: number
   auto_progress_on_correct?: boolean
   auto_progress_delay?: number
+  suppress_new_cards?: boolean
 }
 
 interface UpdateSettingsResponse {

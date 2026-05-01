@@ -80,13 +80,17 @@ pub async fn get_next_card(
         user_id, params.exclude
     );
 
-    // Get user's target language
-    let target_language_id: Option<i64> = sqlx::query_scalar(
-        "SELECT target_language_id FROM users WHERE id = ?"
+    // Get user's target language and settings
+    let user_row = sqlx::query(
+        "SELECT target_language_id, suppress_new_cards FROM users u LEFT JOIN user_settings us ON us.user_id = u.id WHERE u.id = ?"
     )
     .bind(user_id)
     .fetch_one(&pool)
     .await?;
+
+    let target_language_id: Option<i64> = user_row.get("target_language_id");
+    let suppress_new_cards: Option<bool> = user_row.get("suppress_new_cards");
+    let suppress_new_cards = suppress_new_cards.unwrap_or(false);
 
     let target_language_id = target_language_id
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
@@ -95,10 +99,17 @@ pub async fn get_next_card(
     // Filter by user's target language and exclude suppressed cards.
     // Optionally skip a specific word_id (used for client-side prefetch so
     // the prefetched card isn't the same as the one currently displayed).
+    // When suppress_new_cards is enabled, exclude never-reviewed cards.
     let exclude_id = params.exclude.unwrap_or(-1);
-    let row = sqlx::query(
+    let new_card_filter = if suppress_new_cards {
+        "AND cs.due_date IS NOT NULL AND datetime(cs.due_date) <= datetime('now')"
+    } else {
+        "AND (cs.due_date IS NULL OR datetime(cs.due_date) <= datetime('now'))"
+    };
+
+    let query = format!(
         r#"
-        SELECT 
+        SELECT
             w.id, w.form, w.hint, w.context, w.context_translation,
             w.grammar, w.politeness, w.notes,
             cs.due_date
@@ -106,15 +117,18 @@ pub async fn get_next_card(
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
-        AND (cs.due_date IS NULL OR datetime(cs.due_date) <= datetime('now'))
+        {}
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         AND w.id != ?
-        ORDER BY 
+        ORDER BY
             CASE WHEN cs.due_date IS NULL THEN 1 ELSE 0 END,
             cs.due_date ASC
         LIMIT 1
         "#,
-    )
+        new_card_filter
+    );
+
+    let row = sqlx::query(&query)
     .bind(user_id)
     .bind(target_language_id)
     .bind(user_id)
@@ -122,7 +136,7 @@ pub async fn get_next_card(
     .fetch_optional(&pool)
     .await?;
 
-    let row = row.ok_or(AppError::Internal("No cards available".to_string()))?;
+    let row = row.ok_or(AppError::NoCardsDue)?;
 
     let word_id: i64 = row.get("id");
     let form: String = row.get("form");

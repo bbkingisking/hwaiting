@@ -292,6 +292,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <AccordionContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
+                  <Label htmlFor="suppress-new-cards" className="flex-1">
+                    Suppress new cards
+                  </Label>
+                  <Switch
+                    id="suppress-new-cards"
+                    checked={settings.suppressNewCards}
+                    onCheckedChange={(checked) => updateSettings({ suppressNewCards: checked })}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Only show cards you've already reviewed
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
                   <Label htmlFor="day-boundary">Day ends at</Label>
                   <span className="text-sm text-muted-foreground">
                     {settings.dayBoundaryHour.toString().padStart(2, '0')}:00

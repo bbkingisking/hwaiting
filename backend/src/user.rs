@@ -116,6 +116,7 @@ pub struct UserSettings {
     pub yellow_threshold: i64,
     pub day_boundary_hour: i64,
     pub auto_progress_on_correct: bool,
+    pub suppress_new_cards: bool,
 }
 
 #[derive(Deserialize)]
@@ -125,6 +126,7 @@ pub struct UpdateSettingsRequest {
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
     pub auto_progress_on_correct: Option<bool>,
+    pub suppress_new_cards: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -477,7 +479,7 @@ pub async fn get_settings(
 
     let row = sqlx::query(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, suppress_new_cards
         FROM user_settings
         WHERE user_id = ?
         "#
@@ -492,6 +494,7 @@ pub async fn get_settings(
         yellow_threshold: row.get("yellow_threshold"),
         day_boundary_hour: row.get("day_boundary_hour"),
         auto_progress_on_correct: row.get("auto_progress_on_correct"),
+        suppress_new_cards: row.get("suppress_new_cards"),
     }))
 }
 
@@ -556,6 +559,14 @@ pub async fn update_settings(
     if let Some(auto_progress_on_correct) = payload.auto_progress_on_correct {
         sqlx::query("UPDATE user_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
             .bind(auto_progress_on_correct)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(suppress_new_cards) = payload.suppress_new_cards {
+        sqlx::query("UPDATE user_settings SET suppress_new_cards = ? WHERE user_id = ?")
+            .bind(suppress_new_cards)
             .bind(user_id)
             .execute(&pool)
             .await?;

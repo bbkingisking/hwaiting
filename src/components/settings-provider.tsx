@@ -16,6 +16,7 @@ const defaultSettings: Settings = {
   dayBoundaryHour: DEFAULT_SETTINGS.DAY_BOUNDARY_HOUR,
   autoProgressOnCorrect: DEFAULT_SETTINGS.AUTO_PROGRESS_ON_CORRECT,
   autoProgressDelay: DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
+  suppressNewCards: DEFAULT_SETTINGS.SUPPRESS_NEW_CARDS,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -42,6 +43,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           dayBoundaryHour: userSettings.day_boundary_hour,
           autoProgressOnCorrect: userSettings.auto_progress_on_correct,
           autoProgressDelay: userSettings.auto_progress_delay ?? DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
+          suppressNewCards: userSettings.suppress_new_cards,
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)
@@ -79,6 +81,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           day_boundary_hour: updates.dayBoundaryHour,
           auto_progress_on_correct: updates.autoProgressOnCorrect,
           auto_progress_delay: updates.autoProgressDelay,
+          suppress_new_cards: updates.suppressNewCards,
         })
       } catch (err) {
         console.error('Failed to update settings:', err)

@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = {
   DAY_BOUNDARY_HOUR: 4,
   AUTO_PROGRESS_ON_CORRECT: true,
   AUTO_PROGRESS_DELAY: 0,
+  SUPPRESS_NEW_CARDS: false,
 } as const
 
 // Color thresholds

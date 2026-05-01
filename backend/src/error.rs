@@ -27,6 +27,9 @@ pub enum AppError {
     
     #[error("Not found")]
     NotFound,
+
+    #[error("No cards due")]
+    NoCardsDue,
     
     #[error("Internal error: {0}")]
     Internal(String),
@@ -63,6 +66,9 @@ impl IntoResponse for AppError {
             }
             AppError::NotFound => {
                 (StatusCode::NOT_FOUND, "Not found")
+            }
+            AppError::NoCardsDue => {
+                (StatusCode::NOT_FOUND, "No cards available")
             }
             AppError::Internal(ref msg) => {
                 eprintln!("Internal error: {}", msg);

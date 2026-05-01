@@ -8,7 +8,7 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { LanguageSelector } from '@/components/language-selector'
 import { StatusIndicator } from '@/components/status-indicator'
-import { getNextCard, submitReview, getUserProfile, ApiError } from '@/lib/api'
+import { getNextCard, submitReview, getUserProfile, getStats, ApiError } from '@/lib/api'
 import type { Card } from '@/lib/types'
 
 // Tracks a background fetch for the next card. The same slot moves
@@ -24,6 +24,8 @@ function AppContent() {
   const [card, setCard] = useState<Card | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [noCards, setNoCards] = useState(false)
+  const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [needsLanguage, setNeedsLanguage] = useState<boolean | null>(null)
   const [statsKey, setStatsKey] = useState(0)
@@ -63,6 +65,18 @@ function AppContent() {
   const handleLanguageSelected = () => {
     setNeedsLanguage(false)
     loadCardCold()
+  }
+
+  const formatTimeUntil = (isoTimestamp: string): string | null => {
+    const now = new Date()
+    const due = new Date(isoTimestamp)
+    const diffMs = due.getTime() - now.getTime()
+    if (diffMs <= 0) return null
+    const diffMinutes = Math.floor(diffMs / 60000)
+    const hours = Math.floor(diffMinutes / 60)
+    const minutes = diffMinutes % 60
+    if (hours > 0) return `${hours}h ${minutes}m`
+    return `${minutes}m`
   }
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.
@@ -127,12 +141,24 @@ function AppContent() {
     cancelPrefetch()
     setLoading(true)
     setError(null)
+    setNoCards(false)
     try {
       const next = await getNextCard()
       setCard(next)
+      setNoCards(false)
       startPrefetch(next.word_id)
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && err.status === 404) {
+        // No cards available — show friendly message with next due time
+        setCard(null)
+        setNoCards(true)
+        try {
+          const stats = await getStats()
+          setNextDueAt(stats.next_due_at)
+        } catch {
+          setNextDueAt(null)
+        }
+      } else if (err instanceof ApiError) {
         setError(err.message)
       } else {
         setError('Failed to load card')
@@ -151,6 +177,7 @@ function AppContent() {
   // the previous review is still being persisted.
   const advanceToNextCard = async (waitForBeforePrefetch?: Promise<unknown>) => {
     setError(null)
+    setNoCards(false)
 
     const slot = prefetchRef.current
 
@@ -245,6 +272,14 @@ function AppContent() {
         ) : loading ? (
           <div className="text-center text-muted-foreground">
             <p>Loading card...</p>
+          </div>
+        ) : noCards && !card ? (
+          <div className="text-center text-muted-foreground">
+            <p className="mb-2">No cards to review right now</p>
+            {nextDueAt && (() => {
+              const formatted = formatTimeUntil(nextDueAt)
+              return formatted ? <p className="text-sm">Next in {formatted}</p> : null
+            })()}
           </div>
         ) : error && !card ? (
           <div className="text-center">
