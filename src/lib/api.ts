@@ -188,6 +188,7 @@ export async function exportUserData(): Promise<void> {
 }
 
 interface StatsResponse {
+  new_count: number
   due_count: number
   reviews_today: number
   correct_today: number

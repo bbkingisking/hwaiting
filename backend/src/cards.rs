@@ -53,6 +53,7 @@ pub struct ReviewResponse {
 
 #[derive(Serialize)]
 pub struct StatsResponse {
+    new_count: i64,
     due_count: i64,
     reviews_today: i64,
     correct_today: i64,
@@ -307,15 +308,33 @@ pub async fn get_stats(
     let target_language_id = target_language_id
         .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
 
-    // Count due cards (new + due), excluding suppressed
-    let due_count: i64 = sqlx::query_scalar(
+    // Count new cards (never seen), excluding suppressed
+    let new_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
         FROM words w
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
-        AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
+        AND cs.due_date IS NULL
+        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_language_id)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
+    // Count due cards (seen and due), excluding suppressed
+    let due_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM words w
+        INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
+        WHERE w.language_id = ?
+        AND (w.user_id IS NULL OR w.user_id = ?)
+        AND cs.due_date <= datetime('now')
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         "#,
     )
@@ -371,6 +390,7 @@ pub async fn get_stats(
     };
 
     Ok(Json(StatsResponse {
+        new_count,
         due_count,
         reviews_today,
         correct_today,
