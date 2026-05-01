@@ -58,6 +58,7 @@ pub struct StatsResponse {
     reviews_today: i64,
     correct_today: i64,
     percentage: Option<i64>,
+    next_due_at: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -105,7 +106,7 @@ pub async fn get_next_card(
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
-        AND (cs.due_date IS NULL OR cs.due_date <= datetime('now'))
+        AND (cs.due_date IS NULL OR datetime(cs.due_date) <= datetime('now'))
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         AND w.id != ?
         ORDER BY 
@@ -334,7 +335,7 @@ pub async fn get_stats(
         INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
         AND (w.user_id IS NULL OR w.user_id = ?)
-        AND cs.due_date <= datetime('now')
+        AND datetime(cs.due_date) <= datetime('now')
         AND (cs.suppressed IS NULL OR cs.suppressed = 0)
         "#,
     )
@@ -389,12 +390,35 @@ pub async fn get_stats(
         None
     };
 
+    // Get the next card's due date (when no reviewed cards are due)
+    let next_due_at: Option<String> = if due_count == 0 {
+        sqlx::query_scalar(
+            r#"
+            SELECT MIN(cs.due_date)
+            FROM words w
+            INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
+            WHERE w.language_id = ?
+            AND (w.user_id IS NULL OR w.user_id = ?)
+            AND datetime(cs.due_date) > datetime('now')
+            AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+            "#,
+        )
+        .bind(user_id)
+        .bind(target_language_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?
+    } else {
+        None
+    };
+
     Ok(Json(StatsResponse {
         new_count,
         due_count,
         reviews_today,
         correct_today,
         percentage,
+        next_due_at,
     }))
 }
 

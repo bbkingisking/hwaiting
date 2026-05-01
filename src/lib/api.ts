@@ -193,6 +193,7 @@ interface StatsResponse {
   reviews_today: number
   correct_today: number
   percentage: number | null
+  next_due_at: string | null
 }
 
 export async function getStats(): Promise<StatsResponse> {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Flashcard } from '@/components/Flashcard'
+import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
 
