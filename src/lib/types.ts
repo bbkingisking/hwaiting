@@ -34,7 +34,7 @@ export interface Card {
   grammar: string | null
   politeness: string | null
   notes: string[]
-  correct_rate: number
+  difficulty: number | null
   guess_count: number
   wrong_guess_count: number
 }

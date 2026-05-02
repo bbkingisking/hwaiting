@@ -13,6 +13,13 @@ export function getPercentageColor(percentage: number, settings: Settings): stri
   return 'text-green-600 dark:text-green-500'
 }
 
+// Get color class based on difficulty (1-10 scale from FSRS)
+export function getDifficultyColor(difficulty: number): string {
+  if (difficulty >= 7) return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+  if (difficulty >= 4) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+  return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+}
+
 // Split sentence into before/target/after parts
 export function splitSentence(sentence: string, target: string): { before: string; after: string } {
   const idx = sentence.indexOf(target)

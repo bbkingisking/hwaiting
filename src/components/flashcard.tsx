@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, splitSentence, getPercentageColor } from '@/lib/utils'
+import { cn, splitSentence, getDifficultyColor } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -103,9 +103,9 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               New
             </span>
           ) : (
-            settings.showPercentage && (
-              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getPercentageColor(card.correct_rate, settings))}>
-                {Math.round(card.correct_rate)}%
+            settings.showPercentage && card.difficulty !== null && (
+              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getDifficultyColor(card.difficulty))}>
+                {card.difficulty.toFixed(1)}
               </span>
             )
           )}

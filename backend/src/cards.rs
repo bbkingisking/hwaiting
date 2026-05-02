@@ -25,7 +25,7 @@ pub struct NextCardResponse {
     grammar: Option<String>,
     politeness: Option<String>,
     notes: Vec<String>,
-    correct_rate: f64,
+    difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
 }
@@ -118,7 +118,7 @@ pub async fn get_next_card(
         SELECT
             w.id, w.form, w.hint, w.context, w.context_translation,
             w.grammar, w.politeness, w.notes,
-            cs.due_date
+            cs.due_date, cs.difficulty
         FROM words w
         LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
         WHERE w.language_id = ?
@@ -197,10 +197,12 @@ pub async fn get_next_card(
     let guess_count: i64 = stats_row.get("total");
     let correct_count: i64 = stats_row.get("correct");
     let wrong_guess_count = guess_count - correct_count;
-    let correct_rate = if guess_count > 0 {
-        correct_count as f64 / guess_count as f64
+
+    // Get difficulty from FSRS (range 1-10)
+    let difficulty: Option<f64> = if guess_count > 0 {
+        row.get("difficulty")
     } else {
-        0.0
+        None
     };
 
     Ok(Json(NextCardEnvelope {
@@ -213,7 +215,7 @@ pub async fn get_next_card(
             grammar,
             politeness,
             notes,
-            correct_rate,
+            difficulty,
             guess_count,
             wrong_guess_count,
         }),

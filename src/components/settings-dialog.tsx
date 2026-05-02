@@ -233,7 +233,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <AccordionContent className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="show-percentage" className="flex-1">
-                  Show correct rate percentage
+                  Show difficulty score
                 </Label>
                 <Switch
                   id="show-percentage"
