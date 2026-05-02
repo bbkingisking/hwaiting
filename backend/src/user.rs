@@ -116,6 +116,7 @@ pub struct UserSettings {
     pub yellow_threshold: i64,
     pub day_boundary_hour: i64,
     pub auto_progress_on_correct: bool,
+    pub auto_progress_delay: i64,
     pub suppress_new_cards: bool,
     pub desired_retention: f64,
 }
@@ -127,6 +128,7 @@ pub struct UpdateSettingsRequest {
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
     pub auto_progress_on_correct: Option<bool>,
+    pub auto_progress_delay: Option<i64>,
     pub suppress_new_cards: Option<bool>,
     pub desired_retention: Option<f64>,
 }
@@ -481,7 +483,7 @@ pub async fn get_settings(
 
     let row = sqlx::query(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, suppress_new_cards, desired_retention
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, suppress_new_cards, desired_retention
         FROM user_settings
         WHERE user_id = ?
         "#
@@ -496,6 +498,7 @@ pub async fn get_settings(
         yellow_threshold: row.get("yellow_threshold"),
         day_boundary_hour: row.get("day_boundary_hour"),
         auto_progress_on_correct: row.get("auto_progress_on_correct"),
+        auto_progress_delay: row.get("auto_progress_delay"),
         suppress_new_cards: row.get("suppress_new_cards"),
         desired_retention: row.get("desired_retention"),
     }))
@@ -562,6 +565,17 @@ pub async fn update_settings(
     if let Some(auto_progress_on_correct) = payload.auto_progress_on_correct {
         sqlx::query("UPDATE user_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
             .bind(auto_progress_on_correct)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(auto_progress_delay) = payload.auto_progress_delay {
+        if auto_progress_delay < 0 || auto_progress_delay > 3000 {
+            return Err(AppError::Internal("auto_progress_delay must be between 0 and 3000".to_string()));
+        }
+        sqlx::query("UPDATE user_settings SET auto_progress_delay = ? WHERE user_id = ?")
+            .bind(auto_progress_delay)
             .bind(user_id)
             .execute(&pool)
             .await?;

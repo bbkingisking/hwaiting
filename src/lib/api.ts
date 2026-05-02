@@ -207,7 +207,7 @@ interface UserSettings {
   yellow_threshold: number
   day_boundary_hour: number
   auto_progress_on_correct: boolean
-  auto_progress_delay?: number
+  auto_progress_delay: number
   suppress_new_cards: boolean
   desired_retention: number
 }
