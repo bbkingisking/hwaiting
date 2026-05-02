@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use fsrs::{MemoryState, FSRS, DEFAULT_PARAMETERS};
+use fsrs::{MemoryState, FSRS};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
@@ -220,7 +220,7 @@ pub async fn submit_review(
     .fetch_optional(&pool)
     .await?;
 
-    let fsrs = FSRS::new(Some(&DEFAULT_PARAMETERS)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
+    let fsrs = FSRS::new(None).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
     // Using default retention rate - can be customized per user via user_settings.desired_retention
     let desired_retention = 0.9;
