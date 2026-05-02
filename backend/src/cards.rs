@@ -31,6 +31,12 @@ pub struct NextCardResponse {
 }
 
 #[derive(Serialize)]
+pub struct NextCardEnvelope {
+    pub card: Option<NextCardResponse>,
+    pub next_due_at: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct SuppressedCard {
     word_id: i64,
     form: String,
@@ -73,7 +79,7 @@ pub async fn get_next_card(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
     Query(params): Query<NextCardQuery>,
-) -> Result<Json<NextCardResponse>, AppError> {
+) -> Result<Json<NextCardEnvelope>, AppError> {
     let user_id = auth.0;
     info!(
         "Getting next card for user_id: {} (exclude: {:?})",
@@ -136,7 +142,30 @@ pub async fn get_next_card(
     .fetch_optional(&pool)
     .await?;
 
-    let row = row.ok_or(AppError::NoCardsDue)?;
+    let Some(row) = row else {
+        // No card available — find when the next one becomes due
+        let next_due_at: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT MIN(cs.due_date)
+            FROM words w
+            INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
+            WHERE w.language_id = ?
+            AND (w.user_id IS NULL OR w.user_id = ?)
+            AND datetime(cs.due_date) > datetime('now')
+            AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+            "#,
+        )
+        .bind(user_id)
+        .bind(target_language_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        return Ok(Json(NextCardEnvelope {
+            card: None,
+            next_due_at,
+        }));
+    };
 
     let word_id: i64 = row.get("id");
     let form: String = row.get("form");
@@ -174,18 +203,21 @@ pub async fn get_next_card(
         0.0
     };
 
-    Ok(Json(NextCardResponse {
-        word_id,
-        form,
-        hint,
-        context,
-        context_translation,
-        grammar,
-        politeness,
-        notes,
-        correct_rate,
-        guess_count,
-        wrong_guess_count,
+    Ok(Json(NextCardEnvelope {
+        card: Some(NextCardResponse {
+            word_id,
+            form,
+            hint,
+            context,
+            context_translation,
+            grammar,
+            politeness,
+            notes,
+            correct_rate,
+            guess_count,
+            wrong_guess_count,
+        }),
+        next_due_at: None,
     }))
 }
 

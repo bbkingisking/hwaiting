@@ -9,7 +9,8 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { LanguageSelector } from '@/components/language-selector'
 import { StatusIndicator } from '@/components/status-indicator'
-import { getNextCard, submitReview, getUserProfile, getStats, ApiError } from '@/lib/api'
+import { getNextCard, submitReview, getUserProfile, ApiError } from '@/lib/api'
+import type { NextCardEnvelope } from '@/lib/api'
 import type { Card } from '@/lib/types'
 
 // Tracks a background fetch for the next card. The same slot moves
@@ -17,8 +18,8 @@ import type { Card } from '@/lib/types'
 // resolved (result !== null), or aborted (controller.signal.aborted).
 type PrefetchSlot = {
   abort: AbortController
-  promise: Promise<Card | null>
-  result: Card | null
+  promise: Promise<NextCardEnvelope | null>
+  result: NextCardEnvelope | null
 }
 
 function AppContent() {
@@ -116,15 +117,15 @@ function AppContent() {
           // were waiting; bail out if so.
           if (prefetchRef.current !== slot) return null
         }
-        const next = await getNextCard({
+        const envelope = await getNextCard({
           excludeWordId: currentWordId,
           signal: controller.signal,
         })
         // Only commit if this prefetch wasn't superseded.
         if (prefetchRef.current === slot) {
-          slot.result = next
+          slot.result = envelope
         }
-        return next
+        return envelope
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
           console.debug('Prefetch failed:', err)
@@ -148,22 +149,18 @@ function AppContent() {
     setError(null)
     setNoCards(false)
     try {
-      const next = await getNextCard()
-      setCard(next)
-      setNoCards(false)
-      startPrefetch(next.word_id)
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        // No cards available — show friendly message with next due time
+      const envelope = await getNextCard()
+      if (envelope.card) {
+        setCard(envelope.card)
+        setNoCards(false)
+        startPrefetch(envelope.card.word_id)
+      } else {
         setCard(null)
         setNoCards(true)
-        try {
-          const stats = await getStats()
-          setNextDueAt(stats.next_due_at)
-        } catch {
-          setNextDueAt(null)
-        }
-      } else if (err instanceof ApiError) {
+        setNextDueAt(envelope.next_due_at)
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
         setError(err.message)
       } else {
         setError('Failed to load card')
@@ -188,10 +185,17 @@ function AppContent() {
 
     // Fast path: prefetch already resolved.
     if (slot?.result) {
-      const next = slot.result
+      const envelope = slot.result
       prefetchRef.current = null
-      setCard(next)
-      startPrefetch(next.word_id, waitForBeforePrefetch)
+      if (envelope.card) {
+        setCard(envelope.card)
+        setNoCards(false)
+        startPrefetch(envelope.card.word_id, waitForBeforePrefetch)
+      } else {
+        setCard(null)
+        setNoCards(true)
+        setNextDueAt(envelope.next_due_at)
+      }
       return
     }
 
@@ -199,11 +203,18 @@ function AppContent() {
     if (slot) {
       setLoading(true)
       try {
-        const next = await slot.promise
-        if (next) {
+        const envelope = await slot.promise
+        if (envelope) {
           prefetchRef.current = null
-          setCard(next)
-          startPrefetch(next.word_id, waitForBeforePrefetch)
+          if (envelope.card) {
+            setCard(envelope.card)
+            setNoCards(false)
+            startPrefetch(envelope.card.word_id, waitForBeforePrefetch)
+          } else {
+            setCard(null)
+            setNoCards(true)
+            setNextDueAt(envelope.next_due_at)
+          }
           return
         }
       } finally {

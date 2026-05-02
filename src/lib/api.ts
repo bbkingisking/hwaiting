@@ -14,6 +14,11 @@ interface CardResponse {
   wrong_guess_count: number
 }
 
+interface NextCardEnvelope {
+  card: CardResponse | null
+  next_due_at: string | null
+}
+
 interface ReviewRequest {
   rating: number // 1 = Again, 3 = Good
 }
@@ -74,7 +79,7 @@ interface GetNextCardOptions {
   signal?: AbortSignal
 }
 
-export async function getNextCard(options: GetNextCardOptions = {}): Promise<CardResponse> {
+export async function getNextCard(options: GetNextCardOptions = {}): Promise<NextCardEnvelope> {
   const params = new URLSearchParams()
   if (options.excludeWordId !== undefined) {
     params.set('exclude', String(options.excludeWordId))
@@ -326,15 +331,16 @@ export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCard
 }
 
 export { ApiError }
-export type { 
-  CardResponse, 
-  ReviewRequest, 
-  ReviewResponse, 
-  LanguageInfo, 
-  UserProfile, 
-  ImportResponse, 
-  StatsResponse, 
-  UserSettings, 
+export type {
+  CardResponse,
+  NextCardEnvelope,
+  ReviewRequest,
+  ReviewResponse,
+  LanguageInfo,
+  UserProfile,
+  ImportResponse,
+  StatsResponse,
+  UserSettings,
   UpdateSettingsRequest,
   CustomCard,
   CreateCustomCardRequest,
