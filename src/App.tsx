@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import * as LottieModule from 'lottie-react'
-const Lottie = (LottieModule as any).default || LottieModule
+import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
@@ -31,21 +30,13 @@ function AppContent() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [needsLanguage, setNeedsLanguage] = useState<boolean | null>(null)
   const [statsKey, setStatsKey] = useState(0)
-  const [animationData, setAnimationData] = useState<any>(null)
+
   const { isAuthenticated } = useAuth()
 
   // The next card prefetched in the background while the user works on
   // the current one. Held in a ref so async flows can read/write it
   // synchronously without triggering re-renders.
   const prefetchRef = useRef<PrefetchSlot | null>(null)
-
-  useEffect(() => {
-    // Load Lottie animation
-    fetch('/Taegeukgi.json')
-      .then(res => res.json())
-      .then(data => setAnimationData(data))
-      .catch(err => console.error('Failed to load animation:', err))
-  }, [])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -286,11 +277,13 @@ function AppContent() {
           </div>
         ) : noCards && !card ? (
           <div className="text-center text-muted-foreground">
-            {animationData && (
-              <div className="w-48 mx-auto mb-4">
-                <Lottie animationData={animationData} loop={true} />
-              </div>
-            )}
+            <div className="w-64 mx-auto mb-4">
+              <DotLottieReact
+                src="/Taegeukgi.json"
+                loop
+                autoplay
+              />
+            </div>
             <p className="mb-2">No cards to review right now</p>
             {nextDueAt && (() => {
               const formatted = formatTimeUntil(nextDueAt)
