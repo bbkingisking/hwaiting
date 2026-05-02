@@ -153,7 +153,7 @@ pub async fn get_next_card(
     // Get card statistics from review history
     let stats = sqlx::query(
         r#"
-        SELECT 
+        SELECT
             COUNT(*) as guess_count,
             SUM(CASE WHEN rating < 3 THEN 1 ELSE 0 END) as wrong_guess_count
         FROM review_history
@@ -167,7 +167,7 @@ pub async fn get_next_card(
 
     let guess_count: i64 = stats.get("guess_count");
     let wrong_guess_count: i64 = stats.get("wrong_guess_count");
-    
+
     let correct_rate = if guess_count > 0 {
         ((guess_count - wrong_guess_count) as f64 / guess_count as f64) * 100.0
     } else {
@@ -211,8 +211,8 @@ pub async fn submit_review(
 
     // Get existing card state if any
     let card_state_row = sqlx::query(
-        "SELECT stability, difficulty, last_review 
-         FROM card_states 
+        "SELECT stability, difficulty, last_review
+         FROM card_states
          WHERE user_id = ? AND word_id = ?",
     )
     .bind(user_id)
@@ -221,7 +221,7 @@ pub async fn submit_review(
     .await?;
 
     let fsrs = FSRS::new(Some(&DEFAULT_PARAMETERS)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
-    
+
     // Using default retention rate - can be customized per user via user_settings.desired_retention
     let desired_retention = 0.9;
 
@@ -234,7 +234,7 @@ pub async fn submit_review(
         let last_review_time = chrono::DateTime::parse_from_rfc3339(&last_review_str)
             .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?
             .with_timezone(&Utc);
-        
+
         let now = Utc::now();
         let elapsed_days = (now - last_review_time).num_days().max(0) as u32;
 
@@ -263,13 +263,10 @@ pub async fn submit_review(
         _ => next_states.good,
     };
 
-    // Calculate due date. Use seconds resolution so sub-day intervals from
-    // FSRS (typical for "Again" on new/young cards) are honored rather than
-    // being floored to a full day. 60s floor guards against pathological
-    // zero/negative values.
-    let interval_secs = (scheduled_state.interval as f64 * 86_400.0).max(60.0) as i64;
+    // new — matches Anki: whole days, minimum 1
+    let interval_days = scheduled_state.interval.round().max(1.0) as i64;
     let now = Utc::now();
-    let due_date = now + chrono::Duration::seconds(interval_secs);
+    let due_date = now + chrono::Duration::days(interval_days);
 
     // Update or insert card state (only FSRS essentials)
     sqlx::query(
@@ -474,7 +471,7 @@ pub async fn list_suppressed_cards(
 
     let rows = sqlx::query(
         r#"
-        SELECT 
+        SELECT
             w.id, w.form, w.hint, w.context, w.context_translation,
             w.grammar, w.politeness
         FROM words w
@@ -517,8 +514,8 @@ pub async fn unsuppress_card(
     // Update card_states to mark as not suppressed
     sqlx::query(
         r#"
-        UPDATE card_states 
-        SET suppressed = 0 
+        UPDATE card_states
+        SET suppressed = 0
         WHERE user_id = ? AND word_id = ?
         "#,
     )
