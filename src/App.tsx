@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import LottieModule from 'lottie-react'
-const Lottie = LottieModule.default || LottieModule
+import * as LottieModule from 'lottie-react'
+const Lottie = (LottieModule as any).default || LottieModule
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
