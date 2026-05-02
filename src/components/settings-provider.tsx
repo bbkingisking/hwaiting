@@ -24,13 +24,11 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(defaultSettings)
-  const [loading, setLoading] = useState(true)
   const { isAuthenticated } = useAuth()
 
   // Fetch settings from backend when authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      setLoading(false)
       return
     }
 
@@ -49,8 +47,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)
-      } finally {
-        setLoading(false)
       }
     }
 
@@ -95,7 +91,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SettingsContext.Provider value={{ settings, updateSettings }}>
-      {loading ? null : children}
+      {children}
     </SettingsContext.Provider>
   )
 }
