@@ -22,12 +22,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedToken = localStorage.getItem('annyeong-token')
     const storedUsername = localStorage.getItem('annyeong-username')
+    const storedIsAdmin = localStorage.getItem('annyeong-isadmin')
     if (storedToken && storedUsername) {
       setToken(storedToken)
       setUsername(storedUsername)
-      // Always check username to determine admin status
-      setIsAdmin(storedUsername === 'seok')
-      localStorage.setItem('annyeong-isadmin', storedUsername === 'seok' ? 'true' : 'false')
+      setIsAdmin(storedIsAdmin === 'true')
     }
     setLoading(false)
   }, [])
@@ -61,10 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(data.token)
     setUsername(data.username)
-    setIsAdmin(data.username === 'seok')
+    setIsAdmin(data.is_admin)
     localStorage.setItem('annyeong-token', data.token)
     localStorage.setItem('annyeong-username', data.username)
-    localStorage.setItem('annyeong-isadmin', data.username === 'seok' ? 'true' : 'false')
+    localStorage.setItem('annyeong-isadmin', data.is_admin ? 'true' : 'false')
 
     return { success: true }
   }
@@ -98,10 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(data.token)
     setUsername(data.username)
-    setIsAdmin(false)
+    setIsAdmin(data.is_admin)
     localStorage.setItem('annyeong-token', data.token)
     localStorage.setItem('annyeong-username', data.username)
-    localStorage.setItem('annyeong-isadmin', 'false')
+    localStorage.setItem('annyeong-isadmin', data.is_admin ? 'true' : 'false')
 
     return { success: true }
   }

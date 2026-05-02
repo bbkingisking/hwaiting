@@ -32,6 +32,7 @@ pub struct SignupRequest {
 pub struct AuthResponse {
     pub token: String,
     pub username: String,
+    pub is_admin: bool,
 }
 
 pub async fn login(
@@ -44,7 +45,7 @@ pub async fn login(
     info!("Login attempt for user: {}", username);
 
     // Check if user exists
-    let user = sqlx::query("SELECT id, username, password_hash FROM users WHERE username = ?")
+    let user = sqlx::query("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?")
         .bind(username)
         .fetch_optional(&pool)
         .await?;
@@ -58,6 +59,7 @@ pub async fn login(
             let user_id: i64 = row.get("id");
             let stored_username: String = row.get("username");
             let password_hash: String = row.get("password_hash");
+            let is_admin: bool = row.get("is_admin");
             
             // Parse the stored hash
             let parsed_hash = PasswordHash::new(&password_hash)?;
@@ -74,6 +76,7 @@ pub async fn login(
                 Ok(Json(AuthResponse {
                     token,
                     username: stored_username,
+                    is_admin,
                 }))
             } else {
                 warn!("Invalid password attempt for user: {}", username);
@@ -146,6 +149,9 @@ pub async fn signup(
     let user_id = result.last_insert_rowid();
     info!("User created successfully with id: {}", user_id);
 
+    // New users are not admins by default
+    let is_admin = false;
+
     // Mark invite code as used
     sqlx::query("UPDATE invite_codes SET used_at = CURRENT_TIMESTAMP, used_by_user_id = ? WHERE code = ?")
         .bind(user_id)
@@ -161,6 +167,7 @@ pub async fn signup(
     Ok(Json(AuthResponse {
         token,
         username: username.to_string(),
+        is_admin,
     }))
 }
 
