@@ -14,15 +14,7 @@ import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { Settings, Moon, Sun, LogOut, Plus, EyeOff } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
-// Map language codes to flag-icons classes
-const languageFlags: Record<string, string> = {
-  ko: 'fi-kr',
-  ja: 'fi-jp',
-  es: 'fi-es',
-  fr: 'fi-fr',
-  de: 'fi-de',
-  zh: 'fi-cn',
-}
+
 
 export function AppHeader() {
   const { username, isAuthenticated, logout } = useAuth()
@@ -65,7 +57,9 @@ export function AppHeader() {
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
         {targetLanguage && (
           <div className="px-2 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border">
-            <span className={`fi ${languageFlags[targetLanguage.code] || 'fi-xx'} text-lg`}></span>
+            {targetLanguage.code === 'ko' && (
+              <img src="/flag-kr.svg" alt="Korean flag" className="w-6 h-4" />
+            )}
           </div>
         )}
         

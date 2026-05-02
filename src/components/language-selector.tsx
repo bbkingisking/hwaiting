@@ -9,16 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-// Map language codes to flag-icons classes
-const languageFlags: Record<string, string> = {
-  ko: 'fi-kr',
-  ja: 'fi-jp',
-  es: 'fi-es',
-  fr: 'fi-fr',
-  de: 'fi-de',
-  zh: 'fi-cn',
-  // Add more as needed
-}
+
 
 interface LanguageSelectorProps {
   onLanguageSelected: () => void
@@ -105,7 +96,9 @@ export function LanguageSelector({ onLanguageSelected }: LanguageSelectorProps) 
               onClick={() => handleSelectLanguage(language.id)}
               disabled={submitting}
             >
-              <span className={`fi ${languageFlags[language.code] || 'fi-xx'} text-xl`}></span>
+              {language.code === 'ko' && (
+                <img src="/flag-kr.svg" alt="Korean flag" className="w-6 h-4" />
+              )}
               <span>{language.name}</span>
             </Button>
           ))}
