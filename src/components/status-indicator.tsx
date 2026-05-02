@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getStats } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-export function StatusIndicator() {
+export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () => void }) {
   const [dueCount, setDueCount] = useState<number | null>(null)
   const [percentage, setPercentage] = useState<number | null>(null)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
+  const prevDueRef = useRef(dueCount)
 
   useEffect(() => {
     fetchStats()
@@ -13,6 +14,14 @@ export function StatusIndicator() {
     const interval = setInterval(fetchStats, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Notify parent when cards transition from 0 to due
+  useEffect(() => {
+    if (prevDueRef.current !== null && prevDueRef.current === 0 && dueCount !== null && dueCount > 0) {
+      onCardsAvailable?.()
+    }
+    prevDueRef.current = dueCount
+  }, [dueCount, onCardsAvailable])
 
   const fetchStats = async () => {
     try {

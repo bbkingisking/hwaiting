@@ -318,7 +318,7 @@ function AppContent() {
           </div>
         )}
       </div>
-      {isAuthenticated && needsLanguage === false && <StatusIndicator key={statsKey} />}
+      {isAuthenticated && needsLanguage === false && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
     </>
   )
 }
