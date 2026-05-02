@@ -1,5 +1,5 @@
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/custom-cards", get(custom_cards::list_custom_cards))
         .route("/custom-cards", post(custom_cards::create_custom_card))
         .route("/custom-cards/{card_id}", get(custom_cards::get_custom_card))
-        .route("/custom-cards/{card_id}", post(custom_cards::update_custom_card))
+        .route("/custom-cards/{card_id}", patch(custom_cards::update_custom_card))
         .route("/custom-cards/{card_id}", delete(custom_cards::delete_custom_card))
         .route("/health", get(health_check))
         .with_state(pool);

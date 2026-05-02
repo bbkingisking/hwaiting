@@ -318,7 +318,7 @@ export async function getCustomCard(cardId: number): Promise<CustomCard> {
 export async function updateCustomCard(cardId: number, updates: UpdateCustomCardRequest): Promise<UpdateCustomCardResponse> {
   const url = `${window.location.origin}/api/custom-cards/${cardId}`
   return fetchWithAuth(url, {
-    method: 'POST',
+    method: 'PATCH',
     body: JSON.stringify(updates),
   })
 }
