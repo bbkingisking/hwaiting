@@ -139,8 +139,11 @@ function AppContent() {
 
   // Cold load: blocks the UI with a loading state. Used for the very
   // first card, after errors, and after suppression.
-  const loadCardCold = async () => {
+  // `waitFor` defers the fetch until a pending review submission has
+  // been persisted, so the DB doesn't return the just-reviewed card.
+  const loadCardCold = async (waitFor?: Promise<unknown>) => {
     cancelPrefetch()
+    if (waitFor) await waitFor
     setLoading(true)
     setError(null)
     setNoCards(false)
@@ -209,7 +212,8 @@ function AppContent() {
     }
 
     // Cold path: no prefetch available, do a regular fetch.
-    await loadCardCold()
+    // Wait for the review submission so the DB reflects the updated due_date.
+    await loadCardCold(waitForBeforePrefetch)
   }
 
   // Optimistic review: advance immediately, submit in the background.
@@ -294,7 +298,7 @@ function AppContent() {
           <div className="text-center">
             <p className="text-destructive mb-4">{error}</p>
             <button
-              onClick={loadCardCold}
+              onClick={() => loadCardCold()}
               className="text-sm text-primary hover:underline"
             >
               Try again
