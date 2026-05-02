@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, splitSentence } from '@/lib/utils'
+import { cn, splitSentence, getPercentageColor } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -81,13 +81,6 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     }
   }
 
-  const getPercentageColor = () => {
-    const rate = card.correct_rate
-    if (rate >= settings.yellowThreshold) return 'text-green-600 dark:text-green-500'
-    if (rate >= settings.redThreshold) return 'text-yellow-600 dark:text-yellow-500'
-    return 'text-destructive'
-  }
-
   const handleSuppress = async () => {
     if (suppressing) return
     setSuppressing(true)
@@ -111,7 +104,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
             </span>
           ) : (
             settings.showPercentage && (
-              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getPercentageColor())}>
+              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getPercentageColor(card.correct_rate, settings))}>
                 {Math.round(card.correct_rate)}%
               </span>
             )

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { getStats } from '@/lib/api'
-import { cn, formatTimeUntil } from '@/lib/utils'
+import { cn, formatTimeUntil, getPercentageColor } from '@/lib/utils'
+import { useSettings } from '@/components/settings-provider'
 
 export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () => void }) {
+  const { settings } = useSettings()
   const [dueCount, setDueCount] = useState<number | null>(null)
   const [percentage, setPercentage] = useState<number | null>(null)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
@@ -34,13 +36,6 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
     }
   }
 
-  const getPercentageColor = () => {
-    if (percentage === null) return ''
-    if (percentage >= 70) return 'text-green-600 dark:text-green-500'
-    if (percentage >= 50) return 'text-yellow-600 dark:text-yellow-500'
-    return 'text-destructive'
-  }
-
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 text-sm text-muted-foreground">
       {dueCount !== null && (
@@ -57,7 +52,7 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
           })()}
         </span>
       )}
-      <span className={cn(percentage !== null && getPercentageColor())}>
+      <span className={cn(percentage !== null && getPercentageColor(percentage, settings))}>
         {percentage !== null ? `${percentage}%` : '—'}
       </span>
     </div>
