@@ -12,6 +12,7 @@ import { StatusIndicator } from '@/components/status-indicator'
 import { getNextCard, submitReview, getUserProfile, ApiError } from '@/lib/api'
 import type { NextCardEnvelope } from '@/lib/api'
 import type { Card } from '@/lib/types'
+import { formatTimeUntil } from '@/lib/utils'
 
 // Tracks a background fetch for the next card. The same slot moves
 // through three states: in-flight (result === null, promise pending),
@@ -68,18 +69,6 @@ function AppContent() {
   const handleLanguageSelected = () => {
     setNeedsLanguage(false)
     loadCardCold()
-  }
-
-  const formatTimeUntil = (isoTimestamp: string): string | null => {
-    const now = new Date()
-    const due = new Date(isoTimestamp)
-    const diffMs = due.getTime() - now.getTime()
-    if (diffMs <= 0) return null
-    const diffMinutes = Math.floor(diffMs / 60000)
-    const hours = Math.floor(diffMinutes / 60)
-    const minutes = diffMinutes % 60
-    if (hours > 0) return `${hours}h ${minutes}m`
-    return `${minutes}m`
   }
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getStats } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatTimeUntil } from '@/lib/utils'
 
 export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () => void }) {
   const [dueCount, setDueCount] = useState<number | null>(null)
@@ -31,27 +31,6 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
       setNextDueAt(stats.next_due_at)
     } catch (err) {
       console.error('Failed to fetch stats:', err)
-    }
-  }
-
-  const formatTimeUntil = (isoTimestamp: string): string | null => {
-    const now = new Date()
-    const due = new Date(isoTimestamp)
-    const diffMs = due.getTime() - now.getTime()
-    
-    // Don't show if already due (edge case during refresh)
-    if (diffMs <= 0) {
-      return null
-    }
-    
-    const diffMinutes = Math.floor(diffMs / 60000)
-    const hours = Math.floor(diffMinutes / 60)
-    const minutes = diffMinutes % 60
-    
-    if (hours > 0) {
-      return `${hours}h${minutes}m`
-    } else {
-      return `${minutes}m`
     }
   }
 

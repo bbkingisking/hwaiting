@@ -24,3 +24,16 @@ export function splitSentence(sentence: string, target: string): { before: strin
     after: sentence.slice(idx + target.length),
   }
 }
+
+// Format time until a due date in a human-readable format
+export function formatTimeUntil(isoTimestamp: string): string | null {
+  const now = new Date()
+  const due = new Date(isoTimestamp)
+  const diffMs = due.getTime() - now.getTime()
+  if (diffMs <= 0) return null
+  const diffMinutes = Math.floor(diffMs / 60000)
+  const hours = Math.floor(diffMinutes / 60)
+  const minutes = diffMinutes % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
