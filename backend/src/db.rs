@@ -37,10 +37,17 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
         Argon2,
     };
 
+    // Get admin credentials from environment variables
+    let admin_username = env::var("ADMIN_USERNAME")
+        .expect("ADMIN_USERNAME environment variable must be set");
+    let admin_password = env::var("ADMIN_PASSWORD")
+        .expect("ADMIN_PASSWORD environment variable must be set");
+
     // Check if admin user already exists
     let admin_exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM users WHERE username = 'seok'"
+        "SELECT id FROM users WHERE username = ?"
     )
+    .bind(&admin_username)
     .fetch_optional(pool)
     .await?;
 
@@ -49,13 +56,13 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
         return Ok(None);
     }
 
-    info!("Creating admin user: seok");
+    info!("Creating admin user: {}", admin_username);
 
-    // Hash the password "long"
+    // Hash the password
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
     let password_hash = argon2
-        .hash_password(b"long", &salt)
+        .hash_password(admin_password.as_bytes(), &salt)
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
@@ -70,15 +77,16 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
     sqlx::query(
         "INSERT INTO users (username, password_hash, is_admin, target_language_id) VALUES (?, ?, 1, ?)"
     )
-    .bind("seok")
+    .bind(&admin_username)
     .bind(&password_hash)
     .bind(korean_id)
     .execute(pool)
     .await?;
 
     let user_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM users WHERE username = 'seok'"
+        "SELECT id FROM users WHERE username = ?"
     )
+    .bind(&admin_username)
     .fetch_one(pool)
     .await?;
 
