@@ -222,8 +222,14 @@ pub async fn submit_review(
 
     let fsrs = FSRS::new(None).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
-    // Using default retention rate - can be customized per user via user_settings.desired_retention
-    let desired_retention = 0.9;
+    // Fetch user's desired retention setting
+    let desired_retention: f64 = sqlx::query_scalar(
+        "SELECT desired_retention FROM user_settings WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?
+    .unwrap_or(0.9);
 
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state
@@ -251,7 +257,7 @@ pub async fn submit_review(
 
     // Get next states from FSRS
     let next_states = fsrs
-        .next_states(memory_state, desired_retention, elapsed_days)
+        .next_states(memory_state, desired_retention as f32, elapsed_days)
         .map_err(|e| AppError::Internal(format!("FSRS error: {:?}", e)))?;
 
     // Select the appropriate state based on rating

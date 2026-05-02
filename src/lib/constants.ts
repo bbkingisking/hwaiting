@@ -19,6 +19,14 @@ export const DEFAULT_SETTINGS = {
   AUTO_PROGRESS_ON_CORRECT: true,
   AUTO_PROGRESS_DELAY: 0,
   SUPPRESS_NEW_CARDS: false,
+  DESIRED_RETENTION: 0.9,
+} as const
+
+// Desired retention constraints
+export const DESIRED_RETENTION_CONSTRAINTS = {
+  MIN: 0.5,
+  MAX: 0.99,
+  STEP: 0.01,
 } as const
 
 // Color thresholds

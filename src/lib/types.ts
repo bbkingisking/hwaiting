@@ -7,6 +7,7 @@ export interface Settings {
   autoProgressOnCorrect: boolean
   autoProgressDelay: number
   suppressNewCards: boolean
+  desiredRetention: number
 }
 
 // Word types

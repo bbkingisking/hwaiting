@@ -17,6 +17,7 @@ const defaultSettings: Settings = {
   autoProgressOnCorrect: DEFAULT_SETTINGS.AUTO_PROGRESS_ON_CORRECT,
   autoProgressDelay: DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
   suppressNewCards: DEFAULT_SETTINGS.SUPPRESS_NEW_CARDS,
+  desiredRetention: DEFAULT_SETTINGS.DESIRED_RETENTION,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -44,6 +45,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           autoProgressOnCorrect: userSettings.auto_progress_on_correct,
           autoProgressDelay: userSettings.auto_progress_delay ?? DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
           suppressNewCards: userSettings.suppress_new_cards,
+          desiredRetention: userSettings.desired_retention,
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)
@@ -82,6 +84,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           auto_progress_on_correct: updates.autoProgressOnCorrect,
           auto_progress_delay: updates.autoProgressDelay,
           suppress_new_cards: updates.suppressNewCards,
+          desired_retention: updates.desiredRetention,
         })
       } catch (err) {
         console.error('Failed to update settings:', err)

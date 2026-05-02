@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/accordion'
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
-import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS } from '@/lib/constants'
+import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
 import { exportUserData, importUserData, type ImportResponse } from '@/lib/api'
 
 interface InviteCode {
@@ -323,6 +323,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 />
                 <p className="text-xs text-muted-foreground">
                   Reviews before this hour count as the previous day
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="desired-retention">Desired retention</Label>
+                  <span className="text-sm text-muted-foreground">
+                    {Math.round(settings.desiredRetention * 100)}%
+                  </span>
+                </div>
+                <Slider
+                  id="desired-retention"
+                  min={DESIRED_RETENTION_CONSTRAINTS.MIN * 100}
+                  max={DESIRED_RETENTION_CONSTRAINTS.MAX * 100}
+                  step={DESIRED_RETENTION_CONSTRAINTS.STEP * 100}
+                  value={settings.desiredRetention * 100}
+                  onValueChange={(value) => updateSettings({ desiredRetention: (value as number) / 100 })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Target probability of recalling a card at review time. Higher = more frequent reviews, lower = fewer reviews
                 </p>
               </div>
             </AccordionContent>

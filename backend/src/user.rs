@@ -117,6 +117,7 @@ pub struct UserSettings {
     pub day_boundary_hour: i64,
     pub auto_progress_on_correct: bool,
     pub suppress_new_cards: bool,
+    pub desired_retention: f64,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +128,7 @@ pub struct UpdateSettingsRequest {
     pub day_boundary_hour: Option<i64>,
     pub auto_progress_on_correct: Option<bool>,
     pub suppress_new_cards: Option<bool>,
+    pub desired_retention: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -479,7 +481,7 @@ pub async fn get_settings(
 
     let row = sqlx::query(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, suppress_new_cards
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, suppress_new_cards, desired_retention
         FROM user_settings
         WHERE user_id = ?
         "#
@@ -495,6 +497,7 @@ pub async fn get_settings(
         day_boundary_hour: row.get("day_boundary_hour"),
         auto_progress_on_correct: row.get("auto_progress_on_correct"),
         suppress_new_cards: row.get("suppress_new_cards"),
+        desired_retention: row.get("desired_retention"),
     }))
 }
 
@@ -567,6 +570,17 @@ pub async fn update_settings(
     if let Some(suppress_new_cards) = payload.suppress_new_cards {
         sqlx::query("UPDATE user_settings SET suppress_new_cards = ? WHERE user_id = ?")
             .bind(suppress_new_cards)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+    }
+
+    if let Some(desired_retention) = payload.desired_retention {
+        if desired_retention < 0.5 || desired_retention > 0.99 {
+            return Err(AppError::Internal("desired_retention must be between 0.5 and 0.99".to_string()));
+        }
+        sqlx::query("UPDATE user_settings SET desired_retention = ? WHERE user_id = ?")
+            .bind(desired_retention)
             .bind(user_id)
             .execute(&pool)
             .await?;
