@@ -96,8 +96,8 @@ export function LanguageSelector({ onLanguageSelected }: LanguageSelectorProps) 
               onClick={() => handleSelectLanguage(language.id)}
               disabled={submitting}
             >
-              {language.code === 'ko' && (
-                <img src="/flag-kr.svg" alt="Korean flag" className="w-6 h-4" />
+              {language.icon && (
+                <img src={`/${language.icon}`} alt={`${language.name} flag`} className="w-6 h-4" />
               )}
               <span>{language.name}</span>
             </Button>

@@ -57,8 +57,8 @@ export function AppHeader() {
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
         {targetLanguage && (
           <div className="px-2 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border">
-            {targetLanguage.code === 'ko' && (
-              <img src="/flag-kr.svg" alt="Korean flag" className="w-6 h-4" />
+            {targetLanguage.icon && (
+              <img src={`/${targetLanguage.icon}`} alt={`${targetLanguage.name} flag`} className="w-6 h-4" />
             )}
           </div>
         )}

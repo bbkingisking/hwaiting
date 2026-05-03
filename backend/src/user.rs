@@ -54,6 +54,7 @@ pub struct LanguageInfo {
     pub id: i64,
     pub code: String,
     pub name: String,
+    pub icon: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -152,7 +153,8 @@ pub async fn get_profile(
             u.username,
             l.id as lang_id,
             l.code as lang_code,
-            l.name as lang_name
+            l.name as lang_name,
+            l.icon as lang_icon
         FROM users u
         LEFT JOIN languages l ON l.id = u.target_language_id
         WHERE u.id = ?
@@ -170,6 +172,7 @@ pub async fn get_profile(
             id,
             code: row.get("lang_code"),
             name: row.get("lang_name"),
+            icon: row.get("lang_icon"),
         })
     } else {
         None
@@ -187,7 +190,7 @@ pub async fn get_languages(
 ) -> Result<Json<Vec<LanguageInfo>>, AppError> {
     info!("Getting list of available languages");
 
-    let rows = sqlx::query("SELECT id, code, name FROM languages ORDER BY name")
+    let rows = sqlx::query("SELECT id, code, name, icon FROM languages ORDER BY name")
         .fetch_all(&pool)
         .await?;
 
@@ -197,6 +200,7 @@ pub async fn get_languages(
             id: row.get("id"),
             code: row.get("code"),
             name: row.get("name"),
+            icon: row.get("icon"),
         })
         .collect();
 

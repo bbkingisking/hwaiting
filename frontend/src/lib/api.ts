@@ -31,6 +31,7 @@ interface LanguageInfo {
   id: number
   code: string
   name: string
+  icon: string | null
 }
 
 interface UserProfile {
