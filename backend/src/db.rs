@@ -14,6 +14,25 @@ struct DeckManifestEntry {
     file: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeckFile {
+    cards: Vec<Card>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Card {
+    form: String,
+    #[allow(dead_code)]
+    lemma: Option<String>,
+    pos: Option<String>,
+    grammatical_note: Option<String>,
+    translation: String,
+    example: String,
+    example_translation: Option<String>,
+}
+
 fn read_manifest() -> anyhow::Result<Vec<DeckManifestEntry>> {
     let manifest_path = Path::new("./decks/manifest.json");
     if !manifest_path.exists() {
@@ -154,7 +173,7 @@ async fn seed_decks_from_manifest(pool: &SqlitePool, manifest: &[DeckManifestEnt
         .fetch_one(pool)
         .await?;
 
-        // Read the JSONL file
+        // Read the deck file
         let file_path = decks_path.join(&entry.file);
         if !file_path.exists() {
             info!("Deck file {} not found, skipping", entry.file);
@@ -162,31 +181,16 @@ async fn seed_decks_from_manifest(pool: &SqlitePool, manifest: &[DeckManifestEnt
         }
 
         let contents = fs::read_to_string(&file_path)?;
-        let lines: Vec<&str> = contents.lines().collect();
+        let deck: DeckFile = serde_json::from_str(&contents)?;
 
         let mut deck_word_count = 0;
 
-        // Skip first line (metadata) and process vocabulary entries
-        for line in lines.iter().skip(1) {
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            let word_entry: serde_json::Value = serde_json::from_str(line)?;
-
-            // Extract word data (skip review history fields)
-            let homograph = &word_entry["homographs"][0];
-            let sense = &homograph["senses"][0];
-            let translation = &sense["translations"][0];
-            let context = &sense["contexts"][0];
-
-            let form = homograph["form"].as_str().unwrap_or("");
-
+        for card in &deck.cards {
             // Skip if word already exists
             let existing: Option<i64> = sqlx::query_scalar(
                 "SELECT id FROM words WHERE form = ? AND language_id = ?"
             )
-            .bind(form)
+            .bind(&card.form)
             .bind(language_id)
             .fetch_optional(pool)
             .await?;
@@ -195,49 +199,25 @@ async fn seed_decks_from_manifest(pool: &SqlitePool, manifest: &[DeckManifestEnt
                 continue;
             }
 
-            let hint = translation["translation"].as_str().unwrap_or("");
-            let context_text = context["context"].as_str().unwrap_or("");
-            let context_translation = context["translations"][0]["translation"].as_str().unwrap_or("");
-            let grammar = homograph["parsed_grammar"]["fragments"][0]["full"].as_str();
-
-            // Extract politeness from comments
-            let empty_vec = vec![];
-            let comments = translation["comments"].as_array().unwrap_or(&empty_vec);
-            let politeness_patterns = [
-                "formal and casual speech",
-                "formal and polite speech",
-                "informal and casual speech",
-                "informal and polite speech",
-                "informal or formal situations",
-            ];
-
-            let mut politeness: Option<String> = None;
-            let mut notes = Vec::new();
-
-            for comment in comments {
-                if let Some(comment_text) = comment["comment"].as_str() {
-                    if politeness_patterns.iter().any(|p| comment_text.to_lowercase().contains(p)) {
-                        politeness = Some(comment_text.to_string());
-                    } else {
-                        notes.push(comment_text.to_string());
-                    }
-                }
-            }
-
-            let notes_json = serde_json::to_string(&notes)?;
+            let hint = &card.translation;
+            let context_text = &card.example;
+            let context_translation = card.example_translation.as_deref().unwrap_or("");
+            let grammar = card.pos.as_deref();
+            let politeness = card.grammatical_note.as_deref();
+            let notes_json = "[]";
 
             // Insert word with language_id (no review history)
             sqlx::query(
                 "INSERT INTO words (form, hint, context, context_translation, grammar, politeness, notes, language_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            .bind(form)
+            .bind(&card.form)
             .bind(hint)
             .bind(context_text)
             .bind(context_translation)
             .bind(grammar)
             .bind(politeness)
-            .bind(&notes_json)
+            .bind(notes_json)
             .bind(language_id)
             .execute(pool)
             .await?;
