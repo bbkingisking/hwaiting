@@ -60,9 +60,21 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   }, [answered, handleAdvance])
 
   // Split sentence at target word position
-  const targetIndex = card.sentence.indexOf(card.target)
-  const before = targetIndex > 0 ? card.sentence.substring(0, targetIndex) : ''
-  const after = targetIndex >= 0 ? card.sentence.substring(targetIndex + card.target.length) : ''
+  // Note: card.target is the conjugated form, but sentence might contain base form
+  // We use the 'target' field from the sentence which indicates the exact match position
+  const targetStart = card.sentence.indexOf(card.target)
+  let before = ''
+  let after = ''
+  
+  if (targetStart >= 0) {
+    before = card.sentence.substring(0, targetStart)
+    after = card.sentence.substring(targetStart + card.target.length)
+  } else {
+    // Fallback: if exact match not found, just show the full sentence
+    console.warn('Target word not found in sentence:', { target: card.target, sentence: card.sentence })
+    before = card.sentence
+    after = ''
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -156,8 +168,8 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          <p className="text-2xl md:text-3xl font-semibold leading-snug text-center flex flex-wrap items-baseline justify-center gap-1">
-            <span>{before}</span>
+          <p className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
+            {before}
             {isAutoProgressing ? (
               // Show green answer during auto-progress for positive feedback
               <span className="text-green-600">{card.target}</span>
@@ -175,9 +187,9 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                 </span>
               )
             ) : (
-              <span className="inline-flex flex-col items-center">
+              <span className="inline-flex items-center relative">
                 {card.hanja && (
-                  <span className="text-xs text-muted-foreground/60 mb-0.5">
+                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-sm text-muted-foreground/60 whitespace-nowrap">
                     {card.hanja}
                   </span>
                 )}
@@ -198,7 +210,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                 />
               </span>
             )}
-            <span>{after}</span>
+            {after}
           </p>
         </form>
 
