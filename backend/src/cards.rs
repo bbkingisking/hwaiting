@@ -145,7 +145,9 @@ pub async fn get_next_card(
         )
         ORDER BY
             CASE WHEN cs.last_review IS NULL THEN 1 ELSE 0 END,
-            datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') ASC
+            datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') ASC,
+            c.frequency_rank ASC NULLS LAST,
+            RANDOM()
         LIMIT 1
         "#,
         new_card_filter
