@@ -106,7 +106,7 @@ pub async fn get_next_card(
         .map(|v| v != 0)
         .unwrap_or(false);
 
-    // Get next due card (prioritize due cards by last_review, then new cards)
+    // Get next due card (prioritize due cards by due date, then new cards)
     // Exclude suspended cards via user_card_flags
     // Optionally skip a specific card_id (used for client-side prefetch)
     // When suppress_new_cards is enabled, exclude never-reviewed cards
@@ -126,7 +126,7 @@ pub async fn get_next_card(
             s.text as sentence, s.target,
             st.translation as sentence_translation,
             sih.speech_level, sih.tense,
-            cs.difficulty, cs.last_review
+            cs.difficulty, cs.last_review, cs.stability
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
@@ -139,9 +139,13 @@ pub async fn get_next_card(
         {}
         AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         AND c.id != ?
+        AND (
+            cs.last_review IS NULL
+            OR datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
+        )
         ORDER BY
             CASE WHEN cs.last_review IS NULL THEN 1 ELSE 0 END,
-            cs.last_review ASC
+            datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') ASC
         LIMIT 1
         "#,
         new_card_filter
@@ -159,13 +163,13 @@ pub async fn get_next_card(
         // No card available — find when the next one becomes due
         let next_due_at: Option<String> = sqlx::query_scalar(
             r#"
-            SELECT MIN(cs.last_review)
+            SELECT MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days'))
             FROM cards c
             LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
             INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
             LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
             WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-            AND datetime(cs.last_review) > datetime('now')
+            AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
             AND (ucf.suspended IS NULL OR ucf.suspended = 0)
             "#,
         )
@@ -526,13 +530,13 @@ pub async fn get_stats(
     // Find when the next card becomes due
     let next_due_at: Option<String> = sqlx::query_scalar(
         r#"
-        SELECT MIN(cs.last_review)
+        SELECT MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days'))
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND datetime(cs.last_review) > datetime('now')
+        AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
         AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         "#,
     )
