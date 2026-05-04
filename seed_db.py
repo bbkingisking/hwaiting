@@ -29,7 +29,7 @@ def extract_sentence_with_target(full_text, target):
     3. Split that part by period to get individual sentences
     4. Return the first sentence with the target
     
-    Returns: (sentence, part_index) tuple
+    Returns: (sentence, part_index, original_part) tuple
     """
     if not full_text or not target:
         return full_text, 0
@@ -48,7 +48,11 @@ def extract_sentence_with_target(full_text, target):
     
     if not target_part:
         # Target not found, return first part
-        return (parts[0] if parts else full_text), 0
+        first_part = parts[0] if parts else full_text
+        return first_part, 0, first_part
+    
+    # Store original part before splitting
+    original_part = target_part
     
     # Split by period to get individual sentences
     sentences = [s.strip() for s in target_part.split('.') if s.strip()]
@@ -59,60 +63,77 @@ def extract_sentence_with_target(full_text, target):
             # Add period back if it doesn't end with punctuation
             if not sentence[-1] in '.!?':
                 sentence += '.'
-            return sentence, part_index
+            return sentence, part_index, original_part
     
     # Fallback: return the target part with period if needed
     if not target_part[-1] in '.!?':
         target_part += '.'
-    return target_part, part_index
+    return target_part, part_index, original_part
 
-def extract_corresponding_translation(translation_text, part_index):
+def extract_corresponding_translation(translation_text, part_index, korean_part, korean_full_text, original_korean_part):
     """
     Extract the sentence from translation that corresponds to the same dialogue part.
     
     Args:
         translation_text: Full translation text (may have multiple parts)
         part_index: Which dialogue part to extract (0-indexed)
+        korean_part: The extracted Korean text to match sentence count
+        korean_full_text: The original full Korean text to count preceding sentences
+        original_korean_part: The untrimmed Korean part before sentence extraction
     """
     if not translation_text:
         return translation_text
+    
+    import re
+    
+    # Count sentences in the ORIGINAL Korean part (before sentence extraction)
+    # This ensures we match the correct number of English sentences
+    korean_sentence_count = len(re.findall(r'[.!?]', original_korean_part))
+    if korean_sentence_count == 0:
+        korean_sentence_count = 1
     
     # Split by newline (for dialogues)
     parts = [p.strip() for p in translation_text.split('\n') if p.strip()]
     
     # Check if translation has multiple parts by newline
     if len(parts) > 1 and part_index < len(parts):
-        # Use the corresponding part
+        # Use the corresponding part (entire part, not just first sentence)
         target_part = parts[part_index]
+        if target_part and not target_part[-1] in '.!?':
+            target_part += '.'
+        return target_part
     else:
-        # Translation is a single paragraph - split by sentence boundaries instead
+        # Translation is a single paragraph - need to extract matching number of sentences
         # Split by sentence-ending punctuation (. ? !)
-        import re
         sentences = re.split(r'(?<=[.!?])\s+', translation_text)
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        if part_index < len(sentences):
-            return sentences[part_index]
+        # Count how many sentences come before part_index in Korean
+        korean_parts = [p.strip() for p in korean_full_text.split('\n') if p.strip()]
+        sentences_before = 0
+        for i in range(min(part_index, len(korean_parts))):
+            sentences_before += len(re.findall(r'[.!?]', korean_parts[i]))
+        
+        # Extract the corresponding sentences from English
+        start_idx = sentences_before
+        end_idx = start_idx + korean_sentence_count
+        
+        if start_idx < len(sentences) and end_idx <= len(sentences):
+            result_sentences = sentences[start_idx:end_idx]
+            result = ' '.join(result_sentences)
+            if result and not result[-1] in '.!?':
+                result += '.'
+            return result
+        elif start_idx < len(sentences):
+            # Take remaining sentences if we don't have enough
+            result_sentences = sentences[start_idx:]
+            result = ' '.join(result_sentences)
+            if result and not result[-1] in '.!?':
+                result += '.'
+            return result
         else:
-            # Fallback to first sentence
-            target_part = sentences[0] if sentences else translation_text
-            if target_part and not target_part[-1] in '.!?':
-                target_part += '.'
-            return target_part
-    
-    # Split by period to get first sentence from the target part
-    sentences = [s.strip() for s in target_part.split('.') if s.strip()]
-    if sentences:
-        result = sentences[0]
-        # Add period back if needed
-        if not result[-1] in '.!?':
-            result += '.'
-        return result
-    
-    # Fallback
-    if target_part and not target_part[-1] in '.!?':
-        target_part += '.'
-    return target_part
+            # Fallback: return entire translation if indexing doesn't work
+            return translation_text
 
 def main():
     db_path = Path("hwaiting.db")
@@ -184,7 +205,7 @@ def main():
                 
                 if korean_sentence and target:
                     # Extract single sentence containing target word (returns tuple)
-                    extracted_sentence, part_index = extract_sentence_with_target(korean_sentence, target)
+                    extracted_sentence, part_index, original_part = extract_sentence_with_target(korean_sentence, target)
                     
                     sql_statements.append(
                         f"INSERT INTO sentences (card_id, text, target) "
@@ -196,8 +217,8 @@ def main():
                     # Insert sentence translation
                     sentence_translation = card_content.get('sentence_translation')
                     if sentence_translation:
-                        # Extract corresponding sentence from translation using the same part_index
-                        extracted_translation = extract_corresponding_translation(sentence_translation, part_index)
+                        # Extract corresponding sentence from translation using the same part_index and Korean text
+                        extracted_translation = extract_corresponding_translation(sentence_translation, part_index, extracted_sentence, korean_sentence, original_part)
                         
                         sql_statements.append(
                             f"INSERT INTO sentence_translations (sentence_id, translation) "

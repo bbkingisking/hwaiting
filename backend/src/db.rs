@@ -8,15 +8,12 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
         .expect("DATABASE_URL environment variable must be set");
 
     let options = SqliteConnectOptions::from_str(&database_url)?
-        .create_if_missing(true);
+        .create_if_missing(false);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect_with(options)
         .await?;
-
-    // Run migrations
-    sqlx::migrate!("./migrations").run(&pool).await?;
 
     // Seed admin user if doesn't exist
     seed_admin_user(&pool).await?;
