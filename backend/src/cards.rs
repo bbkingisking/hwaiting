@@ -17,14 +17,21 @@ pub struct ReviewRequest {
 
 #[derive(Serialize)]
 pub struct NextCardResponse {
-    word_id: i64,
-    form: String,
-    hint: String,
-    context: String,
-    context_translation: String,
-    grammar: Option<String>,
-    politeness: Option<String>,
-    notes: Vec<String>,
+    card_id: i64,
+    word: String,
+    definition: Option<String>,
+    pos: Option<String>,
+    origin_type: Option<String>,
+    hanja: Option<String>,
+    hanja_eum: Option<String>,
+    grade: Option<String>,
+    trans_word: String,
+    trans_dfn: Option<String>,
+    sentence: String,
+    sentence_translation: String,
+    target: String,
+    speech_level: Option<String>,
+    tense: Option<String>,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
@@ -38,13 +45,13 @@ pub struct NextCardEnvelope {
 
 #[derive(Serialize)]
 pub struct SuppressedCard {
-    word_id: i64,
-    form: String,
-    hint: String,
-    context: String,
-    context_translation: String,
-    grammar: Option<String>,
-    politeness: Option<String>,
+    card_id: i64,
+    word: String,
+    trans_word: String,
+    sentence: String,
+    sentence_translation: String,
+    pos: Option<String>,
+    grade: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -86,77 +93,84 @@ pub async fn get_next_card(
         user_id, params.exclude
     );
 
-    // Get user's target language and settings
+    // Get user settings
     let user_row = sqlx::query(
-        "SELECT target_language_id, suppress_new_cards FROM users u LEFT JOIN user_settings us ON us.user_id = u.id WHERE u.id = ?"
+        "SELECT suppress_new_cards FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await?;
 
-    let target_language_id: Option<i64> = user_row.get("target_language_id");
-    let suppress_new_cards: Option<bool> = user_row.get("suppress_new_cards");
-    let suppress_new_cards = suppress_new_cards.unwrap_or(false);
+    let suppress_new_cards = user_row
+        .and_then(|r| r.get::<Option<i64>, _>("suppress_new_cards"))
+        .map(|v| v != 0)
+        .unwrap_or(false);
 
-    let target_language_id = target_language_id
-        .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
-
-    // Get next due card (prioritize due cards by date, then new cards)
-    // Filter by user's target language and exclude suppressed cards.
-    // Optionally skip a specific word_id (used for client-side prefetch so
-    // the prefetched card isn't the same as the one currently displayed).
-    // When suppress_new_cards is enabled, exclude never-reviewed cards.
+    // Get next due card (prioritize due cards by last_review, then new cards)
+    // Exclude suspended cards via user_card_flags
+    // Optionally skip a specific card_id (used for client-side prefetch)
+    // When suppress_new_cards is enabled, exclude never-reviewed cards
     let exclude_id = params.exclude.unwrap_or(-1);
+    
     let new_card_filter = if suppress_new_cards {
-        "AND cs.due_date IS NOT NULL AND datetime(cs.due_date) <= datetime('now')"
+        "AND cs.last_review IS NOT NULL"
     } else {
-        "AND (cs.due_date IS NULL OR datetime(cs.due_date) <= datetime('now'))"
+        ""
     };
 
     let query = format!(
         r#"
         SELECT
-            w.id, w.form, w.hint, w.context, w.context_translation,
-            w.grammar, w.politeness, w.notes,
-            cs.due_date, cs.difficulty
-        FROM words w
-        LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE w.language_id = ?
-        AND (w.user_id IS NULL OR w.user_id = ?)
+            c.id, c.word, c.definition, c.pos, c.origin_type, c.hanja, c.hanja_eum, c.grade,
+            ct.trans_word, ct.trans_dfn,
+            s.text as sentence, s.target,
+            st.translation as sentence_translation,
+            sih.speech_level, sih.tense,
+            cs.difficulty, cs.last_review
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN sentences s ON c.id = s.card_id
+        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         {}
-        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
-        AND w.id != ?
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND c.id != ?
         ORDER BY
-            CASE WHEN cs.due_date IS NULL THEN 1 ELSE 0 END,
-            cs.due_date ASC
+            CASE WHEN cs.last_review IS NULL THEN 1 ELSE 0 END,
+            cs.last_review ASC
         LIMIT 1
         "#,
         new_card_filter
     );
 
     let row = sqlx::query(&query)
-    .bind(user_id)
-    .bind(target_language_id)
-    .bind(user_id)
-    .bind(exclude_id)
-    .fetch_optional(&pool)
-    .await?;
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(exclude_id)
+        .fetch_optional(&pool)
+        .await?;
 
     let Some(row) = row else {
         // No card available — find when the next one becomes due
         let next_due_at: Option<String> = sqlx::query_scalar(
             r#"
-            SELECT MIN(cs.due_date)
-            FROM words w
-            INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-            WHERE w.language_id = ?
-            AND (w.user_id IS NULL OR w.user_id = ?)
-            AND datetime(cs.due_date) > datetime('now')
-            AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+            SELECT MIN(cs.last_review)
+            FROM cards c
+            LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+            INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+            LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+            WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+            AND datetime(cs.last_review) > datetime('now')
+            AND (ucf.suspended IS NULL OR ucf.suspended = 0)
             "#,
         )
         .bind(user_id)
-        .bind(target_language_id)
+        .bind(user_id)
         .bind(user_id)
         .fetch_optional(&pool)
         .await?;
@@ -167,30 +181,36 @@ pub async fn get_next_card(
         }));
     };
 
-    let word_id: i64 = row.get("id");
-    let form: String = row.get("form");
-    let hint: String = row.get("hint");
-    let context: String = row.get("context");
-    let context_translation: String = row.get("context_translation");
-    let grammar: Option<String> = row.get("grammar");
-    let politeness: Option<String> = row.get("politeness");
-    let notes_json: String = row.get("notes");
-    let notes: Vec<String> = serde_json::from_str(&notes_json).unwrap_or_default();
+    let card_id: i64 = row.get("id");
+    let word: String = row.get("word");
+    let definition: Option<String> = row.get("definition");
+    let pos: Option<String> = row.get("pos");
+    let origin_type: Option<String> = row.get("origin_type");
+    let hanja: Option<String> = row.get("hanja");
+    let hanja_eum: Option<String> = row.get("hanja_eum");
+    let grade: Option<String> = row.get("grade");
+    let trans_word: String = row.get("trans_word");
+    let trans_dfn: Option<String> = row.get("trans_dfn");
+    let sentence: String = row.get("sentence");
+    let sentence_translation: String = row.get("sentence_translation");
+    let target: String = row.get("target");
+    let speech_level: Option<String> = row.get("speech_level");
+    let tense: Option<String> = row.get("tense");
 
-    debug!("Selected word_id: {} ({})", word_id, form);
+    debug!("Selected card_id: {} ({})", card_id, word);
 
     // Get correct/wrong stats for this card
     let stats_row = sqlx::query(
         r#"
         SELECT
             COUNT(*) as total,
-            SUM(CASE WHEN rating >= 2 THEN 1 ELSE 0 END) as correct
+            SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) as correct
         FROM review_history
-        WHERE user_id = ? AND word_id = ?
+        WHERE user_id = ? AND card_id = ?
         "#,
     )
     .bind(user_id)
-    .bind(word_id)
+    .bind(card_id)
     .fetch_one(&pool)
     .await?;
 
@@ -207,14 +227,21 @@ pub async fn get_next_card(
 
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
-            word_id,
-            form,
-            hint,
-            context,
-            context_translation,
-            grammar,
-            politeness,
-            notes,
+            card_id,
+            word,
+            definition,
+            pos,
+            origin_type,
+            hanja,
+            hanja_eum,
+            grade,
+            trans_word,
+            trans_dfn,
+            sentence,
+            sentence_translation,
+            target,
+            speech_level,
+            tense,
             difficulty,
             guess_count,
             wrong_guess_count,
@@ -226,22 +253,23 @@ pub async fn get_next_card(
 // Submit a review for a card
 pub async fn submit_review(
     State(pool): State<SqlitePool>,
-    Path(word_id): Path<i64>,
+    Path(card_id): Path<i64>,
     auth: crate::auth::AuthUser,
     Json(payload): Json<ReviewRequest>,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
     info!(
-        "Submitting review for user_id: {}, word_id: {}, rating: {}",
-        user_id, word_id, payload.rating
+        "Submitting review for user_id: {}, card_id: {}, rating: {}",
+        user_id, card_id, payload.rating
     );
 
-    // Map rating to FSRS scale (1=Again, 2=Hard, 3=Good, 4=Easy)
-    // We only use 1 and 3 in the UI, but support all four.
-    let rating = match payload.rating {
-        1 => 1, // Again
-        2 => 2, // Hard
-        3 => 3, // Good
+    // Map rating to FSRS scale and string representation
+    // We only use 1 (Again) and 3 (Good) in the UI
+    let (rating, rating_str) = match payload.rating {
+        1 => (1, "again"),
+        2 => (2, "hard"),
+        3 => (3, "good"),
+        4 => (4, "easy"),
         _ => return Err(AppError::Internal("Invalid rating".to_string())),
     };
 
@@ -249,10 +277,10 @@ pub async fn submit_review(
     let card_state_row = sqlx::query(
         "SELECT stability, difficulty, last_review
          FROM card_states
-         WHERE user_id = ? AND word_id = ?",
+         WHERE user_id = ? AND card_id = ?",
     )
     .bind(user_id)
-    .bind(word_id)
+    .bind(card_id)
     .fetch_optional(&pool)
     .await?;
 
@@ -310,42 +338,55 @@ pub async fn submit_review(
         _ => next_states.good,
     };
 
-    // new — matches Anki: whole days, minimum 1
-    let interval_days = scheduled_state.interval.round().max(1.0) as i64;
+    // Calculate scheduled days for tracking
+    let scheduled_days = scheduled_state.interval;
     let now = Utc::now();
-    let due_date = now + chrono::Duration::days(interval_days);
 
-    // Update or insert card state (only FSRS essentials)
+    // Determine new state based on rating
+    let new_state = if memory_state.is_none() {
+        "learning"
+    } else if rating == 1 {
+        "relearning"
+    } else {
+        "review"
+    };
+
+    // Update or insert card state
     sqlx::query(
         r#"
-        INSERT INTO card_states (user_id, word_id, stability, difficulty, last_review, due_date)
+        INSERT INTO card_states (user_id, card_id, stability, difficulty, last_review, state)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, word_id) DO UPDATE SET
+        ON CONFLICT(user_id, card_id) DO UPDATE SET
             stability = excluded.stability,
             difficulty = excluded.difficulty,
             last_review = excluded.last_review,
-            due_date = excluded.due_date
+            state = excluded.state
         "#,
     )
     .bind(user_id)
-    .bind(word_id)
+    .bind(card_id)
     .bind(scheduled_state.memory.stability as f64)
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(now.to_rfc3339())
-    .bind(due_date.to_rfc3339())
+    .bind(new_state)
     .execute(&pool)
     .await?;
 
-    // Insert into review_history
+    // Insert into review_history with full FSRS metadata
     sqlx::query(
         r#"
-        INSERT INTO review_history (user_id, word_id, rating)
-        VALUES (?, ?, ?)
+        INSERT INTO review_history (user_id, card_id, rating, scheduled_days, elapsed_days, stability, difficulty, state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(user_id)
-    .bind(word_id)
-    .bind(rating as i64)
+    .bind(card_id)
+    .bind(rating_str)
+    .bind(scheduled_days as f64)
+    .bind(elapsed_days as f64)
+    .bind(scheduled_state.memory.stability as f64)
+    .bind(scheduled_state.memory.difficulty as f64)
+    .bind(new_state)
     .execute(&pool)
     .await?;
 
@@ -361,20 +402,18 @@ pub async fn get_stats(
 ) -> Result<Json<StatsResponse>, AppError> {
     let user_id = auth.0;
 
-    // Get target_language_id and suppress_new_cards
+    // Get suppress_new_cards setting
     let user_row = sqlx::query(
-        "SELECT target_language_id, suppress_new_cards FROM users u LEFT JOIN user_settings us ON us.user_id = u.id WHERE u.id = ?"
+        "SELECT suppress_new_cards FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
-    .fetch_one(&pool)
+    .fetch_optional(&pool)
     .await?;
 
-    let target_language_id: Option<i64> = user_row.get("target_language_id");
-    let suppress_new_cards: Option<bool> = user_row.get("suppress_new_cards");
-    let suppress_new_cards = suppress_new_cards.unwrap_or(false);
-
-    let target_language_id = target_language_id
-        .ok_or_else(|| AppError::Internal("User has no target language set".to_string()))?;
+    let suppress_new_cards = user_row
+        .and_then(|r| r.get::<Option<i64>, _>("suppress_new_cards"))
+        .map(|v| v != 0)
+        .unwrap_or(false);
 
     // Get day_boundary_hour from user_settings (default to 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
@@ -396,53 +435,54 @@ pub async fn get_stats(
     };
     let today_start = chrono::DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
 
-    // Count new cards (words not in card_states or with NULL due_date, excluding suppressed)
+    // Count new cards (cards not in card_states, excluding suspended)
     let new_count_query = if suppress_new_cards {
         // When suppress_new_cards is enabled, don't count never-reviewed cards
         r#"
         SELECT COUNT(*)
-        FROM words w
-        LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE w.language_id = ?
-        AND (w.user_id IS NULL OR w.user_id = ?)
-        AND cs.due_date IS NOT NULL
-        AND datetime(cs.due_date) <= datetime('now')
-        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        AND cs.last_review IS NOT NULL
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         "#
     } else {
         r#"
         SELECT COUNT(*)
-        FROM words w
-        LEFT JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE w.language_id = ?
-        AND (w.user_id IS NULL OR w.user_id = ?)
-        AND (cs.due_date IS NULL OR datetime(cs.due_date) <= datetime('now'))
-        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        AND (cs.last_review IS NULL)
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         "#
     };
 
     let new_count: i64 = sqlx::query_scalar(new_count_query)
         .bind(user_id)
-        .bind(target_language_id)
+        .bind(user_id)
         .bind(user_id)
         .fetch_one(&pool)
         .await?;
 
-    // Count due cards (existing cards with due_date in the past, excluding suppressed)
+    // Count due cards (existing cards with last_review set, excluding suspended)
     let due_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM words w
-        INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE w.language_id = ?
-        AND (w.user_id IS NULL OR w.user_id = ?)
-        AND cs.due_date IS NOT NULL
-        AND datetime(cs.due_date) <= datetime('now')
-        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        AND cs.last_review IS NOT NULL
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         "#,
     )
     .bind(user_id)
-    .bind(target_language_id)
+    .bind(user_id)
     .bind(user_id)
     .fetch_one(&pool)
     .await?;
@@ -451,33 +491,27 @@ pub async fn get_stats(
     let reviews_today: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM review_history rh
-        INNER JOIN words w ON w.id = rh.word_id
-        WHERE rh.user_id = ?
-        AND w.language_id = ?
-        AND datetime(rh.reviewed_at) >= datetime(?)
+        FROM review_history
+        WHERE user_id = ?
+        AND datetime(reviewed_at) >= datetime(?)
         "#,
     )
     .bind(user_id)
-    .bind(target_language_id)
     .bind(today_start.to_rfc3339())
     .fetch_one(&pool)
     .await?;
 
-    // Count correct reviews today (rating >= 2)
+    // Count correct reviews today (rating = 'good' or 'easy')
     let correct_today: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
-        FROM review_history rh
-        INNER JOIN words w ON w.id = rh.word_id
-        WHERE rh.user_id = ?
-        AND w.language_id = ?
-        AND rh.rating >= 2
-        AND datetime(rh.reviewed_at) >= datetime(?)
+        FROM review_history
+        WHERE user_id = ?
+        AND rating IN ('good', 'easy')
+        AND datetime(reviewed_at) >= datetime(?)
         "#,
     )
     .bind(user_id)
-    .bind(target_language_id)
     .bind(today_start.to_rfc3339())
     .fetch_one(&pool)
     .await?;
@@ -492,17 +526,18 @@ pub async fn get_stats(
     // Find when the next card becomes due
     let next_due_at: Option<String> = sqlx::query_scalar(
         r#"
-        SELECT MIN(cs.due_date)
-        FROM words w
-        INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE w.language_id = ?
-        AND (w.user_id IS NULL OR w.user_id = ?)
-        AND datetime(cs.due_date) > datetime('now')
-        AND (cs.suppressed IS NULL OR cs.suppressed = 0)
+        SELECT MIN(cs.last_review)
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        AND datetime(cs.last_review) > datetime('now')
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
         "#,
     )
     .bind(user_id)
-    .bind(target_language_id)
+    .bind(user_id)
     .bind(user_id)
     .fetch_optional(&pool)
     .await?;
@@ -519,49 +554,54 @@ pub async fn get_stats(
 
 pub async fn suppress_card(
     State(pool): State<SqlitePool>,
-    Path(word_id): Path<i64>,
+    Path(card_id): Path<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
-    info!("Suppressing card for user_id: {}, word_id: {}", user_id, word_id);
+    info!("Suppressing card for user_id: {}, card_id: {}", user_id, card_id);
 
-    // Insert or update card_states to mark as suppressed
-    // For new cards (no FSRS state), use NULL for stability/difficulty/last_review/due_date
+    // Insert or update user_card_flags to mark as suspended
     sqlx::query(
         r#"
-        INSERT INTO card_states (user_id, word_id, suppressed)
+        INSERT INTO user_card_flags (user_id, card_id, suspended)
         VALUES (?, ?, 1)
-        ON CONFLICT(user_id, word_id) DO UPDATE SET
-            suppressed = 1
+        ON CONFLICT(user_id, card_id) DO UPDATE SET
+            suspended = 1,
+            flagged_at = datetime('now')
         "#,
     )
     .bind(user_id)
-    .bind(word_id)
+    .bind(card_id)
     .execute(&pool)
     .await?;
 
-    info!("Card suppressed successfully");
+    info!("Card suspended successfully");
 
     Ok(Json(ReviewResponse { success: true }))
 }
 
-// List all suppressed cards for the user
+// List all suspended cards for the user
 pub async fn list_suppressed_cards(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<SuppressedCardsResponse>, AppError> {
     let user_id = auth.0;
-    info!("Listing suppressed cards for user_id: {}", user_id);
+    info!("Listing suspended cards for user_id: {}", user_id);
 
     let rows = sqlx::query(
         r#"
         SELECT
-            w.id, w.form, w.hint, w.context, w.context_translation,
-            w.grammar, w.politeness
-        FROM words w
-        INNER JOIN card_states cs ON cs.word_id = w.id AND cs.user_id = ?
-        WHERE cs.suppressed = 1
-        ORDER BY w.form ASC
+            c.id, c.word, c.pos, c.grade,
+            ct.trans_word,
+            s.text as sentence,
+            st.translation as sentence_translation
+        FROM cards c
+        INNER JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN sentences s ON c.id = s.card_id
+        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        WHERE ucf.suspended = 1
+        ORDER BY c.word ASC
         "#,
     )
     .bind(user_id)
@@ -571,43 +611,40 @@ pub async fn list_suppressed_cards(
     let cards: Vec<SuppressedCard> = rows
         .iter()
         .map(|row| SuppressedCard {
-            word_id: row.get("id"),
-            form: row.get("form"),
-            hint: row.get("hint"),
-            context: row.get("context"),
-            context_translation: row.get("context_translation"),
-            grammar: row.get("grammar"),
-            politeness: row.get("politeness"),
+            card_id: row.get("id"),
+            word: row.get("word"),
+            trans_word: row.get("trans_word"),
+            sentence: row.get("sentence"),
+            sentence_translation: row.get("sentence_translation"),
+            pos: row.get("pos"),
+            grade: row.get("grade"),
         })
         .collect();
-
-    info!("Found {} suppressed cards", cards.len());
 
     Ok(Json(SuppressedCardsResponse { cards }))
 }
 
 pub async fn unsuppress_card(
     State(pool): State<SqlitePool>,
-    Path(word_id): Path<i64>,
+    Path(card_id): Path<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
-    info!("Unsuppressing card for user_id: {}, word_id: {}", user_id, word_id);
+    info!("Unsuspending card for user_id: {}, card_id: {}", user_id, card_id);
 
-    // Update card_states to mark as not suppressed
     sqlx::query(
         r#"
-        UPDATE card_states
-        SET suppressed = 0
-        WHERE user_id = ? AND word_id = ?
+        UPDATE user_card_flags
+        SET suspended = 0
+        WHERE user_id = ? AND card_id = ?
         "#,
     )
     .bind(user_id)
-    .bind(word_id)
+    .bind(card_id)
     .execute(&pool)
     .await?;
 
-    info!("Card unsuppressed successfully");
+    info!("Card unsuspended successfully");
 
     Ok(Json(ReviewResponse { success: true }))
 }
