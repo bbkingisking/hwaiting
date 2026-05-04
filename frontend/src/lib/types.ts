@@ -24,16 +24,23 @@ export interface Word {
   wrongGuessCount: number
 }
 
-// Card type from backend (includes stats and word_id)
+// Card type from backend (includes stats and card_id)
 export interface Card {
-  word_id: number
-  form: string
-  hint: string
-  context: string
-  context_translation: string
-  grammar: string | null
-  politeness: string | null
-  notes: string[]
+  card_id: number
+  word: string
+  definition: string | null
+  pos: string | null
+  origin_type: string | null
+  hanja: string | null
+  hanja_eum: string | null
+  grade: string | null
+  trans_word: string
+  trans_dfn: string | null
+  sentence: string
+  sentence_translation: string
+  target: string
+  speech_level: string | null
+  tense: string | null
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number

@@ -39,9 +39,9 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
     }
   }
 
-  const handleUnsuppressCard = async (wordId: number) => {
+  const handleUnsuppressCard = async (cardId: number) => {
     try {
-      await unsuppressCard(wordId)
+      await unsuppressCard(cardId)
       await loadCards()
     } catch (err) {
       console.error('Failed to unsuppress card:', err)
@@ -84,25 +84,25 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {cards.map((card) => (
                 <div
-                  key={card.word_id}
+                  key={card.card_id}
                   className="flex items-start justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors"
                 >
                   <div className="flex-1 space-y-1">
-                    <div className="font-medium">{card.form}</div>
-                    <div className="text-sm text-muted-foreground">{card.hint}</div>
+                    <div className="font-medium">{card.word}</div>
+                    <div className="text-sm text-muted-foreground">{card.trans_word}</div>
                     <div className="text-xs text-muted-foreground">
-                      {card.context}
+                      {card.sentence}
                     </div>
-                    {(card.grammar || card.politeness) && (
+                    {(card.pos || card.grade) && (
                       <div className="flex gap-2 pt-1">
-                        {card.grammar && (
+                        {card.pos && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                            {card.grammar}
+                            {card.pos}
                           </span>
                         )}
-                        {card.politeness && (
+                        {card.grade && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                            {card.politeness}
+                            {card.grade}
                           </span>
                         )}
                       </div>
@@ -111,7 +111,7 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
                   <Button
                     size="icon"
                     variant="ghost"
-                    onClick={() => handleUnsuppressCard(card.word_id)}
+                    onClick={() => handleUnsuppressCard(card.card_id)}
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />

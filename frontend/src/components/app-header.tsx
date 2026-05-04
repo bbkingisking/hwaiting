@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { getUserProfile, listSuppressedCards, type LanguageInfo } from '@/lib/api'
+import { listSuppressedCards } from '@/lib/api'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +19,7 @@ import { useTheme } from '@/components/theme-provider'
 export function AppHeader() {
   const { username, isAuthenticated, logout } = useAuth()
   const { theme, setTheme } = useTheme()
-  const [targetLanguage, setTargetLanguage] = useState<LanguageInfo | null>(null)
+
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [customCardsOpen, setCustomCardsOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
@@ -33,13 +33,8 @@ export function AppHeader() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      getUserProfile()
-        .then(profile => setTargetLanguage(profile.target_language))
-        .catch(err => console.error('Error fetching user profile:', err))
-      
       checkSuppressedCards()
     } else {
-      setTargetLanguage(null)
       setHasSuppressedCards(false)
     }
   }, [isAuthenticated])
@@ -55,14 +50,6 @@ export function AppHeader() {
   return (
     <>
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
-        {targetLanguage && (
-          <div className="px-2 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border">
-            {targetLanguage.icon && (
-              <img src={`/${targetLanguage.icon}`} alt={`${targetLanguage.name} flag`} className="w-6 h-4" />
-            )}
-          </div>
-        )}
-        
         <DropdownMenu>
           <DropdownMenuTrigger className="px-3 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <span className="text-sm font-medium">{username}</span>

@@ -7,9 +7,8 @@ import { SettingsProvider } from '@/components/settings-provider'
 import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
-import { LanguageSelector } from '@/components/language-selector'
 import { StatusIndicator } from '@/components/status-indicator'
-import { getNextCard, submitReview, getUserProfile, ApiError } from '@/lib/api'
+import { getNextCard, submitReview, ApiError } from '@/lib/api'
 import type { NextCardEnvelope } from '@/lib/api'
 import type { Card } from '@/lib/types'
 import { formatTimeUntil } from '@/lib/utils'
@@ -30,7 +29,6 @@ function AppContent() {
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
-  const [needsLanguage, setNeedsLanguage] = useState<boolean | null>(null)
   const [statsKey, setStatsKey] = useState(0)
 
   const { isAuthenticated } = useAuth()
@@ -43,33 +41,10 @@ function AppContent() {
   useEffect(() => {
     if (!isAuthenticated) {
       setAuthDialogOpen(true)
-      setNeedsLanguage(null)
     } else {
-      // Check if user has a target language set
-      checkUserLanguage()
+      loadCardCold()
     }
   }, [isAuthenticated])
-
-  const checkUserLanguage = async () => {
-    try {
-      const profile = await getUserProfile()
-      if (profile.target_language === null) {
-        setNeedsLanguage(true)
-      } else {
-        setNeedsLanguage(false)
-        loadCardCold()
-      }
-    } catch (err) {
-      console.error('Error checking user language:', err)
-      // If we can't check, assume they need to set it
-      setNeedsLanguage(true)
-    }
-  }
-
-  const handleLanguageSelected = () => {
-    setNeedsLanguage(false)
-    loadCardCold()
-  }
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.
   const cancelPrefetch = () => {
@@ -79,13 +54,13 @@ function AppContent() {
     }
   }
 
-  // Kick off a background fetch for the card after `currentWordId`.
+  // Kick off a background fetch for the card after `currentCardId`.
   // If `waitFor` is provided, the actual network request is delayed
   // until that promise settles - used to avoid racing an in-flight
   // optimistic review submission (otherwise the DB read can return
   // the just-reviewed card again before its due_date is updated).
   const startPrefetch = (
-    currentWordId: number,
+    currentCardId: number,
     waitFor?: Promise<unknown>,
   ): PrefetchSlot => {
     cancelPrefetch()
@@ -107,7 +82,7 @@ function AppContent() {
           if (prefetchRef.current !== slot) return null
         }
         const envelope = await getNextCard({
-          excludeWordId: currentWordId,
+          excludeCardId: currentCardId,
           signal: controller.signal,
         })
         // Only commit if this prefetch wasn't superseded.
@@ -142,7 +117,7 @@ function AppContent() {
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
-        startPrefetch(envelope.card.word_id)
+        startPrefetch(envelope.card.card_id)
       } else {
         setCard(null)
         setNoCards(true)
@@ -179,7 +154,7 @@ function AppContent() {
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
-        startPrefetch(envelope.card.word_id, waitForBeforePrefetch)
+        startPrefetch(envelope.card.card_id, waitForBeforePrefetch)
       } else {
         setCard(null)
         setNoCards(true)
@@ -198,7 +173,7 @@ function AppContent() {
           if (envelope.card) {
             setCard(envelope.card)
             setNoCards(false)
-            startPrefetch(envelope.card.word_id, waitForBeforePrefetch)
+            startPrefetch(envelope.card.card_id, waitForBeforePrefetch)
           } else {
             setCard(null)
             setNoCards(true)
@@ -226,7 +201,7 @@ function AppContent() {
     // *next* prefetch (for N+2) until the DB has the updated due_date
     // for this card; otherwise the prefetch can return the same card
     // again because it still looks "due now" in the DB.
-    const submitPromise = submitReview(card.word_id, rating).catch((err) => {
+    const submitPromise = submitReview(card.card_id, rating).catch((err) => {
       if (err instanceof ApiError) {
         setError(`Failed to submit review: ${err.message}`)
       } else {
@@ -252,16 +227,6 @@ function AppContent() {
     setStatsKey((prev) => prev + 1)
   }
 
-  // Show language selector if authenticated and needs to select language
-  if (isAuthenticated && needsLanguage === true) {
-    return (
-      <>
-        <AppHeader />
-        <LanguageSelector onLanguageSelected={handleLanguageSelected} />
-      </>
-    )
-  }
-
   return (
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
@@ -270,10 +235,6 @@ function AppContent() {
         {!isAuthenticated ? (
           <div className="text-center text-muted-foreground">
             <p>Please log in to continue</p>
-          </div>
-        ) : needsLanguage === null ? (
-          <div className="text-center text-muted-foreground">
-            <p>Loading...</p>
           </div>
         ) : loading ? (
           <div className="text-center text-muted-foreground">
@@ -310,7 +271,7 @@ function AppContent() {
               <p className="text-destructive text-sm mb-4">{error}</p>
             )}
             <Flashcard
-              key={card.word_id}
+              key={card.card_id}
               card={card}
               onReview={handleReview}
               onSuppress={handleSuppress}
@@ -322,7 +283,7 @@ function AppContent() {
           </div>
         )}
       </div>
-      {isAuthenticated && needsLanguage === false && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
+      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
     </>
   )
 }

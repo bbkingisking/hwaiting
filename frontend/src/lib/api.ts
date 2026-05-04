@@ -1,14 +1,21 @@
 // API module for card operations and user management
 
 interface CardResponse {
-  word_id: number
-  form: string
-  hint: string
-  context: string
-  context_translation: string
-  grammar: string | null
-  politeness: string | null
-  notes: string[]
+  card_id: number
+  word: string
+  definition: string | null
+  pos: string | null
+  origin_type: string | null
+  hanja: string | null
+  hanja_eum: string | null
+  grade: string | null
+  trans_word: string
+  trans_dfn: string | null
+  sentence: string
+  sentence_translation: string
+  target: string
+  speech_level: string | null
+  tense: string | null
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number
@@ -27,20 +34,8 @@ interface ReviewResponse {
   success: boolean
 }
 
-interface LanguageInfo {
-  id: number
-  code: string
-  name: string
-  icon: string | null
-}
-
 interface UserProfile {
   username: string
-  target_language: LanguageInfo | null
-}
-
-interface SetLanguageResponse {
-  success: boolean
 }
 
 class ApiError extends Error {
@@ -76,43 +71,43 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 }
 
 interface GetNextCardOptions {
-  excludeWordId?: number
+  excludeCardId?: number
   signal?: AbortSignal
 }
 
 export async function getNextCard(options: GetNextCardOptions = {}): Promise<NextCardEnvelope> {
   const params = new URLSearchParams()
-  if (options.excludeWordId !== undefined) {
-    params.set('exclude', String(options.excludeWordId))
+  if (options.excludeCardId !== undefined) {
+    params.set('exclude', String(options.excludeCardId))
   }
   const qs = params.toString()
   const url = `${window.location.origin}/api/cards/next${qs ? `?${qs}` : ''}`
   return fetchWithAuth(url, { signal: options.signal })
 }
 
-export async function submitReview(wordId: number, rating: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${wordId}/review`
+export async function submitReview(cardId: number, rating: number): Promise<ReviewResponse> {
+  const url = `${window.location.origin}/api/cards/${cardId}/review`
   return fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify({ rating }),
   })
 }
 
-export async function suppressCard(wordId: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${wordId}/suppress`
+export async function suppressCard(cardId: number): Promise<ReviewResponse> {
+  const url = `${window.location.origin}/api/cards/${cardId}/suppress`
   return fetchWithAuth(url, {
     method: 'PUT',
   })
 }
 
 interface SuppressedCard {
-  word_id: number
-  form: string
-  hint: string
-  context: string
-  context_translation: string
-  grammar: string | null
-  politeness: string | null
+  card_id: number
+  word: string
+  trans_word: string
+  sentence: string
+  sentence_translation: string
+  pos: string | null
+  grade: string | null
 }
 
 interface SuppressedCardsResponse {
@@ -124,8 +119,8 @@ export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
   return fetchWithAuth(url)
 }
 
-export async function unsuppressCard(wordId: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${wordId}/unsuppress`
+export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
+  const url = `${window.location.origin}/api/cards/${cardId}/unsuppress`
   return fetchWithAuth(url, {
     method: 'PUT',
   })
@@ -134,30 +129,6 @@ export async function unsuppressCard(wordId: number): Promise<ReviewResponse> {
 export async function getUserProfile(): Promise<UserProfile> {
   const url = `${window.location.origin}/api/user/me`
   return fetchWithAuth(url)
-}
-
-export async function getLanguages(): Promise<LanguageInfo[]> {
-  const url = `${window.location.origin}/api/languages`
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new ApiError(response.status, error.error || `HTTP ${response.status}`)
-  }
-
-  return response.json()
-}
-
-export async function setUserLanguage(languageId: number): Promise<SetLanguageResponse> {
-  const url = `${window.location.origin}/api/user/language`
-  return fetchWithAuth(url, {
-    method: 'POST',
-    body: JSON.stringify({ language_id: languageId }),
-  })
 }
 
 interface ImportResponse {
@@ -250,25 +221,38 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
 
 interface CustomCard {
   id: number
-  form: string
-  hint: string
-  context: string
-  context_translation: string
-  grammar: string | null
-  politeness: string | null
-  notes: string[]
+  word: string
+  definition: string | null
+  pos: string | null
+  origin_type: string | null
+  hanja: string | null
+  hanja_eum: string | null
+  grade: string | null
+  trans_word: string
+  trans_dfn: string | null
+  sentence: string
+  sentence_translation: string
+  target: string
+  speech_level: string | null
+  tense: string | null
   created_at: string
-  language_id: number
 }
 
 interface CreateCustomCardRequest {
-  form: string
-  hint: string
-  context: string
-  context_translation: string
-  grammar?: string | null
-  politeness?: string | null
-  notes?: string[]
+  word: string
+  definition?: string | null
+  pos?: string | null
+  origin_type?: string | null
+  hanja?: string | null
+  hanja_eum?: string | null
+  grade?: string | null
+  trans_word: string
+  trans_dfn?: string | null
+  sentence: string
+  sentence_translation: string
+  target: string
+  speech_level?: string | null
+  tense?: string | null
 }
 
 interface CreateCustomCardResponse {
@@ -281,13 +265,20 @@ interface ListCustomCardsResponse {
 }
 
 interface UpdateCustomCardRequest {
-  form?: string
-  hint?: string
-  context?: string
-  context_translation?: string
-  grammar?: string | null
-  politeness?: string | null
-  notes?: string[]
+  word?: string
+  definition?: string | null
+  pos?: string | null
+  origin_type?: string | null
+  hanja?: string | null
+  hanja_eum?: string | null
+  grade?: string | null
+  trans_word?: string
+  trans_dfn?: string | null
+  sentence?: string
+  sentence_translation?: string
+  target?: string
+  speech_level?: string | null
+  tense?: string | null
 }
 
 interface UpdateCustomCardResponse {
@@ -337,7 +328,6 @@ export type {
   NextCardEnvelope,
   ReviewRequest,
   ReviewResponse,
-  LanguageInfo,
   UserProfile,
   ImportResponse,
   StatsResponse,

@@ -25,13 +25,15 @@ interface CustomCardsDialogProps {
 
 export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [form, setForm] = useState('')
-  const [hint, setHint] = useState('')
-  const [context, setContext] = useState('')
-  const [contextTranslation, setContextTranslation] = useState('')
-  const [grammar, setGrammar] = useState('')
-  const [politeness, setPoliteness] = useState('')
-  const [notes, setNotes] = useState('')
+  const [word, setWord] = useState('')
+  const [transWord, setTransWord] = useState('')
+  const [sentence, setSentence] = useState('')
+  const [sentenceTranslation, setSentenceTranslation] = useState('')
+  const [target, setTarget] = useState('')
+  const [pos, setPos] = useState('')
+  const [speechLevel, setSpeechLevel] = useState('')
+  const [tense, setTense] = useState('')
+  const [definition, setDefinition] = useState('')
   
   const [cards, setCards] = useState<CustomCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -39,13 +41,15 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [error, setError] = useState<string | null>(null)
 
   const resetForm = () => {
-    setForm('')
-    setHint('')
-    setContext('')
-    setContextTranslation('')
-    setGrammar('')
-    setPoliteness('')
-    setNotes('')
+    setWord('')
+    setTransWord('')
+    setSentence('')
+    setSentenceTranslation('')
+    setTarget('')
+    setPos('')
+    setSpeechLevel('')
+    setTense('')
+    setDefinition('')
   }
 
   const loadCards = async () => {
@@ -67,13 +71,15 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
     setError(null)
     try {
       await createCustomCard({
-        form,
-        hint,
-        context,
-        context_translation: contextTranslation,
-        grammar: grammar || null,
-        politeness: politeness || null,
-        notes: notes ? notes.split('\n').filter(n => n.trim()) : [],
+        word,
+        trans_word: transWord,
+        sentence,
+        sentence_translation: sentenceTranslation,
+        target,
+        pos: pos || null,
+        speech_level: speechLevel || null,
+        tense: tense || null,
+        definition: definition || null,
       })
       resetForm()
       setShowCreateForm(false)
@@ -146,21 +152,26 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                       className="flex items-start justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors"
                     >
                       <div className="flex-1 space-y-1">
-                        <div className="font-medium">{card.form}</div>
-                        <div className="text-sm text-muted-foreground">{card.hint}</div>
+                        <div className="font-medium">{card.word}</div>
+                        <div className="text-sm text-muted-foreground">{card.trans_word}</div>
                         <div className="text-xs text-muted-foreground">
-                          {card.context}
+                          {card.sentence}
                         </div>
-                        {(card.grammar || card.politeness) && (
+                        {(card.pos || card.speech_level || card.tense) && (
                           <div className="flex gap-2 pt-1">
-                            {card.grammar && (
+                            {card.pos && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                                {card.grammar}
+                                {card.pos}
                               </span>
                             )}
-                            {card.politeness && (
+                            {card.speech_level && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                                {card.politeness}
+                                {card.speech_level}
+                              </span>
+                            )}
+                            {card.tense && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                                {card.tense}
                               </span>
                             )}
                           </div>
@@ -182,105 +193,127 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
           ) : (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="form">
-                  Word/Phrase <span className="text-destructive">*</span>
+                <Label htmlFor="word">
+                  Korean Word/Phrase <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="form"
-                  value={form}
-                  onChange={(e) => setForm(e.target.value)}
+                  id="word"
+                  value={word}
+                  onChange={(e) => setWord(e.target.value)}
                   placeholder="e.g., 자주"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="hint">
-                  Translation/Hint <span className="text-destructive">*</span>
+                <Label htmlFor="trans-word">
+                  Translation <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="hint"
-                  value={hint}
-                  onChange={(e) => setHint(e.target.value)}
+                  id="trans-word"
+                  value={transWord}
+                  onChange={(e) => setTransWord(e.target.value)}
                   placeholder="e.g., often, frequently"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="context">
+                <Label htmlFor="sentence">
                   Example Sentence <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="context"
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
+                  id="sentence"
+                  value={sentence}
+                  onChange={(e) => setSentence(e.target.value)}
                   placeholder="e.g., 우리는 자주 만나."
                   required
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="target">
+                  Target Word in Sentence <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="target"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="e.g., 자주 (exact text to blank out)"
+                  required
+                />
                 <p className="text-xs text-muted-foreground">
-                  The sentence should contain the word/phrase
+                  This exact text will be blanked out in the sentence
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="context-translation">
+                <Label htmlFor="sentence-translation">
                   Sentence Translation <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="context-translation"
-                  value={contextTranslation}
-                  onChange={(e) => setContextTranslation(e.target.value)}
+                  id="sentence-translation"
+                  value={sentenceTranslation}
+                  onChange={(e) => setSentenceTranslation(e.target.value)}
                   placeholder="e.g., We meet often."
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="grammar">
-                  Grammar/Part of Speech
+                <Label htmlFor="pos">
+                  Part of Speech
                 </Label>
                 <Input
-                  id="grammar"
-                  value={grammar}
-                  onChange={(e) => setGrammar(e.target.value)}
-                  placeholder="e.g., adverb, verb past tense, noun"
+                  id="pos"
+                  value={pos}
+                  onChange={(e) => setPos(e.target.value)}
+                  placeholder="e.g., adverb, verb, noun"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="politeness">
-                  Politeness Level
+                <Label htmlFor="speech-level">
+                  Speech Level
                 </Label>
                 <Input
-                  id="politeness"
-                  value={politeness}
-                  onChange={(e) => setPoliteness(e.target.value)}
-                  placeholder="e.g., informal and polite speech"
+                  id="speech-level"
+                  value={speechLevel}
+                  onChange={(e) => setSpeechLevel(e.target.value)}
+                  placeholder="e.g., informal polite, formal"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes">
-                  Notes
+                <Label htmlFor="tense">
+                  Tense
+                </Label>
+                <Input
+                  id="tense"
+                  value={tense}
+                  onChange={(e) => setTense(e.target.value)}
+                  placeholder="e.g., past, present, future"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="definition">
+                  Definition/Notes
                 </Label>
                 <textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Additional notes (one per line)"
+                  id="definition"
+                  value={definition}
+                  onChange={(e) => setDefinition(e.target.value)}
+                  placeholder="Additional definition or notes about the word"
                   className="w-full min-h-20 px-3 py-2 text-sm rounded-md border border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   rows={3}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Enter each note on a separate line
-                </p>
               </div>
 
               <div className="flex gap-2 pt-4">
                 <Button
                   onClick={handleCreateCard}
-                  disabled={!form || !hint || !context || !contextTranslation || isCreating}
+                  disabled={!word || !transWord || !sentence || !sentenceTranslation || !target || isCreating}
                   className="flex-1"
                 >
                   {isCreating ? (
