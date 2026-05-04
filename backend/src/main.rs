@@ -7,6 +7,9 @@ use std::env;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(debug_assertions)]
+use dotenvy::dotenv;
+
 mod admin;
 mod auth;
 mod cards;
@@ -17,6 +20,14 @@ mod user;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load .env file in debug builds only
+    #[cfg(debug_assertions)]
+    {
+        if let Err(e) = dotenv() {
+            tracing::warn!("Failed to load .env file: {}", e);
+        }
+    }
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(

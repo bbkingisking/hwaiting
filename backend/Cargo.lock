@@ -53,6 +53,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "dotenvy",
  "fsrs",
  "jsonwebtoken",
  "rand 0.10.1",
