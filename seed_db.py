@@ -19,6 +19,91 @@ def escape_sql_string(s):
         return 'NULL'
     return "'" + str(s).replace("'", "''") + "'"
 
+def extract_hint_from_definition(trans_word, trans_dfn, word, pos):
+    """
+    Extract a better hint when trans_word is empty or a transliteration.
+    
+    Strategy:
+    1. If trans_word is empty, extract first meaningful part from trans_dfn
+    2. If trans_word looks like a transliteration (romanized Korean),
+       use trans_dfn instead
+    3. For bound nouns (의존 명사), always prefer trans_dfn
+    """
+    import re
+    
+    # If trans_word is empty, extract from trans_dfn
+    if not trans_word or trans_word.strip() == '':
+        if trans_dfn:
+            # For bound nouns, extract the meaningful part
+            if pos == '의존 명사':
+                # Try to extract after keywords
+                match = re.search(r'(?:meaning|indicating|used (?:to|for)|refers? to|serves as|that is)\s+(?:the\s+|a\s+|an\s+)?([^.,;]+)', trans_dfn, re.IGNORECASE)
+                if match:
+                    hint = match.group(1).strip()
+                else:
+                    # Try to extract after "A bound noun that "
+                    match = re.search(r'^A bound noun\s+that\s+(.+?)(?:\.|$)', trans_dfn, re.IGNORECASE)
+                    if match:
+                        hint = match.group(1).strip()
+                    else:
+                        # Last resort: remove "A bound noun" prefix
+                        hint = re.sub(r'^A bound noun\s+', '', trans_dfn, flags=re.IGNORECASE)
+                        hint = hint.split('.')[0].strip()
+            else:
+                # For other parts of speech (pronouns, etc.), try to extract meaningful part
+                # e.g., "A pronoun used to indicate..." -> "indicate people who..."
+                match = re.search(r'(?:used to|that)\s+(.+?)(?:\.|$)', trans_dfn, re.IGNORECASE)
+                if match:
+                    hint = match.group(1).strip()
+                else:
+                    # Just take first sentence without article
+                    hint = trans_dfn.split('.')[0].strip()
+                    hint = re.sub(r'^(A|An|The)\s+', '', hint, flags=re.IGNORECASE)
+            
+            # Clean up
+            hint = re.sub(r'\s+or\s+', '/', hint)
+            hint = re.sub(r'^(a|an|the)\s+', '', hint, flags=re.IGNORECASE)
+            # Take first 50 chars if too long
+            if len(hint) > 50:
+                hint = hint[:47] + '...'
+            return hint
+        return ''
+    
+    # Check if trans_word is likely a transliteration
+    # Characteristics: lowercase letters only, no spaces, contains typical romanization patterns
+    is_likely_transliteration = False
+    
+    if trans_word.islower() and ' ' not in trans_word:
+        # Check for romanization patterns (eo, ae, ui, etc.) or very short words
+        romanization_patterns = ['eo', 'ae', 'ui', 'oe', 'wo', 'ye', 'wa', 'wi', 'wae']
+        has_romanization = any(pattern in trans_word for pattern in romanization_patterns)
+        
+        # Common transliterations: "su", "gae", "dae", "won", "il", "ho", "nyeon", "beonjjae", etc.
+        if len(trans_word) <= 8 or has_romanization:
+            is_likely_transliteration = True
+    
+    # For detected transliterations, extract from trans_dfn
+    if is_likely_transliteration and trans_dfn:
+        # Extract short description from trans_dfn
+        match = re.search(r'(?:meaning|indicating|used (?:to|for)|refers? to|serves as|that is)\s+(?:the\s+|a\s+|an\s+)?([^.,;]+)', trans_dfn, re.IGNORECASE)
+        if match:
+            hint = match.group(1).strip()
+        else:
+            # Just use first part of trans_dfn
+            hint = trans_dfn.split('.')[0].strip()
+            hint = re.sub(r'^(A|An|The)\s+', '', hint, flags=re.IGNORECASE)
+        
+        # Clean up and shorten if needed
+        hint = re.sub(r'\s+or\s+', '/', hint)
+        hint = re.sub(r'^(a|an|the)\s+', '', hint, flags=re.IGNORECASE)
+        # Take first 50 chars if too long
+        if len(hint) > 50:
+            hint = hint[:47] + '...'
+        return hint
+    
+    # Return original trans_word if it seems okay
+    return trans_word
+
 def extract_sentence_with_target(full_text, target):
     """
     Extract the first sentence containing the target word.
@@ -192,9 +277,12 @@ def main():
                     trans_word = trans.get('trans_word')
                     trans_dfn = trans.get('trans_dfn')
                     
+                    # Extract better hint if trans_word is empty or transliterated
+                    improved_trans_word = extract_hint_from_definition(trans_word, trans_dfn, word, pos)
+                    
                     sql_statements.append(
                         f"INSERT INTO card_translations (card_id, language_tag, trans_word, trans_dfn) "
-                        f"VALUES ({card_id}, 'en', {escape_sql_string(trans_word)}, {escape_sql_string(trans_dfn)});"
+                        f"VALUES ({card_id}, 'en', {escape_sql_string(improved_trans_word)}, {escape_sql_string(trans_dfn)});"
                     )
                     total_translations += 1
                 
