@@ -17,6 +17,7 @@ import {
   type CustomCard,
   ApiError
 } from '@/lib/api'
+import { getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
 
 interface CustomCardsDialogProps {
   open: boolean
@@ -161,17 +162,17 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                           <div className="flex gap-2 pt-1">
                             {card.pos && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                                {card.pos}
+                                {getPosLabel(card.pos)}
                               </span>
                             )}
                             {card.speech_level && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                                {card.speech_level}
+                                {getSpeechLevelLabel(card.speech_level)}
                               </span>
                             )}
                             {card.tense && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                                {card.tense}
+                                {getTenseLabel(card.tense)}
                               </span>
                             )}
                           </div>

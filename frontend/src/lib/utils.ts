@@ -1,6 +1,13 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import type { Settings } from './types'
+import { 
+  POS_LABELS, 
+  SPEECH_LEVEL_LABELS, 
+  TENSE_LABELS, 
+  ORIGIN_TYPE_LABELS, 
+  GRADE_LABELS 
+} from './constants'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -43,4 +50,34 @@ export function formatTimeUntil(isoTimestamp: string): string | null {
   const minutes = diffMinutes % 60
   if (hours > 0) return `${hours}h ${minutes}m`
   return `${minutes}m`
+}
+
+// Get English label for part of speech
+export function getPosLabel(pos: string | null): string | null {
+  if (!pos) return null
+  return POS_LABELS[pos] || pos
+}
+
+// Get English label for speech level
+export function getSpeechLevelLabel(speechLevel: string | null): string | null {
+  if (!speechLevel) return null
+  return SPEECH_LEVEL_LABELS[speechLevel] || speechLevel
+}
+
+// Get English label for tense
+export function getTenseLabel(tense: string | null): string | null {
+  if (!tense) return null
+  return TENSE_LABELS[tense] || tense
+}
+
+// Get English label for origin type
+export function getOriginTypeLabel(originType: string | null): string | null {
+  if (!originType) return null
+  return ORIGIN_TYPE_LABELS[originType] || originType
+}
+
+// Get English label for grade/level
+export function getGradeLabel(grade: string | null): string | null {
+  if (!grade) return null
+  return GRADE_LABELS[grade] || grade
 }

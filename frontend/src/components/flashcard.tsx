@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, getDifficultyColor } from '@/lib/utils'
+import { cn, getDifficultyColor, getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -128,17 +128,17 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
           <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
           {card.pos && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {card.pos}
+              {getPosLabel(card.pos)}
             </span>
           )}
           {card.speech_level && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {card.speech_level}
+              {getSpeechLevelLabel(card.speech_level)}
             </span>
           )}
           {card.tense && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {card.tense}
+              {getTenseLabel(card.tense)}
             </span>
           )}
           </div>
