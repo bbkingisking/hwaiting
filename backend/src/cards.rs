@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use chrono::{Timelike, Utc};
+use chrono::{Local, TimeZone, Timelike, Utc};
 use fsrs::{MemoryState, FSRS, DEFAULT_PARAMETERS};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -112,16 +112,23 @@ pub async fn get_next_card(
         .and_then(|r| r.get::<Option<i64>, _>("day_boundary_hour"))
         .unwrap_or(4);
 
-    // Calculate the start of "today" based on day_boundary_hour
-    let now = Utc::now();
-    let current_hour = now.hour() as i64;
-    let today_start = if current_hour >= day_boundary_hour {
+    // Calculate the start of "today" based on day_boundary_hour (in local time)
+    let now_local = Local::now();
+    let current_hour = now_local.hour() as i64;
+    let today_start_naive = if current_hour >= day_boundary_hour {
         // Today after boundary hour
-        now.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+        now_local.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
     } else {
         // Before boundary hour, so "today" started yesterday
-        (now.date_naive() - chrono::Days::new(1)).and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+        (now_local.date_naive() - chrono::Days::new(1)).and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
     };
+    
+    // Convert to UTC for database comparison
+    let today_start_utc = Local
+        .from_local_datetime(&today_start_naive)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc);
 
     // Count how many NEW cards the user has reviewed today
     // A "new" card is one where it's the user's first review (no prior review_history)
@@ -145,8 +152,8 @@ pub async fn get_next_card(
             "#
         )
         .bind(user_id)
-        .bind(today_start.and_utc().to_rfc3339())
-        .bind(today_start.and_utc().to_rfc3339())
+        .bind(today_start_utc.to_rfc3339())
+        .bind(today_start_utc.to_rfc3339())
         .fetch_one(&pool)
         .await?;
 
@@ -493,16 +500,22 @@ pub async fn get_stats(
     .await?
     .unwrap_or(4);
 
-    // Calculate the "today" start timestamp
-    let now = Utc::now();
-    let today_start = if now.hour() >= day_boundary_hour as u32 {
-        now.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+    // Calculate the "today" start timestamp (in local time)
+    let now_local = Local::now();
+    let today_start_naive = if now_local.hour() >= day_boundary_hour as u32 {
+        now_local.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
     } else {
-        (now.date_naive() - chrono::Duration::days(1))
+        (now_local.date_naive() - chrono::Duration::days(1))
             .and_hms_opt(day_boundary_hour as u32, 0, 0)
             .unwrap()
     };
-    let today_start = chrono::DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
+    
+    // Convert to UTC for database comparison
+    let today_start = Local
+        .from_local_datetime(&today_start_naive)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc);
 
     // Count new cards (cards not in card_states, excluding suspended)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
