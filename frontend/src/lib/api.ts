@@ -224,10 +224,10 @@ interface CustomCard {
   word: string
   definition: string | null
   pos: string | null
+  grade: string | null
   origin_type: string | null
   hanja: string | null
   hanja_eum: string | null
-  grade: string | null
   trans_word: string
   trans_dfn: string | null
   sentence: string
@@ -242,10 +242,10 @@ interface CreateCustomCardRequest {
   word: string
   definition?: string | null
   pos?: string | null
+  grade?: string | null
   origin_type?: string | null
   hanja?: string | null
   hanja_eum?: string | null
-  grade?: string | null
   trans_word: string
   trans_dfn?: string | null
   sentence: string
@@ -268,10 +268,10 @@ interface UpdateCustomCardRequest {
   word?: string
   definition?: string | null
   pos?: string | null
+  grade?: string | null
   origin_type?: string | null
   hanja?: string | null
   hanja_eum?: string | null
-  grade?: string | null
   trans_word?: string
   trans_dfn?: string | null
   sentence?: string

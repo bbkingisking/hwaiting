@@ -35,6 +35,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [speechLevel, setSpeechLevel] = useState('')
   const [tense, setTense] = useState('')
   const [definition, setDefinition] = useState('')
+  const [originType, setOriginType] = useState('')
+  const [hanja, setHanja] = useState('')
+  const [hanjaEum, setHanjaEum] = useState('')
   
   const [cards, setCards] = useState<CustomCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -51,6 +54,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
     setSpeechLevel('')
     setTense('')
     setDefinition('')
+    setOriginType('')
+    setHanja('')
+    setHanjaEum('')
   }
 
   const loadCards = async () => {
@@ -81,6 +87,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
         speech_level: speechLevel || null,
         tense: tense || null,
         definition: definition || null,
+        origin_type: originType || null,
+        hanja: hanja || null,
+        hanja_eum: hanjaEum || null,
       })
       resetForm()
       setShowCreateForm(false)
@@ -308,6 +317,42 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                   placeholder="Additional definition or notes about the word"
                   className="w-full min-h-20 px-3 py-2 text-sm rounded-md border border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="origin-type">
+                  Origin Type
+                </Label>
+                <Input
+                  id="origin-type"
+                  value={originType}
+                  onChange={(e) => setOriginType(e.target.value)}
+                  placeholder="e.g., 고유어, 한자어, 외래어, 혼종어"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hanja">
+                  Hanja (한자)
+                </Label>
+                <Input
+                  id="hanja"
+                  value={hanja}
+                  onChange={(e) => setHanja(e.target.value)}
+                  placeholder="e.g., 自主"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hanja-eum">
+                  Hanja Reading (한자음)
+                </Label>
+                <Input
+                  id="hanja-eum"
+                  value={hanjaEum}
+                  onChange={(e) => setHanjaEum(e.target.value)}
+                  placeholder="e.g., 자주"
                 />
               </div>
 
