@@ -129,6 +129,9 @@ pub async fn get_next_card(
         .single()
         .unwrap()
         .with_timezone(&Utc);
+    
+    // Format as SQLite datetime string (YYYY-MM-DD HH:MM:SS)
+    let today_start_str = today_start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
 
     // Count how many NEW cards the user has reviewed today
     // A "new" card is one where it's the user's first review (no prior review_history)
@@ -152,8 +155,8 @@ pub async fn get_next_card(
             "#
         )
         .bind(user_id)
-        .bind(today_start_utc.to_rfc3339())
-        .bind(today_start_utc.to_rfc3339())
+        .bind(&today_start_str)
+        .bind(&today_start_str)
         .fetch_one(&pool)
         .await?;
 
@@ -511,11 +514,14 @@ pub async fn get_stats(
     };
     
     // Convert to UTC for database comparison
-    let today_start = Local
+    let today_start_utc = Local
         .from_local_datetime(&today_start_naive)
         .single()
         .unwrap()
         .with_timezone(&Utc);
+    
+    // Format as SQLite datetime string (YYYY-MM-DD HH:MM:SS)
+    let today_start = today_start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
 
     // Count new cards (cards not in card_states, excluding suspended)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
@@ -580,7 +586,7 @@ pub async fn get_stats(
         "#,
     )
     .bind(user_id)
-    .bind(today_start.to_rfc3339())
+    .bind(&today_start)
     .fetch_one(&pool)
     .await?;
 
@@ -595,7 +601,7 @@ pub async fn get_stats(
         "#,
     )
     .bind(user_id)
-    .bind(today_start.to_rfc3339())
+    .bind(&today_start)
     .fetch_one(&pool)
     .await?;
 
@@ -641,8 +647,8 @@ pub async fn get_stats(
         "#
     )
     .bind(user_id)
-    .bind(today_start.to_rfc3339())
-    .bind(today_start.to_rfc3339())
+    .bind(&today_start)
+    .bind(&today_start)
     .fetch_one(&pool)
     .await?;
 
