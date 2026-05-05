@@ -1,29 +1,26 @@
 -- Sentences table (example sentences for cards)
 CREATE TABLE IF NOT EXISTS sentences (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    card_id INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    target TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-);
+    id         INTEGER PRIMARY KEY,
+    card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    text       TEXT    NOT NULL,
+    target     TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+-- Sentence inflection hints table (only for 동사 / 형용사)
+CREATE TABLE IF NOT EXISTS sentence_inflection_hints (
+    sentence_id  INTEGER PRIMARY KEY REFERENCES sentences(id) ON DELETE CASCADE,
+    speech_level TEXT NOT NULL,
+    tense        TEXT NOT NULL
+) STRICT;
 
 -- Sentence translations table
 CREATE TABLE IF NOT EXISTS sentence_translations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sentence_id INTEGER NOT NULL,
-    translation TEXT NOT NULL,
-    FOREIGN KEY (sentence_id) REFERENCES sentences(id) ON DELETE CASCADE
-);
-
--- Sentence inflection hints table (grammatical information)
-CREATE TABLE IF NOT EXISTS sentence_inflection_hints (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sentence_id INTEGER NOT NULL,
-    speech_level TEXT NOT NULL,
-    tense TEXT NOT NULL,
-    FOREIGN KEY (sentence_id) REFERENCES sentences(id) ON DELETE CASCADE
-);
+    id          INTEGER PRIMARY KEY,
+    sentence_id INTEGER NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+    translation TEXT    NOT NULL,
+    UNIQUE(sentence_id)
+) STRICT;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_sentences_card_id ON sentences(card_id);
