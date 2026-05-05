@@ -12,6 +12,19 @@ export default defineConfig(({ mode }) => {
   ],
   build: {
     outDir: env.STATIC_DIR || 'dist',
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) return 'vendor-react'
+            if (id.includes('@lottiefiles')) return 'vendor-lottie'
+            if (id.includes('lucide-react')) return 'vendor-icons'
+            if (id.includes('@base-ui') || id.includes('@radix-ui') || id.includes('class-variance-authority')) return 'vendor-ui'
+            return 'vendor'
+          }
+        },
+      },
+    },
   },
   resolve: {
     alias: {
