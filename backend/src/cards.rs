@@ -150,13 +150,25 @@ pub async fn get_next_card(
         .fetch_one(&pool)
         .await?;
 
-        new_cards_today >= daily_new_card_limit
+        // For prefetch requests (exclude param is set), use stricter limit to prevent race condition.
+        // When the user is on card N (new card #19/20), the prefetch for N+1 should not return
+        // a new card because by the time N+1 is displayed, card N will have been reviewed,
+        // pushing the count to 20/20 and making N+1 display as 21/20.
+        // For normal requests, use the actual limit.
+        let is_prefetch = params.exclude.is_some();
+        let threshold = if is_prefetch {
+            daily_new_card_limit - 1  // Block at limit-1 for prefetch
+        } else {
+            daily_new_card_limit  // Block at limit for normal fetch
+        };
+
+        new_cards_today >= threshold
     };
 
     // Get next due card (prioritize due cards by due date, then new cards)
     // Exclude suspended cards via user_card_flags
     // Optionally skip a specific card_id (used for client-side prefetch)
-    // When daily new card limit is 0 or reached, only show cards that have been reviewed before
+    // When daily new card limit is 0 or reached (including limit-1 buffer), only show cards that have been reviewed before
     let exclude_id = params.exclude.unwrap_or(-1);
     
     let new_card_filter = if new_card_limit_reached {
