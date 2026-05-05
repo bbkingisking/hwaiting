@@ -172,24 +172,38 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
             {before}
             {isAutoProgressing ? (
               // Show green answer during auto-progress for positive feedback
-              <span className="text-green-600">{card.target}</span>
-            ) : answered ? (
-              correct ? (
-                <span className="text-green-600">{card.target}</span>
-              ) : (
-                <span className="inline-flex flex-wrap items-baseline gap-0">
-                  {input.split('').map((char, i) => (
-                    <span key={i} className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}>
-                      {char}
-                    </span>
-                  ))}
-                  <span className="text-muted-foreground/50 ml-1">({card.target})</span>
-                </span>
-              )
-            ) : (
-              <span className="inline-flex items-center relative">
+              <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
-                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-sm text-muted-foreground/60 whitespace-nowrap">
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
+                    {card.hanja}{card.hanja_eum && ` (${card.hanja_eum})`}
+                  </span>
+                )}
+                <span className="text-green-600">{card.target}</span>
+              </span>
+            ) : answered ? (
+              <span className="inline-flex flex-col items-center relative pt-5">
+                {card.hanja && (
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
+                    {card.hanja}{card.hanja_eum && ` (${card.hanja_eum})`}
+                  </span>
+                )}
+                {correct ? (
+                  <span className="text-green-600">{card.target}</span>
+                ) : (
+                  <span className="inline-flex flex-wrap items-baseline gap-0">
+                    {input.split('').map((char, i) => (
+                      <span key={i} className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}>
+                        {char}
+                      </span>
+                    ))}
+                    <span className="text-muted-foreground/50 ml-1">({card.target})</span>
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="inline-flex flex-col items-center relative pt-5">
+                {card.hanja && (
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
                     {card.hanja}
                   </span>
                 )}
