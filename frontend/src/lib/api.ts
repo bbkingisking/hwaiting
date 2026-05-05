@@ -131,20 +131,27 @@ export async function getUserProfile(): Promise<UserProfile> {
   return fetchWithAuth(url)
 }
 
-interface ImportResponse {
-  success: boolean
-  words_imported: number
+interface ImportStats {
+  card_states_imported: number
   reviews_imported: number
+  suspended_cards_imported: number
+  custom_cards_imported: number
 }
 
-export async function importUserData(file: File): Promise<ImportResponse> {
+interface ImportResponse {
+  success: boolean
+  message: string
+  stats: ImportStats
+}
+
+export async function importUserData(file: File, overwrite: boolean = false): Promise<ImportResponse> {
   const text = await file.text()
   const data = JSON.parse(text)
   
   const url = `${window.location.origin}/api/user/import`
   return fetchWithAuth(url, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ data, overwrite }),
   })
 }
 
@@ -157,7 +164,7 @@ export async function exportUserData(): Promise<void> {
   const downloadUrl = window.URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = downloadUrl
-  link.download = `annyeong-export-${new Date().toISOString().split('T')[0]}.json`
+  link.download = `hwaiting-export-${new Date().toISOString().split('T')[0]}.json`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -331,6 +338,7 @@ export type {
   ReviewResponse,
   UserProfile,
   ImportResponse,
+  ImportStats,
   StatsResponse,
   UserSettings,
   UpdateSettingsRequest,

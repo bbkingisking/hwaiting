@@ -16,6 +16,7 @@ mod cards;
 mod custom_cards;
 mod db;
 mod error;
+mod export_import;
 mod user;
 
 #[tokio::main]
@@ -55,9 +56,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/user/me", get(user::get_profile))
         .route("/user/settings", get(user::get_settings))
         .route("/user/settings", post(user::update_settings))
-        // TODO: Re-implement export/import for new schema
-        // .route("/user/export", get(user::export_data))
-        // .route("/user/import", post(user::import_data))
+        .route("/user/export", get(export_import::export_data))
+        .route("/user/import", post(export_import::import_data))
         .route("/admin/invites", get(admin::list_invites))
         .route("/admin/invites", post(admin::generate_invites))
         .route("/admin/invites/{code}", delete(admin::delete_invite))

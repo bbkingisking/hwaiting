@@ -14,7 +14,7 @@ pub struct UserProfile {
     pub username: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UserSettings {
     pub show_percentage: bool,
     pub red_threshold: i64,
