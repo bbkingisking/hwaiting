@@ -485,6 +485,7 @@ pub async fn get_stats(
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND cs.last_review IS NOT NULL
         AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
         "#,
     )
     .bind(user_id)
