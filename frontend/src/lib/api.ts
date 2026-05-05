@@ -171,6 +171,7 @@ interface StatsResponse {
   correct_today: number
   percentage: number | null
   next_due_at: string | null
+  new_today_count: number
 }
 
 export async function getStats(): Promise<StatsResponse> {
@@ -185,8 +186,8 @@ interface UserSettings {
   day_boundary_hour: number
   auto_progress_on_correct: boolean
   auto_progress_delay: number
-  suppress_new_cards: boolean
   desired_retention: number
+  daily_new_card_limit: number
 }
 
 interface UpdateSettingsRequest {
@@ -196,8 +197,8 @@ interface UpdateSettingsRequest {
   day_boundary_hour?: number
   auto_progress_on_correct?: boolean
   auto_progress_delay?: number
-  suppress_new_cards?: boolean
   desired_retention?: number
+  daily_new_card_limit?: number
 }
 
 interface UpdateSettingsResponse {

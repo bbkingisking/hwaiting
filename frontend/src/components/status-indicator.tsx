@@ -8,6 +8,7 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
   const [dueCount, setDueCount] = useState<number | null>(null)
   const [percentage, setPercentage] = useState<number | null>(null)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
+  const [newTodayCount, setNewTodayCount] = useState<number | null>(null)
   const prevDueRef = useRef(dueCount)
 
   useEffect(() => {
@@ -31,6 +32,7 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
       setDueCount(stats.due_count)
       setPercentage(stats.percentage)
       setNextDueAt(stats.next_due_at)
+      setNewTodayCount(stats.new_today_count)
     } catch (err) {
       console.error('Failed to fetch stats:', err)
     }
@@ -50,6 +52,11 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
             }
             return null
           })()}
+        </span>
+      )}
+      {newTodayCount !== null && (
+        <span>
+          New today: {newTodayCount}/{settings.dailyNewCardLimit}
         </span>
       )}
       <span className={cn(percentage !== null && getPercentageColor(percentage, settings))}>

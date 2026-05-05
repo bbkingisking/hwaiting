@@ -6,8 +6,8 @@ export interface Settings {
   dayBoundaryHour: number
   autoProgressOnCorrect: boolean
   autoProgressDelay: number
-  suppressNewCards: boolean
   desiredRetention: number
+  dailyNewCardLimit: number
 }
 
 // Word types

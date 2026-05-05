@@ -72,6 +72,7 @@ pub struct StatsResponse {
     correct_today: i64,
     percentage: Option<i64>,
     next_due_at: Option<String>,
+    new_today_count: i64,
 }
 
 #[derive(Deserialize, Default)]
@@ -95,25 +96,72 @@ pub async fn get_next_card(
 
     // Get user settings
     let user_row = sqlx::query(
-        "SELECT suppress_new_cards FROM user_settings WHERE user_id = ?"
+        "SELECT daily_new_card_limit, day_boundary_hour FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
     .await?;
 
-    let suppress_new_cards = user_row
-        .and_then(|r| r.get::<Option<i64>, _>("suppress_new_cards"))
-        .map(|v| v != 0)
-        .unwrap_or(false);
+    let daily_new_card_limit = user_row
+        .as_ref()
+        .and_then(|r| r.get::<Option<i64>, _>("daily_new_card_limit"))
+        .unwrap_or(20);
+
+    let day_boundary_hour = user_row
+        .as_ref()
+        .and_then(|r| r.get::<Option<i64>, _>("day_boundary_hour"))
+        .unwrap_or(4);
+
+    // Calculate the start of "today" based on day_boundary_hour
+    let now = Utc::now();
+    let current_hour = now.hour() as i64;
+    let today_start = if current_hour >= day_boundary_hour {
+        // Today after boundary hour
+        now.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+    } else {
+        // Before boundary hour, so "today" started yesterday
+        (now.date_naive() - chrono::Days::new(1)).and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+    };
+
+    // Count how many NEW cards the user has reviewed today
+    // A "new" card is one where it's the user's first review (no prior review_history)
+    // Check if new cards are suppressed (limit = 0) or if daily limit is reached
+    let new_card_limit_reached = if daily_new_card_limit == 0 {
+        true  // Suppress all new cards
+    } else {
+        // Count how many NEW cards the user has reviewed today
+        let new_cards_today: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(DISTINCT rh.card_id)
+            FROM review_history rh
+            WHERE rh.user_id = ?
+            AND rh.reviewed_at >= ?
+            AND NOT EXISTS (
+                SELECT 1 FROM review_history rh2
+                WHERE rh2.user_id = rh.user_id
+                AND rh2.card_id = rh.card_id
+                AND rh2.reviewed_at < ?
+            )
+            "#
+        )
+        .bind(user_id)
+        .bind(today_start.and_utc().to_rfc3339())
+        .bind(today_start.and_utc().to_rfc3339())
+        .fetch_one(&pool)
+        .await?;
+
+        new_cards_today >= daily_new_card_limit
+    };
 
     // Get next due card (prioritize due cards by due date, then new cards)
     // Exclude suspended cards via user_card_flags
     // Optionally skip a specific card_id (used for client-side prefetch)
-    // When suppress_new_cards is enabled, exclude never-reviewed cards
+    // When daily new card limit is 0 or reached, only show cards that have been reviewed before
     let exclude_id = params.exclude.unwrap_or(-1);
     
-    let new_card_filter = if suppress_new_cards {
-        "AND cs.last_review IS NOT NULL"
+    let new_card_filter = if new_card_limit_reached {
+        // If limit is 0 or reached, only show cards that have been reviewed before (have review history)
+        "AND EXISTS (SELECT 1 FROM review_history WHERE card_id = c.id AND user_id = ?)"
     } else {
         ""
     };
@@ -153,10 +201,17 @@ pub async fn get_next_card(
         new_card_filter
     );
 
-    let row = sqlx::query(&query)
+    let mut query_builder = sqlx::query(&query)
         .bind(user_id)
         .bind(user_id)
-        .bind(user_id)
+        .bind(user_id);
+    
+    // Add extra bind for the new card filter if limit is reached
+    if new_card_limit_reached {
+        query_builder = query_builder.bind(user_id);
+    }
+    
+    let row = query_builder
         .bind(exclude_id)
         .fetch_optional(&pool)
         .await?;
@@ -408,18 +463,14 @@ pub async fn get_stats(
 ) -> Result<Json<StatsResponse>, AppError> {
     let user_id = auth.0;
 
-    // Get suppress_new_cards setting
-    let user_row = sqlx::query(
-        "SELECT suppress_new_cards FROM user_settings WHERE user_id = ?"
+    // Get daily_new_card_limit setting (0 = suppress all new cards)
+    let daily_new_card_limit: i64 = sqlx::query_scalar(
+        "SELECT daily_new_card_limit FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
-    .await?;
-
-    let suppress_new_cards = user_row
-        .and_then(|r| r.get::<Option<i64>, _>("suppress_new_cards"))
-        .map(|v| v != 0)
-        .unwrap_or(false);
+    .await?
+    .unwrap_or(20);
 
     // Get day_boundary_hour from user_settings (default to 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
@@ -442,17 +493,11 @@ pub async fn get_stats(
     let today_start = chrono::DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
 
     // Count new cards (cards not in card_states, excluding suspended)
-    let new_count_query = if suppress_new_cards {
-        // When suppress_new_cards is enabled, don't count never-reviewed cards
+    // If daily_new_card_limit is 0, new count is 0 (suppressed)
+    let new_count_query = if daily_new_card_limit == 0 {
+        // When new cards are suppressed (limit = 0), report 0 new cards
         r#"
-        SELECT COUNT(*)
-        FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND cs.last_review IS NOT NULL
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        SELECT 0
         "#
     } else {
         r#"
@@ -467,12 +512,18 @@ pub async fn get_stats(
         "#
     };
 
-    let new_count: i64 = sqlx::query_scalar(new_count_query)
-        .bind(user_id)
-        .bind(user_id)
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await?;
+    let new_count: i64 = if daily_new_card_limit == 0 {
+        sqlx::query_scalar(new_count_query)
+            .fetch_one(&pool)
+            .await?
+    } else {
+        sqlx::query_scalar(new_count_query)
+            .bind(user_id)
+            .bind(user_id)
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await?
+    };
 
     // Count due cards (existing cards with last_review set, excluding suspended)
     let due_count: i64 = sqlx::query_scalar(
@@ -549,6 +600,27 @@ pub async fn get_stats(
     .fetch_optional(&pool)
     .await?;
 
+    // Count how many NEW cards were reviewed today
+    let new_today_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(DISTINCT rh.card_id)
+        FROM review_history rh
+        WHERE rh.user_id = ?
+        AND rh.reviewed_at >= ?
+        AND NOT EXISTS (
+            SELECT 1 FROM review_history rh2
+            WHERE rh2.user_id = rh.user_id
+            AND rh2.card_id = rh.card_id
+            AND rh2.reviewed_at < ?
+        )
+        "#
+    )
+    .bind(user_id)
+    .bind(today_start.to_rfc3339())
+    .bind(today_start.to_rfc3339())
+    .fetch_one(&pool)
+    .await?;
+
     Ok(Json(StatsResponse {
         new_count,
         due_count,
@@ -556,6 +628,7 @@ pub async fn get_stats(
         correct_today,
         percentage,
         next_due_at,
+        new_today_count,
     }))
 }
 

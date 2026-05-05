@@ -18,8 +18,8 @@ export const DEFAULT_SETTINGS = {
   DAY_BOUNDARY_HOUR: 4,
   AUTO_PROGRESS_ON_CORRECT: true,
   AUTO_PROGRESS_DELAY: 0,
-  SUPPRESS_NEW_CARDS: false,
   DESIRED_RETENTION: 0.9,
+  DAILY_NEW_CARD_LIMIT: 20,
 } as const
 
 // Desired retention constraints

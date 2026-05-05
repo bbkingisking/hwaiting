@@ -45,6 +45,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [showImportAlert, setShowImportAlert] = useState(false)
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
+  
+  // Track user's preferred limit when they toggle suppress on/off
+  const [preferredLimit, setPreferredLimit] = useState(20)
 
   const fetchInviteCodes = async () => {
     if (!isAdmin || !token) return
@@ -166,6 +169,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setShowImportAlert(false)
     setPendingImportFile(null)
   }
+
+  // Initialize preferred limit from current settings
+  useEffect(() => {
+    if (settings.dailyNewCardLimit > 0) {
+      setPreferredLimit(settings.dailyNewCardLimit)
+    }
+  }, [])
 
   useEffect(() => {
     if (isAdmin) {
@@ -297,14 +307,49 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </Label>
                   <Switch
                     id="suppress-new-cards"
-                    checked={settings.suppressNewCards}
-                    onCheckedChange={(checked) => updateSettings({ suppressNewCards: checked })}
+                    checked={settings.dailyNewCardLimit === 0}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        // Save current limit before suppressing
+                        setPreferredLimit(settings.dailyNewCardLimit || 20)
+                        updateSettings({ dailyNewCardLimit: 0 })
+                      } else {
+                        // Restore preferred limit
+                        updateSettings({ dailyNewCardLimit: preferredLimit })
+                      }
+                    }}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Only show cards you've already reviewed
                 </p>
               </div>
+
+              {settings.dailyNewCardLimit > 0 && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="daily-new-card-limit">Daily new card limit</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {settings.dailyNewCardLimit}
+                    </span>
+                  </div>
+                  <Slider
+                    id="daily-new-card-limit"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={settings.dailyNewCardLimit}
+                    onValueChange={(value) => {
+                      const limit = value as number
+                      updateSettings({ dailyNewCardLimit: limit })
+                      setPreferredLimit(limit)
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum number of new cards to learn per day. Does not affect cards due for review.
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
