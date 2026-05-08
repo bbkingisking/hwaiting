@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import {
   Dot,
 } from 'recharts'
 import { getReviewHistory, type DayHistory } from '@/lib/api'
+import { useSettings } from '@/components/settings-provider'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -30,7 +31,7 @@ interface ReviewHistoryDialogProps {
 const chartConfig = {
   percentage: {
     label: 'Correct',
-    color: 'var(--chart-1)',
+    color: 'white',
   },
 } satisfies ChartConfig
 
@@ -48,9 +49,23 @@ function formatShortDate(dateStr: string): string {
 }
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
+  const { settings } = useSettings()
   const [days, setDays] = useState<DayHistory[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Derive gradient stop positions from the user's threshold settings.
+  // The SVG gradient runs top (y=0 = 100% accuracy) to bottom (y=1 = 0% accuracy),
+  // so a threshold percentage p maps to SVG offset (100 - p)%.
+  const gradientStops = useMemo(() => {
+    const redT = settings?.redThreshold ?? 50
+    const yellowT = settings?.yellowThreshold ?? 70
+    const greenOffset  = 0
+    const yellowOffset = Math.round(100 - yellowT)
+    const redOffset    = Math.round(100 - redT)
+    const bottomOffset = 100
+    return { greenOffset, yellowOffset, redOffset, bottomOffset }
+  }, [settings?.redThreshold, settings?.yellowThreshold])
 
   useEffect(() => {
     if (!open) return
@@ -109,8 +124,10 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
               >
                 <defs>
                   <linearGradient id="fillPercentage" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
+                    <stop offset={`${gradientStops.greenOffset}%`}  stopColor="hsl(142,71%,45%)" stopOpacity={0.35} />
+                    <stop offset={`${gradientStops.yellowOffset}%`} stopColor="hsl(45,93%,47%)"  stopOpacity={0.28} />
+                    <stop offset={`${gradientStops.redOffset}%`}    stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
+                    <stop offset={`${gradientStops.bottomOffset}%`} stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
@@ -153,12 +170,12 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                 <Area
                   type="monotone"
                   dataKey="percentage"
-                  stroke="var(--chart-1)"
+                  stroke="white"
                   strokeWidth={2}
                   fill="url(#fillPercentage)"
                   connectNulls={false}
-                  dot={<Dot r={4} fill="var(--chart-1)" strokeWidth={0} />}
-                  activeDot={{ r: 5, strokeWidth: 0 }}
+                  dot={<Dot r={4} fill="white" strokeWidth={0} />}
+                  activeDot={{ r: 5, fill: "white", strokeWidth: 0 }}
                 />
               </AreaChart>
             </ChartContainer>
