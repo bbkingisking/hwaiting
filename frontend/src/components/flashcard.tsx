@@ -65,7 +65,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const targetStart = card.sentence.indexOf(card.target)
   let before = ''
   let after = ''
-  
+
   if (targetStart >= 0) {
     before = card.sentence.substring(0, targetStart)
     after = card.sentence.substring(targetStart + card.target.length)
@@ -81,7 +81,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     if (answered) return
     const isCorrect = input.trim() === card.target
     setCorrect(isCorrect)
-    
+
     // Auto-progress if correct and setting is enabled
     if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
       hasAutoProgressedRef.current = true
@@ -212,7 +212,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  size={Math.max(input.length, 1)}
+                  style={{ width: `${Math.max(input.length, 2)}em` }}
                   className={cn(
                     'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
                     'text-center text-2xl md:text-3xl font-semibold',
