@@ -20,6 +20,9 @@ export const DEFAULT_SETTINGS = {
   AUTO_PROGRESS_DELAY: 1.5,
   DESIRED_RETENTION: 0.9,
   DAILY_NEW_CARD_LIMIT: 20,
+  HISTORY_COLORIZED_AREA: false,
+  HISTORY_COLORED_DOTS: false,
+  HISTORY_THRESHOLD_LINES: false,
 } as const
 
 // Desired retention constraints

@@ -18,6 +18,9 @@ const defaultSettings: Settings = {
   autoProgressDelay: DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
   desiredRetention: DEFAULT_SETTINGS.DESIRED_RETENTION,
   dailyNewCardLimit: DEFAULT_SETTINGS.DAILY_NEW_CARD_LIMIT,
+  historyColorizedArea: DEFAULT_SETTINGS.HISTORY_COLORIZED_AREA,
+  historyColoredDots: DEFAULT_SETTINGS.HISTORY_COLORED_DOTS,
+  historyThresholdLines: DEFAULT_SETTINGS.HISTORY_THRESHOLD_LINES,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -44,6 +47,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           autoProgressDelay: userSettings.auto_progress_delay ?? DEFAULT_SETTINGS.AUTO_PROGRESS_DELAY,
           desiredRetention: userSettings.desired_retention,
           dailyNewCardLimit: userSettings.daily_new_card_limit,
+          historyColorizedArea: userSettings.history_colorized_area,
+          historyColoredDots: userSettings.history_colored_dots,
+          historyThresholdLines: userSettings.history_threshold_lines,
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)
@@ -81,6 +87,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           auto_progress_delay: updates.autoProgressDelay,
           desired_retention: updates.desiredRetention,
           daily_new_card_limit: updates.dailyNewCardLimit,
+          history_colorized_area: updates.historyColorizedArea,
+          history_colored_dots: updates.historyColoredDots,
+          history_threshold_lines: updates.historyThresholdLines,
         })
       } catch (err) {
         console.error('Failed to update settings:', err)

@@ -211,6 +211,9 @@ interface UserSettings {
   auto_progress_delay: number
   desired_retention: number
   daily_new_card_limit: number
+  history_colorized_area: boolean
+  history_colored_dots: boolean
+  history_threshold_lines: boolean
 }
 
 interface UpdateSettingsRequest {
@@ -222,6 +225,9 @@ interface UpdateSettingsRequest {
   auto_progress_delay?: number
   desired_retention?: number
   daily_new_card_limit?: number
+  history_colorized_area?: boolean
+  history_colored_dots?: boolean
+  history_threshold_lines?: boolean
 }
 
 interface UpdateSettingsResponse {

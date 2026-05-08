@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -56,10 +58,14 @@ function dotColor(percentage: number, redThreshold: number, yellowThreshold: num
 }
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
-  const { settings } = useSettings()
+  const { settings, updateSettings } = useSettings()
   const [days, setDays] = useState<DayHistory[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const colorizedArea     = settings?.historyColorizedArea  ?? false
+  const colorizedDots     = settings?.historyColoredDots    ?? false
+  const showThresholdLines = settings?.historyThresholdLines ?? false
 
   // Derive gradient stop positions from the user's threshold settings.
   // The SVG gradient runs top (y=0 = 100% accuracy) to bottom (y=1 = 0% accuracy),
@@ -131,10 +137,19 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
               >
                 <defs>
                   <linearGradient id="fillPercentage" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset={`${gradientStops.greenOffset}%`}  stopColor="hsl(142,71%,45%)" stopOpacity={0.35} />
-                    <stop offset={`${gradientStops.yellowOffset}%`} stopColor="hsl(45,93%,47%)"  stopOpacity={0.28} />
-                    <stop offset={`${gradientStops.redOffset}%`}    stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
-                    <stop offset={`${gradientStops.bottomOffset}%`} stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
+                    {colorizedArea ? (
+                      <>
+                        <stop offset={`${gradientStops.greenOffset}%`}  stopColor="hsl(142,71%,45%)" stopOpacity={0.35} />
+                        <stop offset={`${gradientStops.yellowOffset}%`} stopColor="hsl(45,93%,47%)"  stopOpacity={0.28} />
+                        <stop offset={`${gradientStops.redOffset}%`}    stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
+                        <stop offset={`${gradientStops.bottomOffset}%`} stopColor="hsl(0,84%,60%)"   stopOpacity={0.35} />
+                      </>
+                    ) : (
+                      <>
+                        <stop offset="5%"  stopColor="var(--chart-1)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
+                      </>
+                    )}
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border" />
@@ -174,20 +189,24 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                     />
                   }
                 />
-                <ReferenceLine
-                  y={gradientStops.yellowOffset === 0 ? undefined : settings?.yellowThreshold ?? 70}
-                  stroke="hsl(45,93%,47%)"
-                  strokeWidth={1}
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.5}
-                />
-                <ReferenceLine
-                  y={settings?.redThreshold ?? 50}
-                  stroke="hsl(0,84%,60%)"
-                  strokeWidth={1}
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.5}
-                />
+                {showThresholdLines && (
+                  <>
+                    <ReferenceLine
+                      y={gradientStops.yellowOffset === 0 ? undefined : settings?.yellowThreshold ?? 70}
+                      stroke="hsl(45,93%,47%)"
+                      strokeWidth={1}
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                    />
+                    <ReferenceLine
+                      y={settings?.redThreshold ?? 50}
+                      stroke="hsl(0,84%,60%)"
+                      strokeWidth={1}
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                    />
+                  </>
+                )}
                 <Area
                   type="monotone"
                   dataKey="percentage"
@@ -197,20 +216,16 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                   connectNulls={false}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props
-                    const color = dotColor(
-                      payload.percentage,
-                      settings?.redThreshold ?? 50,
-                      settings?.yellowThreshold ?? 70,
-                    )
+                    const color = colorizedDots
+                      ? dotColor(payload.percentage, settings?.redThreshold ?? 50, settings?.yellowThreshold ?? 70)
+                      : 'white'
                     return <Dot key={payload.date} cx={cx} cy={cy} r={4} fill={color} strokeWidth={0} />
                   }}
                   activeDot={(props: any) => {
                     const { cx, cy, payload } = props
-                    const color = dotColor(
-                      payload.percentage,
-                      settings?.redThreshold ?? 50,
-                      settings?.yellowThreshold ?? 70,
-                    )
+                    const color = colorizedDots
+                      ? dotColor(payload.percentage, settings?.redThreshold ?? 50, settings?.yellowThreshold ?? 70)
+                      : 'white'
                     return <Dot key={payload.date} cx={cx} cy={cy} r={5} fill={color} strokeWidth={0} />
                   }}
                 />
@@ -229,6 +244,21 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
             ))}
           </div>
         )}
+
+        <div className="flex flex-col gap-2.5 border-t pt-4 mt-1">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="toggle-area" className="text-sm text-muted-foreground cursor-pointer">Colorized area fill</Label>
+            <Switch id="toggle-area" checked={colorizedArea} onCheckedChange={v => updateSettings({ historyColorizedArea: v })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="toggle-dots" className="text-sm text-muted-foreground cursor-pointer">Accuracy-colored dots</Label>
+            <Switch id="toggle-dots" checked={colorizedDots} onCheckedChange={v => updateSettings({ historyColoredDots: v })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="toggle-lines" className="text-sm text-muted-foreground cursor-pointer">Threshold lines</Label>
+            <Switch id="toggle-lines" checked={showThresholdLines} onCheckedChange={v => updateSettings({ historyThresholdLines: v })} />
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )

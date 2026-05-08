@@ -8,6 +8,9 @@ export interface Settings {
   autoProgressDelay: number
   desiredRetention: number
   dailyNewCardLimit: number
+  historyColorizedArea: boolean
+  historyColoredDots: boolean
+  historyThresholdLines: boolean
 }
 
 // Word types
