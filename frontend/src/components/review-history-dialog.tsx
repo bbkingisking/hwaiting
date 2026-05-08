@@ -18,6 +18,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ReferenceLine,
   Dot,
 } from 'recharts'
 import { getReviewHistory, type DayHistory } from '@/lib/api'
@@ -46,6 +47,12 @@ function formatShortDate(dateStr: string): string {
   const [year, month, day] = dateStr.split('-').map(Number)
   const d = new Date(year, month - 1, day)
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function dotColor(percentage: number, redThreshold: number, yellowThreshold: number): string {
+  if (percentage >= yellowThreshold) return 'hsla(142,71%,45%,0.55)'
+  if (percentage >= redThreshold)    return 'hsla(45,93%,47%,0.55)'
+  return 'hsla(0,84%,60%,0.55)'
 }
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
@@ -167,6 +174,20 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                     />
                   }
                 />
+                <ReferenceLine
+                  y={gradientStops.yellowOffset === 0 ? undefined : settings?.yellowThreshold ?? 70}
+                  stroke="hsl(45,93%,47%)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.5}
+                />
+                <ReferenceLine
+                  y={settings?.redThreshold ?? 50}
+                  stroke="hsl(0,84%,60%)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.5}
+                />
                 <Area
                   type="monotone"
                   dataKey="percentage"
@@ -174,8 +195,24 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                   strokeWidth={2}
                   fill="url(#fillPercentage)"
                   connectNulls={false}
-                  dot={<Dot r={4} fill="white" strokeWidth={0} />}
-                  activeDot={{ r: 5, fill: "white", strokeWidth: 0 }}
+                  dot={(props: any) => {
+                    const { cx, cy, payload } = props
+                    const color = dotColor(
+                      payload.percentage,
+                      settings?.redThreshold ?? 50,
+                      settings?.yellowThreshold ?? 70,
+                    )
+                    return <Dot key={payload.date} cx={cx} cy={cy} r={4} fill={color} strokeWidth={0} />
+                  }}
+                  activeDot={(props: any) => {
+                    const { cx, cy, payload } = props
+                    const color = dotColor(
+                      payload.percentage,
+                      settings?.redThreshold ?? 50,
+                      settings?.yellowThreshold ?? 70,
+                    )
+                    return <Dot key={payload.date} cx={cx} cy={cy} r={5} fill={color} strokeWidth={0} />
+                  }}
                 />
               </AreaChart>
             </ChartContainer>
