@@ -65,6 +65,19 @@ pub struct ReviewResponse {
 }
 
 #[derive(Serialize)]
+pub struct DayHistory {
+    pub date: String,
+    pub total: i64,
+    pub correct: i64,
+    pub percentage: f64,
+}
+
+#[derive(Serialize)]
+pub struct ReviewHistoryResponse {
+    pub days: Vec<DayHistory>,
+}
+
+#[derive(Serialize)]
 pub struct StatsResponse {
     new_count: i64,
     due_count: i64,
@@ -758,4 +771,66 @@ pub async fn unsuppress_card(
     info!("Card unsuspended successfully");
 
     Ok(Json(ReviewResponse { success: true }))
+}
+
+pub async fn get_review_history(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<ReviewHistoryResponse>, AppError> {
+    let user_id = auth.0;
+
+    // Get day_boundary_hour from user_settings (default 4)
+    let day_boundary_hour: i64 = sqlx::query_scalar(
+        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?
+    .unwrap_or(4);
+
+    // Subtracting day_boundary_hour from reviewed_at shifts timestamps so that
+    // date() gives the correct "logical day" regardless of the boundary hour.
+    // We look back far enough to cover 5 full boundary-aligned days.
+    let lookback_hours = day_boundary_hour + 24 * 5;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            date(datetime(reviewed_at, printf('-%d hours', ?))) AS day,
+            COUNT(*) AS total,
+            SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) AS correct
+        FROM review_history
+        WHERE user_id = ?
+          AND reviewed_at >= datetime('now', printf('-%d hours', ?))
+        GROUP BY day
+        ORDER BY day ASC
+        LIMIT 5
+        "#,
+    )
+    .bind(day_boundary_hour)
+    .bind(user_id)
+    .bind(lookback_hours)
+    .fetch_all(&pool)
+    .await?;
+
+    let days = rows
+        .iter()
+        .map(|row| {
+            let total: i64 = row.get("total");
+            let correct: i64 = row.get("correct");
+            let percentage = if total > 0 {
+                (correct as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
+            DayHistory {
+                date: row.get("day"),
+                total,
+                correct,
+                percentage,
+            }
+        })
+        .collect();
+
+    Ok(Json(ReviewHistoryResponse { days }))
 }

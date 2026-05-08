@@ -181,6 +181,22 @@ interface StatsResponse {
   new_today_count: number
 }
 
+export interface DayHistory {
+  date: string
+  total: number
+  correct: number
+  percentage: number
+}
+
+export interface ReviewHistoryResponse {
+  days: DayHistory[]
+}
+
+export async function getReviewHistory(): Promise<ReviewHistoryResponse> {
+  const url = `${window.location.origin}/api/cards/history`
+  return fetchWithAuth(url)
+}
+
 export async function getStats(): Promise<StatsResponse> {
   const url = `${window.location.origin}/api/cards/stats`
   return fetchWithAuth(url)

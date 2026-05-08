@@ -11,7 +11,8 @@ import {
 import { SettingsDialog } from '@/components/settings-dialog'
 import { CustomCardsDialog } from '@/components/custom-cards-dialog'
 import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
-import { Settings, Moon, Sun, LogOut, Plus, EyeOff } from 'lucide-react'
+import { ReviewHistoryDialog } from '@/components/review-history-dialog'
+import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2 } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
@@ -23,6 +24,7 @@ export function AppHeader() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [customCardsOpen, setCustomCardsOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
 
   const checkSuppressedCards = () => {
@@ -55,6 +57,10 @@ export function AppHeader() {
             <span className="text-sm font-medium">{username}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+              <BarChart2 className="mr-2 h-4 w-4" />
+              Review History
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setCustomCardsOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Custom Cards
@@ -93,6 +99,7 @@ export function AppHeader() {
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
+      <ReviewHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <SuppressedCardsDialog 
         open={suppressedCardsOpen} 
         onOpenChange={(open) => {
