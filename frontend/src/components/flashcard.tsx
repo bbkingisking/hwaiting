@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical } from 'lucide-react'
 import { suppressCard } from '@/lib/api'
+import { useAuth } from '@/components/auth-provider'
+import { EditCardDialog } from '@/components/edit-card-dialog'
 
 interface FlashcardProps {
   card: Card
@@ -26,8 +28,10 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const [correct, setCorrect] = useState(false)
   const [suppressing, setSuppressing] = useState(false)
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
+  const { isAdmin } = useAuth()
   const hasAutoProgressedRef = useRef(false)
 
   const handleAdvance = useCallback(() => {
@@ -156,6 +160,11 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               }
             />
             <DropdownMenuContent align="end" className="min-w-50">
+              {isAdmin && (
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  Edit card
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={handleSuppress}
                 disabled={suppressing}
@@ -235,6 +244,14 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
           {card.sentence_translation}
         </p>
       </CardHeader>
+
+      {isAdmin && (
+        <EditCardDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          card={card}
+        />
+      )}
 
       <CardFooter className={cn("flex-col gap-3", isAutoProgressing && "invisible")}>
         {!answered && !isAutoProgressing ? (

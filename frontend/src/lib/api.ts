@@ -1,5 +1,24 @@
 // API module for card operations and user management
 
+interface EditCardRequest {
+  word?: string
+  definition?: string | null
+  pos?: string | null
+  origin_type?: string | null
+  hanja?: string | null
+  hanja_eum?: string | null
+  grade?: string | null
+  trans_word?: string
+  trans_dfn?: string | null
+  sentence?: string
+  sentence_translation?: string
+  target?: string
+}
+
+interface EditCardResponse {
+  success: boolean
+}
+
 interface CardResponse {
   card_id: number
   word: string
@@ -345,6 +364,14 @@ export async function updateCustomCard(cardId: number, updates: UpdateCustomCard
   })
 }
 
+export async function editCard(cardId: number, updates: EditCardRequest): Promise<EditCardResponse> {
+  const url = `${window.location.origin}/api/admin/cards/${cardId}`
+  return fetchWithAuth(url, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  })
+}
+
 export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {
   const url = `${window.location.origin}/api/custom-cards/${cardId}`
   return fetchWithAuth(url, {
@@ -354,6 +381,8 @@ export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCard
 
 export { ApiError }
 export type {
+  EditCardRequest,
+  EditCardResponse,
   CardResponse,
   NextCardEnvelope,
   ReviewRequest,

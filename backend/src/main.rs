@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/invites", get(admin::list_invites))
         .route("/admin/invites", post(admin::generate_invites))
         .route("/admin/invites/{code}", delete(admin::delete_invite))
+        .route("/admin/cards/{card_id}", patch(admin::edit_card))
         .route("/custom-cards", get(custom_cards::list_custom_cards))
         .route("/custom-cards", post(custom_cards::create_custom_card))
         .route("/custom-cards/{card_id}", get(custom_cards::get_custom_card))
