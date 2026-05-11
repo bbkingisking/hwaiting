@@ -245,7 +245,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
           </p>
         </form>
 
-        <p className="text-sm text-muted-foreground text-center mt-2">
+        <p className="text-sm text-muted-foreground text-center mt-2" title={card.trans_dfn ?? undefined}>
           {card.trans_word}
         </p>
         <p className="text-xs text-muted-foreground/70 text-center italic">
