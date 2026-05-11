@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, getDifficultyColor, getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
+import { cn, getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -119,16 +119,10 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
       <CardHeader>
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5">
-          {card.guess_count === 0 ? (
+          {card.guess_count === 0 && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
               New
             </span>
-          ) : (
-            settings.showPercentage && card.difficulty !== null && (
-              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", getDifficultyColor(card.difficulty))}>
-                {card.difficulty.toFixed(1)}
-              </span>
-            )
           )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
