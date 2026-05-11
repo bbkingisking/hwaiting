@@ -34,6 +34,8 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const { isAdmin } = useAuth()
   const hasAutoProgressedRef = useRef(false)
 
+  const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
+
   const handleAdvance = useCallback(() => {
     if (answered) {
       // Submit review: 1 = Again (wrong), 3 = Good (correct)
@@ -188,6 +190,9 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                   </span>
                 )}
                 <span className="text-green-600">{card.target}</span>
+                {showInfinitive && (
+                  <span className="text-xs text-muted-foreground/60 mt-1">({card.word})</span>
+                )}
               </span>
             ) : answered ? (
               <span className="inline-flex flex-col items-center relative pt-5">
@@ -207,6 +212,9 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                     ))}
                     <span className="text-muted-foreground/50 ml-1">({card.target})</span>
                   </span>
+                )}
+                {showInfinitive && (
+                  <span className="text-xs text-muted-foreground/60 mt-1">({card.word})</span>
                 )}
               </span>
             ) : (
