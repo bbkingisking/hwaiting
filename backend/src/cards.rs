@@ -15,6 +15,12 @@ pub struct ReviewRequest {
     rating: u8, // 1 = Again, 3 = Good
 }
 
+#[derive(Serialize, Clone)]
+pub struct HanjaHint {
+    pub hanja: String,
+    pub hanja_eum: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct NextCardResponse {
     card_id: i64,
@@ -36,6 +42,7 @@ pub struct NextCardResponse {
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
+    hanja_hints: Vec<HanjaHint>,
 }
 
 #[derive(Serialize)]
@@ -331,6 +338,51 @@ pub async fn get_next_card(
         None
     };
 
+    // Fetch hanja hints: hanja from other reviewed cards that share characters with this card
+    let hanja_hints: Vec<HanjaHint> = if let Some(ref current_hanja) = hanja {
+        if !current_hanja.is_empty() {
+            let other_hanja_rows = sqlx::query(
+                r#"
+                SELECT DISTINCT c.hanja, c.hanja_eum
+                FROM card_states cs
+                INNER JOIN cards c ON c.id = cs.card_id
+                WHERE cs.user_id = ?
+                  AND cs.card_id != ?
+                  AND c.hanja IS NOT NULL
+                  AND c.hanja != ''
+                "#
+            )
+            .bind(user_id)
+            .bind(card_id)
+            .fetch_all(&pool)
+            .await?;
+
+            let current_chars: std::collections::HashSet<char> =
+                current_hanja.chars().collect();
+
+            other_hanja_rows
+                .iter()
+                .filter_map(|row| {
+                    let other_hanja: String = row.get("hanja");
+                    let other_chars: std::collections::HashSet<char> =
+                        other_hanja.chars().collect();
+                    if current_chars.intersection(&other_chars).next().is_some() {
+                        Some(HanjaHint {
+                            hanja: other_hanja,
+                            hanja_eum: row.get("hanja_eum"),
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
             card_id,
@@ -352,6 +404,7 @@ pub async fn get_next_card(
             difficulty,
             guess_count,
             wrong_guess_count,
+            hanja_hints,
         }),
         next_due_at: None,
     }))

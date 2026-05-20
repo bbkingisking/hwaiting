@@ -27,6 +27,12 @@ export interface Word {
   wrongGuessCount: number
 }
 
+// Hanja hint type
+export interface HanjaHint {
+  hanja: string
+  hanja_eum: string | null
+}
+
 // Card type from backend (includes stats and card_id)
 export interface Card {
   card_id: number
@@ -48,6 +54,7 @@ export interface Card {
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number
+  hanja_hints: HanjaHint[]
 }
 
 // Theme types

@@ -20,6 +20,11 @@ interface EditCardResponse {
   success: boolean
 }
 
+interface HanjaHint {
+  hanja: string
+  hanja_eum: string | null
+}
+
 interface CardResponse {
   card_id: number
   word: string
@@ -40,6 +45,7 @@ interface CardResponse {
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number
+  hanja_hints: HanjaHint[]
 }
 
 interface NextCardEnvelope {

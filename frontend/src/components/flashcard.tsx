@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Card } from '@/lib/types'
+import type { Card, HanjaHint } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
 import { cn, getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
@@ -15,11 +15,71 @@ import { MoreVertical } from 'lucide-react'
 import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 interface FlashcardProps {
   card: Card
   onReview: (rating: number) => void
   onSuppress?: () => void
+}
+
+function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }) {
+  const sharedSet = new Set(sharedChars.split(''))
+
+  return (
+    <span className="text-sm">
+      {hint.hanja.split('').map((char, i) => (
+        <span key={i} className={sharedSet.has(char) ? 'font-bold' : ''}>
+          {char}
+        </span>
+      ))}
+      {hint.hanja_eum && (
+        <span className="text-muted-foreground ml-1">({hint.hanja_eum})</span>
+      )}
+    </span>
+  )
+}
+
+function HanjaHintText({
+  hanja,
+  hints,
+  showEum,
+  hanjaEum,
+}: {
+  hanja: string
+  hints: HanjaHint[]
+  showEum: boolean
+  hanjaEum?: string | null
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (hints.length === 0) {
+    return (
+      <>
+        {hanja}{showEum && hanjaEum && ` (${hanjaEum})`}
+      </>
+    )
+  }
+
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger
+        delay={300}
+        closeOnClick
+        className="cursor-help border-b border-dotted border-current"
+        render={<span />}
+      >
+        {hanja}{showEum && hanjaEum && ` (${hanjaEum})`}
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>
+        <div className="flex flex-col gap-1">
+          {hints.map((hint, i) => (
+            <HintRow key={i} hint={hint} sharedChars={hanja} />
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
@@ -181,7 +241,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    {card.hanja}{card.hanja_eum && ` (${card.hanja_eum})`}
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} />
                   </span>
                 )}
                 <span className="text-green-600">{card.target}</span>
@@ -193,7 +253,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    {card.hanja}{card.hanja_eum && ` (${card.hanja_eum})`}
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} />
                   </span>
                 )}
                 {correct ? (
@@ -216,7 +276,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    {card.hanja}
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum={false} hanjaEum={card.hanja_eum} />
                   </span>
                 )}
                 <input
