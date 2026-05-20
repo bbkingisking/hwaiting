@@ -30,6 +30,7 @@ pub struct NextCardResponse {
     sentence: String,
     sentence_translation: String,
     target: String,
+    alternatives: Vec<String>,
     speech_level: Option<String>,
     tense: Option<String>,
     difficulty: Option<f64>,
@@ -206,7 +207,7 @@ pub async fn get_next_card(
         SELECT
             c.id, c.word, c.definition, c.pos, c.origin_type, c.hanja, c.hanja_eum, c.grade,
             ct.trans_word, ct.trans_dfn,
-            s.text as sentence, s.target,
+            s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
             sih.speech_level, sih.tense,
             cs.difficulty, cs.last_review, cs.stability
@@ -292,8 +293,17 @@ pub async fn get_next_card(
     let target: String = row.get("target");
     let speech_level: Option<String> = row.get("speech_level");
     let tense: Option<String> = row.get("tense");
+    let sentence_id: i64 = row.get("sentence_id");
 
     debug!("Selected card_id: {} ({})", card_id, word);
+
+    // Fetch accepted alternative targets for this sentence
+    let alternatives: Vec<String> = sqlx::query_scalar(
+        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
+    )
+    .bind(sentence_id)
+    .fetch_all(&pool)
+    .await?;
 
     // Get correct/wrong stats for this card
     let stats_row = sqlx::query(
@@ -336,6 +346,7 @@ pub async fn get_next_card(
             sentence,
             sentence_translation,
             target,
+            alternatives,
             speech_level,
             tense,
             difficulty,

@@ -79,6 +79,8 @@ pub struct CardTranslationExport {
 pub struct SentenceExport {
     pub text: String,
     pub target: String,
+    #[serde(default)]
+    pub alternatives: Vec<String>,
     pub translation: Option<String>,
     pub inflection_hint: Option<InflectionHintExport>,
 }
@@ -266,9 +268,18 @@ pub async fn export_data(
                 }
             });
 
+            // Get alternatives
+            let alternatives: Vec<String> = sqlx::query_scalar(
+                "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
+            )
+            .bind(sentence_id)
+            .fetch_all(&pool)
+            .await?;
+
             sentences.push(SentenceExport {
                 text: sentence_row.get("text"),
                 target: sentence_row.get("target"),
+                alternatives,
                 translation,
                 inflection_hint,
             });
@@ -452,6 +463,20 @@ pub async fn import_data(
                 .bind(&hint.tense)
                 .execute(&mut *tx)
                 .await?;
+            }
+
+            // Insert alternatives
+            for alt in &sentence.alternatives {
+                let trimmed = alt.trim();
+                if !trimmed.is_empty() {
+                    sqlx::query(
+                        "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                    )
+                    .bind(sentence_id)
+                    .bind(trimmed)
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
         }
 

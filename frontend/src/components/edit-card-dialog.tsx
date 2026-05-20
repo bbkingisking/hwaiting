@@ -31,6 +31,7 @@ interface FormState {
   sentence: string
   sentence_translation: string
   target: string
+  alternatives: string
 }
 
 function toFormState(card: Card): FormState {
@@ -47,6 +48,7 @@ function toFormState(card: Card): FormState {
     sentence: card.sentence ?? '',
     sentence_translation: card.sentence_translation ?? '',
     target: card.target ?? '',
+    alternatives: (card.alternatives ?? []).join(', '),
   }
 }
 
@@ -90,6 +92,7 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
         sentence: form.sentence.trim() || undefined,
         sentence_translation: form.sentence_translation.trim() || undefined,
         target: form.target.trim() || undefined,
+        alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
       })
       onOpenChange(false)
     } catch (err) {
@@ -169,6 +172,14 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
 
             <Field label="Target (conjugated form in sentence)">
               <Input value={form.target} onChange={handleChange('target')} />
+            </Field>
+
+            <Field label="Accepted alternatives (comma-separated)">
+              <Input
+                value={form.alternatives}
+                onChange={handleChange('alternatives')}
+                placeholder="e.g. alt1, alt2"
+              />
             </Field>
 
             <Field label="Sentence translation (English)">

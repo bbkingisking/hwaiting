@@ -25,6 +25,7 @@ pub struct EditCardRequest {
     pub sentence: Option<String>,
     pub sentence_translation: Option<String>,
     pub target: Option<String>,
+    pub alternatives: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -236,6 +237,37 @@ pub async fn edit_card(
                 .bind(sid)
                 .execute(&mut *tx)
                 .await?;
+            }
+        }
+    }
+
+    // Update alternative targets
+    if let Some(ref alts) = payload.alternatives {
+        let sentence_id: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
+                .bind(card_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        if let Some(sid) = sentence_id {
+            // Delete existing alternatives
+            sqlx::query("DELETE FROM sentence_alternative_targets WHERE sentence_id = ?")
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+
+            // Insert new alternatives
+            for alt in alts {
+                let trimmed = alt.trim();
+                if !trimmed.is_empty() {
+                    sqlx::query(
+                        "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                    )
+                    .bind(sid)
+                    .bind(trimmed)
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
         }
     }

@@ -42,6 +42,7 @@ export interface Card {
   sentence: string
   sentence_translation: string
   target: string
+  alternatives: string[]
   speech_level: string | null
   tense: string | null
   difficulty: number | null

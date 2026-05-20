@@ -85,7 +85,8 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (answered) return
-    const isCorrect = input.trim() === card.target
+    const trimmed = input.trim()
+    const isCorrect = trimmed === card.target || (card.alternatives ?? []).includes(trimmed)
     setCorrect(isCorrect)
 
     // Auto-progress if correct and setting is enabled

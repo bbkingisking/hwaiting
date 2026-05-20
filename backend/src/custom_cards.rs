@@ -25,6 +25,7 @@ pub struct CreateCustomCardRequest {
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
     pub hanja_eum: Option<String>,
+    pub alternatives: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -182,6 +183,22 @@ pub async fn create_custom_card(
         .bind(payload.tense.as_ref().unwrap())
         .execute(&mut *tx)
         .await?;
+    }
+
+    // Insert alternative targets
+    if let Some(ref alts) = payload.alternatives {
+        for alt in alts {
+            let trimmed = alt.trim();
+            if !trimmed.is_empty() {
+                sqlx::query(
+                    "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                )
+                .bind(sentence_id)
+                .bind(trimmed)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
     }
 
     tx.commit().await?;
@@ -375,6 +392,7 @@ pub struct UpdateCustomCardRequest {
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
     pub hanja_eum: Option<String>,
+    pub alternatives: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -597,6 +615,36 @@ pub async fn update_custom_card(
             .bind(payload.tense.as_ref().unwrap())
             .execute(&mut *tx)
             .await?;
+        }
+    }
+
+    // Update alternative targets
+    if let Some(ref alts) = payload.alternatives {
+        let sentence_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
+        )
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        // Delete existing
+        sqlx::query("DELETE FROM sentence_alternative_targets WHERE sentence_id = ?")
+            .bind(sentence_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // Insert new
+        for alt in alts {
+            let trimmed = alt.trim();
+            if !trimmed.is_empty() {
+                sqlx::query(
+                    "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                )
+                .bind(sentence_id)
+                .bind(trimmed)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
     }
 

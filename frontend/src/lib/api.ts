@@ -13,6 +13,7 @@ interface EditCardRequest {
   sentence?: string
   sentence_translation?: string
   target?: string
+  alternatives?: string[]
 }
 
 interface EditCardResponse {
@@ -33,6 +34,7 @@ interface CardResponse {
   sentence: string
   sentence_translation: string
   target: string
+  alternatives: string[]
   speech_level: string | null
   tense: string | null
   difficulty: number | null
@@ -328,6 +330,7 @@ interface UpdateCustomCardRequest {
   target?: string
   speech_level?: string | null
   tense?: string | null
+  alternatives?: string[]
 }
 
 interface UpdateCustomCardResponse {
