@@ -659,6 +659,7 @@ pub async fn get_stats(
         SELECT COUNT(*)
         FROM review_history
         WHERE user_id = ?
+        AND state != 'learning'
         AND datetime(reviewed_at) >= datetime(?)
         "#,
     )
@@ -673,6 +674,7 @@ pub async fn get_stats(
         SELECT COUNT(*)
         FROM review_history
         WHERE user_id = ?
+        AND state != 'learning'
         AND rating IN ('good', 'easy')
         AND datetime(reviewed_at) >= datetime(?)
         "#,
