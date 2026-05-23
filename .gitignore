@@ -1,14 +1,5 @@
-shadcn_docs/
 backend/target/
 backend/annyeong.db
-
-# New schema and data files (keep out of version control)
-hwaiting.db
-hwaiting.db-shm
-hwaiting.db-wal
-new_data.jsonl
-new_schema.sql
-seed_db.py
 
 # dependencies
 node_modules/
