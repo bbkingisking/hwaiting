@@ -16,7 +16,6 @@ pub struct ExportData {
     pub version: String,
     pub exported_at: String,
     pub settings: UserSettingsExport,
-    pub card_states: Vec<CardStateExport>,
     pub review_history: Vec<ReviewHistoryExport>,
     pub suspended_cards: Vec<i64>,
     pub custom_cards: Vec<CustomCardExport>,
@@ -32,15 +31,9 @@ pub struct UserSettingsExport {
     pub auto_progress_delay: i64,
     pub desired_retention: f64,
     pub daily_new_card_limit: i64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CardStateExport {
-    pub card_id: i64,
-    pub stability: f64,
-    pub difficulty: f64,
-    pub last_review: Option<String>,
-    pub state: String,
+    pub history_colorized_area: bool,
+    pub history_colored_dots: bool,
+    pub history_threshold_lines: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -106,7 +99,7 @@ pub struct ImportDataResponse {
 
 #[derive(Serialize, Debug)]
 pub struct ImportStats {
-    pub card_states_imported: usize,
+    pub card_states_derived: usize,
     pub reviews_imported: usize,
     pub suspended_cards_imported: usize,
     pub custom_cards_imported: usize,
@@ -122,28 +115,6 @@ pub async fn export_data(
 
     // Get settings
     let settings = get_user_settings(&pool, user_id).await?;
-
-    // Get card states
-    let card_states_rows = sqlx::query(
-        r#"
-        SELECT card_id, stability, difficulty, last_review, state
-        FROM card_states
-        WHERE user_id = ?
-        "#
-    )
-    .bind(user_id)
-    .fetch_all(&pool)
-    .await?;
-
-    let card_states: Vec<CardStateExport> = card_states_rows.iter().map(|row| {
-        CardStateExport {
-            card_id: row.get("card_id"),
-            stability: row.get("stability"),
-            difficulty: row.get("difficulty"),
-            last_review: row.get("last_review"),
-            state: row.get("state"),
-        }
-    }).collect();
 
     // Get review history
     let review_history_rows = sqlx::query(
@@ -302,14 +273,12 @@ pub async fn export_data(
         version: "1.0".to_string(),
         exported_at: chrono::Utc::now().to_rfc3339(),
         settings,
-        card_states,
         review_history,
         suspended_cards,
         custom_cards,
     };
 
-    info!("Export complete: {} card states, {} reviews, {} suspended cards, {} custom cards",
-        export_data.card_states.len(),
+    info!("Export complete: {} reviews, {} suspended cards, {} custom cards",
         export_data.review_history.len(),
         export_data.suspended_cards.len(),
         export_data.custom_cards.len()
@@ -373,7 +342,7 @@ pub async fn import_data(
     }
 
     let mut stats = ImportStats {
-        card_states_imported: 0,
+        card_states_derived: 0,
         reviews_imported: 0,
         suspended_cards_imported: 0,
         custom_cards_imported: 0,
@@ -483,45 +452,7 @@ pub async fn import_data(
         stats.custom_cards_imported += 1;
     }
 
-    // Import card states
-    for card_state in data.card_states {
-        // Check if card exists
-        let card_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)"
-        )
-        .bind(card_state.card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        if !card_exists {
-            warn!("Skipping card_state for non-existent card_id: {}", card_state.card_id);
-            continue;
-        }
-
-        sqlx::query(
-            r#"
-            INSERT INTO card_states (card_id, user_id, stability, difficulty, last_review, state)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(card_id, user_id) DO UPDATE SET
-                stability = excluded.stability,
-                difficulty = excluded.difficulty,
-                last_review = excluded.last_review,
-                state = excluded.state
-            "#
-        )
-        .bind(card_state.card_id)
-        .bind(user_id)
-        .bind(card_state.stability)
-        .bind(card_state.difficulty)
-        .bind(card_state.last_review)
-        .bind(card_state.state)
-        .execute(&mut *tx)
-        .await?;
-
-        stats.card_states_imported += 1;
-    }
-
-    // Import review history
+    // Import review history (must come before card_states derivation)
     for review in data.review_history {
         // Check if card exists
         let card_exists: bool = sqlx::query_scalar(
@@ -557,6 +488,34 @@ pub async fn import_data(
         stats.reviews_imported += 1;
     }
 
+    // Derive card_states from the last review_history entry per card
+    let derived_result = sqlx::query(
+        r#"
+        INSERT INTO card_states (card_id, user_id, stability, difficulty, last_review, state)
+        SELECT rh.card_id, ?, rh.stability, rh.difficulty, rh.reviewed_at, rh.state
+        FROM review_history rh
+        INNER JOIN (
+            SELECT card_id, MAX(reviewed_at) AS max_reviewed
+            FROM review_history
+            WHERE user_id = ?
+            GROUP BY card_id
+        ) latest ON rh.card_id = latest.card_id AND rh.reviewed_at = latest.max_reviewed
+        WHERE rh.user_id = ? AND rh.stability IS NOT NULL
+        ON CONFLICT(card_id, user_id) DO UPDATE SET
+            stability = excluded.stability,
+            difficulty = excluded.difficulty,
+            last_review = excluded.last_review,
+            state = excluded.state
+        "#
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    stats.card_states_derived = derived_result.rows_affected() as usize;
+
     // Import suspended cards
     for card_id in data.suspended_cards {
         // Check if card exists
@@ -590,10 +549,11 @@ pub async fn import_data(
     // Import settings
     sqlx::query(
         r#"
-        INSERT INTO user_settings (user_id, show_percentage, red_threshold, yellow_threshold, 
-                                   day_boundary_hour, auto_progress_on_correct, auto_progress_delay, 
-                                   desired_retention, daily_new_card_limit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO user_settings (user_id, show_percentage, red_threshold, yellow_threshold,
+                                   day_boundary_hour, auto_progress_on_correct, auto_progress_delay,
+                                   desired_retention, daily_new_card_limit,
+                                   history_colorized_area, history_colored_dots, history_threshold_lines)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             show_percentage = excluded.show_percentage,
             red_threshold = excluded.red_threshold,
@@ -602,7 +562,10 @@ pub async fn import_data(
             auto_progress_on_correct = excluded.auto_progress_on_correct,
             auto_progress_delay = excluded.auto_progress_delay,
             desired_retention = excluded.desired_retention,
-            daily_new_card_limit = excluded.daily_new_card_limit
+            daily_new_card_limit = excluded.daily_new_card_limit,
+            history_colorized_area = excluded.history_colorized_area,
+            history_colored_dots = excluded.history_colored_dots,
+            history_threshold_lines = excluded.history_threshold_lines
         "#
     )
     .bind(user_id)
@@ -614,6 +577,9 @@ pub async fn import_data(
     .bind(data.settings.auto_progress_delay)
     .bind(data.settings.desired_retention)
     .bind(data.settings.daily_new_card_limit)
+    .bind(data.settings.history_colorized_area)
+    .bind(data.settings.history_colored_dots)
+    .bind(data.settings.history_threshold_lines)
     .execute(&mut *tx)
     .await?;
 
@@ -645,8 +611,9 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
 
     let row = sqlx::query(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, 
-               auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit
+        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour,
+               auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
+               history_colorized_area, history_colored_dots, history_threshold_lines
         FROM user_settings
         WHERE user_id = ?
         "#
@@ -664,5 +631,8 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
         auto_progress_delay: row.get("auto_progress_delay"),
         desired_retention: row.get("desired_retention"),
         daily_new_card_limit: row.get("daily_new_card_limit"),
+        history_colorized_area: row.get("history_colorized_area"),
+        history_colored_dots: row.get("history_colored_dots"),
+        history_threshold_lines: row.get("history_threshold_lines"),
     })
 }
