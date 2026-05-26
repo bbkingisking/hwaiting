@@ -1169,6 +1169,17 @@ pub async fn optimize_fsrs(
         });
     }
 
+    // Filter out items with only one review (FSRS requires at least one delta_t > 0)
+    items.retain(|item| item.reviews.len() >= 2);
+
+    info!("Built {} FSRS training items from reviews", items.len());
+
+    if items.is_empty() {
+        return Err(AppError::Internal(
+            "Not enough review history. Each card needs at least 2 reviews to optimize.".to_string()
+        ));
+    }
+
     let review_count = items.iter().map(|item| item.reviews.len()).sum::<usize>();
 
     // Run the optimizer
