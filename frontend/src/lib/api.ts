@@ -259,6 +259,7 @@ interface UserSettings {
   history_colorized_area: boolean
   history_colored_dots: boolean
   history_threshold_lines: boolean
+  has_fsrs_parameters: boolean
 }
 
 interface UpdateSettingsRequest {
@@ -401,6 +402,28 @@ export async function editCard(cardId: number, updates: EditCardRequest): Promis
 
 export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {
   const url = `${window.location.origin}/api/custom-cards/${cardId}`
+  return fetchWithAuth(url, {
+    method: 'DELETE',
+  })
+}
+
+// FSRS Parameter Optimization
+
+interface OptimizeFsrsResponse {
+  success: boolean
+  parameters: number[]
+  review_count: number
+}
+
+export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
+  const url = `${window.location.origin}/api/cards/optimize-fsrs`
+  return fetchWithAuth(url, {
+    method: 'POST',
+  })
+}
+
+export async function resetFsrsParameters(): Promise<{ success: boolean }> {
+  const url = `${window.location.origin}/api/cards/optimize-fsrs`
   return fetchWithAuth(url, {
     method: 'DELETE',
   })

@@ -27,6 +27,7 @@ pub struct UserSettings {
     pub history_colorized_area: bool,
     pub history_colored_dots: bool,
     pub history_threshold_lines: bool,
+    pub has_fsrs_parameters: bool,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +101,14 @@ pub async fn get_settings(
     .fetch_one(&pool)
     .await?;
 
+    // Check if user has custom FSRS parameters
+    let has_fsrs_parameters: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM user_fsrs_parameters WHERE user_id = ?)"
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
     Ok(Json(UserSettings {
         show_percentage: row.get("show_percentage"),
         red_threshold: row.get("red_threshold"),
@@ -112,6 +121,7 @@ pub async fn get_settings(
         history_colorized_area: row.get("history_colorized_area"),
         history_colored_dots: row.get("history_colored_dots"),
         history_threshold_lines: row.get("history_threshold_lines"),
+        has_fsrs_parameters,
     }))
 }
 

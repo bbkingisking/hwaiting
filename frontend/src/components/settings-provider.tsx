@@ -21,6 +21,7 @@ const defaultSettings: Settings = {
   historyColorizedArea: DEFAULT_SETTINGS.HISTORY_COLORIZED_AREA,
   historyColoredDots: DEFAULT_SETTINGS.HISTORY_COLORED_DOTS,
   historyThresholdLines: DEFAULT_SETTINGS.HISTORY_THRESHOLD_LINES,
+  hasFsrsParameters: false,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -50,6 +51,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           historyColorizedArea: userSettings.history_colorized_area,
           historyColoredDots: userSettings.history_colored_dots,
           historyThresholdLines: userSettings.history_threshold_lines,
+          hasFsrsParameters: userSettings.has_fsrs_parameters,
         })
       } catch (err) {
         console.error('Failed to fetch settings:', err)

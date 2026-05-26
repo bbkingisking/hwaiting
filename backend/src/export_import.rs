@@ -34,6 +34,7 @@ pub struct UserSettingsExport {
     pub history_colorized_area: bool,
     pub history_colored_dots: bool,
     pub history_threshold_lines: bool,
+    pub fsrs_parameters: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -583,6 +584,21 @@ pub async fn import_data(
     .execute(&mut *tx)
     .await?;
 
+    // Import FSRS parameters if present
+    if let Some(ref fsrs_params) = data.settings.fsrs_parameters {
+        sqlx::query(
+            r#"
+            INSERT INTO user_fsrs_parameters (user_id, parameters)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET parameters = excluded.parameters
+            "#
+        )
+        .bind(user_id)
+        .bind(fsrs_params)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     // Commit transaction
     tx.commit().await?;
 
@@ -622,6 +638,14 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
     .fetch_one(pool)
     .await?;
 
+    // Get FSRS parameters if they exist
+    let fsrs_parameters: Option<String> = sqlx::query_scalar(
+        "SELECT parameters FROM user_fsrs_parameters WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
     Ok(UserSettingsExport {
         show_percentage: row.get("show_percentage"),
         red_threshold: row.get("red_threshold"),
@@ -634,5 +658,6 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
         history_colorized_area: row.get("history_colorized_area"),
         history_colored_dots: row.get("history_colored_dots"),
         history_threshold_lines: row.get("history_threshold_lines"),
+        fsrs_parameters,
     })
 }

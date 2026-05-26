@@ -20,7 +20,7 @@ import {
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
-import { exportUserData, importUserData, type ImportResponse } from '@/lib/api'
+import { exportUserData, importUserData, optimizeFsrs, resetFsrsParameters, type ImportResponse } from '@/lib/api'
 
 interface InviteCode {
   code: string
@@ -43,6 +43,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [isOptimizing, setIsOptimizing] = useState(false)
+  const [optimizeMessage, setOptimizeMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [showImportAlert, setShowImportAlert] = useState(false)
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   
@@ -168,6 +170,40 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const handleImportCancel = () => {
     setShowImportAlert(false)
     setPendingImportFile(null)
+  }
+
+  const handleOptimize = async () => {
+    setIsOptimizing(true)
+    setOptimizeMessage(null)
+    try {
+      const result = await optimizeFsrs()
+      setOptimizeMessage({
+        type: 'success',
+        text: `Optimized from ${result.review_count} reviews`
+      })
+      // Refresh settings to pick up hasFsrsParameters change
+      // The settings provider will re-fetch on next render, but we can force it
+      // by updating the flag directly
+      updateSettings({ hasFsrsParameters: true } as any)
+    } catch (error) {
+      console.error('Failed to optimize FSRS parameters:', error)
+      setOptimizeMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to optimize parameters'
+      })
+    } finally {
+      setIsOptimizing(false)
+    }
+  }
+
+  const handleResetFsrs = async () => {
+    try {
+      await resetFsrsParameters()
+      setOptimizeMessage(null)
+      updateSettings({ hasFsrsParameters: false } as any)
+    } catch (error) {
+      console.error('Failed to reset FSRS parameters:', error)
+    }
   }
 
   // Initialize preferred limit from current settings
@@ -388,6 +424,40 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 />
                 <p className="text-xs text-muted-foreground">
                   Target probability of recalling a card at review time. Higher = more frequent reviews, lower = fewer reviews
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleOptimize}
+                    disabled={isOptimizing}
+                    variant="outline"
+                  >
+                    {isOptimizing ? 'Optimizing...' : 'Optimize scheduling'}
+                  </Button>
+                  {settings.hasFsrsParameters && (
+                    <Button
+                      onClick={handleResetFsrs}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      Reset to defaults
+                    </Button>
+                  )}
+                </div>
+                {settings.hasFsrsParameters && !optimizeMessage && (
+                  <p className="text-xs text-green-600 dark:text-green-500">
+                    Using personalized parameters
+                  </p>
+                )}
+                {optimizeMessage && (
+                  <p className={`text-xs ${optimizeMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                    {optimizeMessage.text}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Train the scheduling algorithm on your review history for better intervals
                 </p>
               </div>
             </AccordionContent>

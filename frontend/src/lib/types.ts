@@ -11,6 +11,7 @@ export interface Settings {
   historyColorizedArea: boolean
   historyColoredDots: boolean
   historyThresholdLines: boolean
+  hasFsrsParameters: boolean
 }
 
 // Word types

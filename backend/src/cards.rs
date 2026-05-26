@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use chrono::{Local, TimeZone, Timelike, Utc};
-use fsrs::{MemoryState, FSRS, DEFAULT_PARAMETERS};
+use fsrs::{ComputeParametersInput, FSRSItem, FSRSReview, MemoryState, FSRS, DEFAULT_PARAMETERS};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
@@ -108,6 +108,13 @@ pub struct StatsResponse {
     percentage: Option<i64>,
     next_due_at: Option<String>,
     new_today_count: i64,
+}
+
+#[derive(Serialize)]
+pub struct OptimizeFsrsResponse {
+    success: bool,
+    parameters: Vec<f32>,
+    review_count: usize,
 }
 
 #[derive(Deserialize, Default)]
@@ -458,7 +465,20 @@ pub async fn submit_review(
     .fetch_optional(&pool)
     .await?;
 
-    let fsrs = FSRS::new(Some(&DEFAULT_PARAMETERS)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
+    // Load user's optimized FSRS parameters, or fall back to defaults
+    let params_json: Option<String> = sqlx::query_scalar(
+        "SELECT parameters FROM user_fsrs_parameters WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    let default_params = DEFAULT_PARAMETERS;
+    let custom_params: Option<Vec<f32>> = params_json
+        .and_then(|json| serde_json::from_str(&json).ok());
+    let params: &[f32] = custom_params.as_deref().unwrap_or(&default_params);
+
+    let fsrs = FSRS::new(Some(params)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
     // Fetch user's desired retention setting
     let desired_retention: f64 = sqlx::query_scalar(
@@ -1068,4 +1088,142 @@ pub async fn get_history_summary(
         current_streak,
         longest_streak,
     }))
+}
+
+// Optimize FSRS parameters from user's review history
+pub async fn optimize_fsrs(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<OptimizeFsrsResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Optimizing FSRS parameters for user_id: {}", user_id);
+
+    // Fetch all review history for this user, ordered by card and time
+    let rows = sqlx::query(
+        r#"
+        SELECT card_id, rating, reviewed_at
+        FROM review_history
+        WHERE user_id = ?
+        ORDER BY card_id, reviewed_at ASC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    if rows.is_empty() {
+        return Err(AppError::Internal("No review history found".to_string()));
+    }
+
+    // Group by card_id and build FSRSItem list
+    let mut items: Vec<FSRSItem> = Vec::new();
+    let mut current_card_id: Option<i64> = None;
+    let mut current_reviews: Vec<FSRSReview> = Vec::new();
+    let mut last_review_time: Option<chrono::DateTime<Utc>> = None;
+
+    for row in &rows {
+        let card_id: i64 = row.get("card_id");
+        let rating_str: String = row.get("rating");
+        let reviewed_at_str: String = row.get("reviewed_at");
+
+        let rating: u32 = match rating_str.as_str() {
+            "again" => 1,
+            "hard" => 2,
+            "good" => 3,
+            "easy" => 4,
+            _ => continue,
+        };
+
+        let reviewed_at = chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%d %H:%M:%S"))
+            .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, Utc))
+            .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?;
+
+        if current_card_id != Some(card_id) {
+            // Save previous card's reviews
+            if !current_reviews.is_empty() {
+                items.push(FSRSItem {
+                    reviews: current_reviews,
+                });
+            }
+            current_card_id = Some(card_id);
+            current_reviews = Vec::new();
+            last_review_time = None;
+        }
+
+        let delta_t = if let Some(last) = last_review_time {
+            (reviewed_at - last).num_days().max(0) as u32
+        } else {
+            0
+        };
+
+        current_reviews.push(FSRSReview { rating, delta_t });
+        last_review_time = Some(reviewed_at);
+    }
+
+    // Push the last card's reviews
+    if !current_reviews.is_empty() {
+        items.push(FSRSItem {
+            reviews: current_reviews,
+        });
+    }
+
+    let review_count = items.iter().map(|item| item.reviews.len()).sum::<usize>();
+
+    // Run the optimizer
+    let fsrs = FSRS::new(None)
+        .map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
+
+    let input = ComputeParametersInput {
+        train_set: items,
+        progress: None,
+        enable_short_term: true,
+        num_relearning_steps: None,
+    };
+
+    let parameters = fsrs.compute_parameters(input)
+        .map_err(|e| AppError::Internal(format!("FSRS optimization error: {:?}", e)))?;
+
+    // Store the optimized parameters
+    let params_json = serde_json::to_string(&parameters)
+        .map_err(|e| AppError::Internal(format!("JSON serialization error: {}", e)))?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_fsrs_parameters (user_id, parameters)
+        VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET parameters = excluded.parameters
+        "#,
+    )
+    .bind(user_id)
+    .bind(&params_json)
+    .execute(&pool)
+    .await?;
+
+    info!("FSRS parameters optimized from {} reviews", review_count);
+
+    Ok(Json(OptimizeFsrsResponse {
+        success: true,
+        parameters,
+        review_count,
+    }))
+}
+
+// Reset FSRS parameters to defaults
+pub async fn reset_fsrs_parameters(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<ReviewResponse>, AppError> {
+    let user_id = auth.0;
+    info!("Resetting FSRS parameters for user_id: {}", user_id);
+
+    sqlx::query("DELETE FROM user_fsrs_parameters WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&pool)
+        .await?;
+
+    info!("FSRS parameters reset to defaults");
+
+    Ok(Json(ReviewResponse { success: true }))
 }
