@@ -23,8 +23,13 @@ interface FlashcardProps {
   onSuppress?: () => void
 }
 
+function isHanja(char: string): boolean {
+  const code = char.codePointAt(0)!
+  return code >= 0x4E00 && code <= 0x9FFF
+}
+
 function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }) {
-  const sharedSet = new Set(sharedChars.split(''))
+  const sharedSet = new Set([...sharedChars].filter(isHanja))
 
   return (
     <span className="text-sm">

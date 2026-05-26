@@ -379,15 +379,15 @@ pub async fn get_next_card(
             .await?;
 
             let current_chars: std::collections::HashSet<char> =
-                current_hanja.chars().collect();
+                current_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
 
             other_hanja_rows
                 .iter()
                 .filter_map(|row| {
                     let other_hanja: String = row.get("hanja");
                     let other_chars: std::collections::HashSet<char> =
-                        other_hanja.chars().collect();
-                    if current_chars.intersection(&other_chars).next().is_some() {
+                        other_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
+                    if !current_chars.is_empty() && !other_chars.is_empty() && current_chars.intersection(&other_chars).next().is_some() {
                         Some(HanjaHint {
                             hanja: other_hanja,
                             hanja_eum: row.get("hanja_eum"),
