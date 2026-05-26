@@ -33,9 +33,7 @@ function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }
           {char}
         </span>
       ))}
-      {hint.hanja_eum && (
-        <span className="text-muted-foreground ml-1">({hint.hanja_eum})</span>
-      )}
+
     </span>
   )
 }
@@ -326,11 +324,6 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
             <p className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
               {correct ? "Correct!" : `The answer was: ${card.target}`}
             </p>
-            {card.definition && (
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>{card.definition}</p>
-              </div>
-            )}
             <Button onClick={handleAdvance} variant="outline" className="w-full">
               Next
             </Button>
