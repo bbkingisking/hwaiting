@@ -33,9 +33,7 @@ function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }
           {char}
         </span>
       ))}
-      {hint.hanja_eum && (
-        <span className="text-muted-foreground ml-1">({hint.hanja_eum})</span>
-      )}
+
     </span>
   )
 }
