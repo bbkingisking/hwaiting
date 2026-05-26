@@ -1169,8 +1169,8 @@ pub async fn optimize_fsrs(
         });
     }
 
-    // Filter out items with only one review (FSRS requires at least one delta_t > 0)
-    items.retain(|item| item.reviews.len() >= 2);
+    // Filter out items where no review has delta_t > 0 (FSRS requirement)
+    items.retain(|item| item.reviews.iter().any(|r| r.delta_t > 0));
 
     info!("Built {} FSRS training items from reviews", items.len());
 
