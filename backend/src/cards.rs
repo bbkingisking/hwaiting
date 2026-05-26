@@ -86,6 +86,20 @@ pub struct ReviewHistoryResponse {
 }
 
 #[derive(Serialize)]
+pub struct HistorySummary {
+    pub total_reviews: i64,
+    pub total_cards_reviewed: i64,
+    pub cards_learning: i64,
+    pub cards_review: i64,
+    pub cards_relearning: i64,
+    pub total_accuracy: f64,
+    pub avg_reviews_per_day: f64,
+    pub first_review_date: Option<String>,
+    pub current_streak: i64,
+    pub longest_streak: i64,
+}
+
+#[derive(Serialize)]
 pub struct StatsResponse {
     new_count: i64,
     due_count: i64,
@@ -899,4 +913,159 @@ pub async fn get_review_history(
         .collect();
 
     Ok(Json(ReviewHistoryResponse { days }))
+}
+
+pub async fn get_history_summary(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<HistorySummary>, AppError> {
+    let user_id = auth.0;
+
+    // Get day_boundary_hour from user_settings (default 4)
+    let day_boundary_hour: i64 = sqlx::query_scalar(
+        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?
+    .unwrap_or(4);
+
+    // Query 1: Aggregate review stats
+    let stats_row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) AS total_reviews,
+            COUNT(DISTINCT card_id) AS total_cards_reviewed,
+            COALESCE(
+                CAST(SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS REAL)
+                / NULLIF(COUNT(*), 0) * 100,
+                0
+            ) AS total_accuracy,
+            MIN(reviewed_at) AS first_review_date,
+            COUNT(DISTINCT date(reviewed_at)) AS distinct_days
+        FROM review_history
+        WHERE user_id = ?
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
+    let total_reviews: i64 = stats_row.get("total_reviews");
+    let total_cards_reviewed: i64 = stats_row.get("total_cards_reviewed");
+    let total_accuracy: f64 = stats_row.get("total_accuracy");
+    let distinct_days: i64 = stats_row.get("distinct_days");
+    let avg_reviews_per_day = if distinct_days > 0 {
+        total_reviews as f64 / distinct_days as f64
+    } else {
+        0.0
+    };
+
+    // Format first_review_date as YYYY-MM-DD
+    let first_review_raw: Option<String> = stats_row.get("first_review_date");
+    let first_review_date = first_review_raw.and_then(|s| {
+        chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S"))
+            .ok()
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+    });
+
+    // Query 2: Cards by current state
+    let state_rows = sqlx::query(
+        r#"
+        SELECT state, COUNT(*) AS cnt
+        FROM card_states
+        WHERE user_id = ?
+        GROUP BY state
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    let mut cards_learning: i64 = 0;
+    let mut cards_review: i64 = 0;
+    let mut cards_relearning: i64 = 0;
+    for row in &state_rows {
+        let state: String = row.get("state");
+        let cnt: i64 = row.get("cnt");
+        match state.as_str() {
+            "learning" => cards_learning = cnt,
+            "review" => cards_review = cnt,
+            "relearning" => cards_relearning = cnt,
+            _ => {}
+        }
+    }
+
+    // Query 3: All review days (boundary-adjusted) for streak calculation
+    let day_rows = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT DISTINCT date(datetime(reviewed_at, printf('-%d hours', ?))) AS day
+        FROM review_history
+        WHERE user_id = ?
+        ORDER BY day ASC
+        "#,
+    )
+    .bind(day_boundary_hour)
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    // Compute streaks in Rust
+    let dates: Vec<chrono::NaiveDate> = day_rows
+        .iter()
+        .filter_map(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .collect();
+
+    // Compute today in the user's boundary-adjusted timezone
+    let now_local = Local::now();
+    let today_boundary = if now_local.hour() as i64 >= day_boundary_hour {
+        now_local.date_naive()
+    } else {
+        now_local.date_naive() - chrono::Days::new(1)
+    };
+
+    let current_streak = if dates.last() == Some(&today_boundary) {
+        let mut streak = 1i64;
+        for i in (0..dates.len() - 1).rev() {
+            if dates[i + 1] - dates[i] == chrono::Duration::days(1) {
+                streak += 1;
+            } else {
+                break;
+            }
+        }
+        streak
+    } else {
+        0
+    };
+
+    let longest_streak = if dates.is_empty() {
+        0
+    } else {
+        let mut max_streak = 1i64;
+        let mut current = 1i64;
+        for i in 1..dates.len() {
+            if dates[i] - dates[i - 1] == chrono::Duration::days(1) {
+                current += 1;
+            } else {
+                max_streak = max_streak.max(current);
+                current = 1;
+            }
+        }
+        max_streak.max(current)
+    };
+
+    Ok(Json(HistorySummary {
+        total_reviews,
+        total_cards_reviewed,
+        cards_learning,
+        cards_review,
+        cards_relearning,
+        total_accuracy,
+        avg_reviews_per_day,
+        first_review_date,
+        current_streak,
+        longest_streak,
+    }))
 }

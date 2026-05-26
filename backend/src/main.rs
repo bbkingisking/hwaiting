@@ -54,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/cards/{card_id}/unsuppress", put(cards::unsuppress_card))
         .route("/cards/stats", get(cards::get_stats))
         .route("/cards/history", get(cards::get_review_history))
+        .route("/cards/history-summary", get(cards::get_history_summary))
         .route("/user/me", get(user::get_profile))
         .route("/user/settings", get(user::get_settings))
         .route("/user/settings", post(user::update_settings))

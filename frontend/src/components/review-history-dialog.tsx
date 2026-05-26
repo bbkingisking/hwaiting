@@ -23,7 +23,7 @@ import {
   ReferenceLine,
   Dot,
 } from 'recharts'
-import { getReviewHistory, type DayHistory } from '@/lib/api'
+import { getReviewHistory, getHistorySummary, type DayHistory, type HistorySummary } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
 
 interface ReviewHistoryDialogProps {
@@ -57,9 +57,25 @@ function dotColor(percentage: number, redThreshold: number, yellowThreshold: num
   return 'hsla(0,84%,60%,0.55)'
 }
 
+function formatFirstDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const d = new Date(year, month - 1, day)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-baseline">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+    </div>
+  )
+}
+
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings, updateSettings } = useSettings()
   const [days, setDays] = useState<DayHistory[]>([])
+  const [summary, setSummary] = useState<HistorySummary | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -84,8 +100,11 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
     if (!open) return
     setIsLoading(true)
     setError(null)
-    getReviewHistory()
-      .then(res => setDays(res.days))
+    Promise.all([getReviewHistory(), getHistorySummary()])
+      .then(([historyRes, summaryRes]) => {
+        setDays(historyRes.days)
+        setSummary(summaryRes)
+      })
       .catch(() => setError('Failed to load review history.'))
       .finally(() => setIsLoading(false))
   }, [open])
@@ -106,7 +125,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
         <DialogHeader>
           <DialogTitle>Review History</DialogTitle>
           <DialogDescription>
-            Your accuracy over the last 5 days
+            Your accuracy over the last 5 days and all-time summary
           </DialogDescription>
         </DialogHeader>
 
@@ -242,6 +261,30 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                 <span className="text-xs text-muted-foreground">{formatShortDate(d.date)}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {!isLoading && !error && summary && summary.total_reviews > 0 && (
+          <div className="border-t pt-3 mt-1">
+            <h4 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wide">
+              History Summary
+            </h4>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <SummaryStat label="Total Reviews" value={summary.total_reviews.toLocaleString()} />
+              <SummaryStat label="Cards Reviewed" value={summary.total_cards_reviewed.toLocaleString()} />
+              <SummaryStat label="Accuracy" value={`${summary.total_accuracy.toFixed(1)}%`} />
+              <SummaryStat label="Avg / Day" value={summary.avg_reviews_per_day.toFixed(1)} />
+              <SummaryStat label="Current Streak" value={`${summary.current_streak} day${summary.current_streak !== 1 ? 's' : ''}`} />
+              <SummaryStat label="Longest Streak" value={`${summary.longest_streak} day${summary.longest_streak !== 1 ? 's' : ''}`} />
+              <SummaryStat label="Learning" value={summary.cards_learning.toLocaleString()} />
+              <SummaryStat label="Mastered" value={summary.cards_review.toLocaleString()} />
+              {summary.cards_relearning > 0 && (
+                <SummaryStat label="Relearning" value={summary.cards_relearning.toLocaleString()} />
+              )}
+              {summary.first_review_date && (
+                <SummaryStat label="Studying Since" value={formatFirstDate(summary.first_review_date)} />
+              )}
+            </div>
           </div>
         )}
 

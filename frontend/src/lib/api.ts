@@ -219,8 +219,26 @@ export interface ReviewHistoryResponse {
   days: DayHistory[]
 }
 
+export interface HistorySummary {
+  total_reviews: number
+  total_cards_reviewed: number
+  cards_learning: number
+  cards_review: number
+  cards_relearning: number
+  total_accuracy: number
+  avg_reviews_per_day: number
+  first_review_date: string | null
+  current_streak: number
+  longest_streak: number
+}
+
 export async function getReviewHistory(): Promise<ReviewHistoryResponse> {
   const url = `${window.location.origin}/api/cards/history`
+  return fetchWithAuth(url)
+}
+
+export async function getHistorySummary(): Promise<HistorySummary> {
+  const url = `${window.location.origin}/api/cards/history-summary`
   return fetchWithAuth(url)
 }
 
