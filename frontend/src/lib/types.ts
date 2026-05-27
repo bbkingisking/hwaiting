@@ -32,6 +32,7 @@ export interface Word {
 export interface HanjaHint {
   hanja: string
   hanja_eum: string | null
+  target: string | null
 }
 
 // Card type from backend (includes stats and card_id)

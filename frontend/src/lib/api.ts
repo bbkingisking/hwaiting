@@ -23,6 +23,7 @@ interface EditCardResponse {
 interface HanjaHint {
   hanja: string
   hanja_eum: string | null
+  target: string | null
 }
 
 interface CardResponse {
