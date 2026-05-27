@@ -28,7 +28,7 @@ function isHanja(char: string): boolean {
   return code >= 0x4E00 && code <= 0x9FFF
 }
 
-function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }) {
+function HintRow({ hint, sharedChars, showTarget }: { hint: HanjaHint; sharedChars: string; showTarget: boolean }) {
   const sharedSet = new Set([...sharedChars].filter(isHanja))
 
   return (
@@ -38,7 +38,7 @@ function HintRow({ hint, sharedChars }: { hint: HanjaHint; sharedChars: string }
           {char}
         </span>
       ))}
-
+      {showTarget && hint.target && <span className="text-muted-foreground/70"> ({hint.target})</span>}
     </span>
   )
 }
@@ -48,11 +48,13 @@ function HanjaHintText({
   hints,
   showEum,
   hanjaEum,
+  showTarget,
 }: {
   hanja: string
   hints: HanjaHint[]
   showEum: boolean
   hanjaEum?: string | null
+  showTarget: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -77,7 +79,7 @@ function HanjaHintText({
       <TooltipContent side="top" sideOffset={6}>
         <div className="flex flex-col gap-1">
           {hints.map((hint, i) => (
-            <HintRow key={i} hint={hint} sharedChars={hanja} />
+            <HintRow key={i} hint={hint} sharedChars={hanja} showTarget={showTarget} />
           ))}
         </div>
       </TooltipContent>
@@ -244,7 +246,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} />
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
                   </span>
                 )}
                 <span className="text-green-600">{card.target}</span>
@@ -256,7 +258,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} />
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
                   </span>
                 )}
                 {correct ? (
@@ -279,7 +281,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
                   <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum={false} hanjaEum={card.hanja_eum} />
+                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum={false} hanjaEum={card.hanja_eum} showTarget={false} />
                   </span>
                 )}
                 <input
