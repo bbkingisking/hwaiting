@@ -38,7 +38,7 @@ function HintRow({ hint, sharedChars, showTarget }: { hint: HanjaHint; sharedCha
           {char}
         </span>
       ))}
-      {showTarget && hint.target && <span className="text-muted-foreground/70"> ({hint.target})</span>}
+      {showTarget && hint.trans_word && <span className="text-muted-foreground/70"> ({hint.trans_word})</span>}
     </span>
   )
 }

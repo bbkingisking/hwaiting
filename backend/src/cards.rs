@@ -19,7 +19,7 @@ pub struct ReviewRequest {
 pub struct HanjaHint {
     pub hanja: String,
     pub hanja_eum: Option<String>,
-    pub target: Option<String>,
+    pub trans_word: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -365,10 +365,10 @@ pub async fn get_next_card(
         if !current_hanja.is_empty() {
             let other_hanja_rows = sqlx::query(
                 r#"
-                SELECT DISTINCT c.hanja, c.hanja_eum,
-                    (SELECT s.target FROM sentences s WHERE s.card_id = c.id LIMIT 1) as target
+                SELECT DISTINCT c.hanja, c.hanja_eum, ct.trans_word
                 FROM card_states cs
                 INNER JOIN cards c ON c.id = cs.card_id
+                INNER JOIN card_translations ct ON ct.card_id = c.id AND ct.language_tag = 'en'
                 WHERE cs.user_id = ?
                   AND cs.card_id != ?
                   AND c.hanja IS NOT NULL
@@ -393,7 +393,7 @@ pub async fn get_next_card(
                         Some(HanjaHint {
                             hanja: other_hanja,
                             hanja_eum: row.get("hanja_eum"),
-                            target: row.get("target"),
+                            trans_word: row.get("trans_word"),
                         })
                     } else {
                         None
