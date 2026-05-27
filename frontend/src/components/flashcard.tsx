@@ -34,7 +34,7 @@ function HintRow({ hint, sharedChars, showTarget }: { hint: HanjaHint; sharedCha
   return (
     <span className="text-sm">
       {hint.hanja.split('').map((char, i) => (
-        <span key={i} className={sharedSet.has(char) ? 'font-bold underline' : ''}>
+        <span key={i} className={sharedSet.has(char) ? 'font-bold' : ''}>
           {char}
         </span>
       ))}
