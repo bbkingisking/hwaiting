@@ -94,6 +94,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const [suppressing, setSuppressing] = useState(false)
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
@@ -120,6 +121,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (editOpen || menuOpen) return
       if (answered && (e.key === KEYS.ENTER || e.key === KEYS.SPACE)) {
         e.preventDefault()
         handleAdvance()
@@ -128,7 +130,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [answered, handleAdvance])
+  }, [answered, handleAdvance, editOpen, menuOpen])
 
   // Split sentence at target word position
   // Note: card.target is the conjugated form, but sentence might contain base form
@@ -208,7 +210,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
             </span>
           )}
           </div>
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger
               render={
                 <Button
