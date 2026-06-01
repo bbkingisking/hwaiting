@@ -214,8 +214,8 @@ pub async fn update_settings(
     }
 
     if let Some(daily_new_card_limit) = payload.daily_new_card_limit {
-        if daily_new_card_limit < 1 || daily_new_card_limit > 999 {
-            return Err(AppError::Internal("daily_new_card_limit must be between 1 and 999".to_string()));
+        if daily_new_card_limit < 0 || daily_new_card_limit > 999 {
+            return Err(AppError::Internal("daily_new_card_limit must be between 0 and 999".to_string()));
         }
         sqlx::query("UPDATE user_settings SET daily_new_card_limit = ? WHERE user_id = ?")
             .bind(daily_new_card_limit)
