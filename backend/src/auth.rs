@@ -55,20 +55,20 @@ pub async fn login(
     match user {
         Some(row) => {
             debug!("User found, verifying password");
-            
+
             let user_id: i64 = row.get("id");
             let stored_username: String = row.get("username");
             let password_hash: String = row.get("password_hash");
             let is_admin: bool = row.get("is_admin");
-            
+
             // Parse the stored hash
             let parsed_hash = PasswordHash::new(&password_hash)?;
-            
+
             // Verify password
             let password_matches = Argon2::default()
                 .verify_password(password.as_bytes(), &parsed_hash)
                 .is_ok();
-            
+
             if password_matches {
                 info!("Password verified successfully for user: {}", username);
                 // Generate JWT token
@@ -139,7 +139,7 @@ pub async fn signup(
     let password_hash = argon2
         .hash_password(password.as_bytes(), &salt)?
         .to_string();
-    
+
     let result = sqlx::query("INSERT INTO users (username, password_hash) VALUES (?, ?)")
         .bind(username)
         .bind(&password_hash)
@@ -160,10 +160,10 @@ pub async fn signup(
         .await?;
 
     info!("Invite code marked as used");
-    
+
     // Generate JWT token
     let token = generate_token(user_id)?;
-    
+
     Ok(Json(AuthResponse {
         token,
         username: username.to_string(),
@@ -173,15 +173,15 @@ pub async fn signup(
 
 fn generate_token(user_id: i64) -> Result<String, AppError> {
     use jsonwebtoken::{encode, EncodingKey, Header};
-    
+
     let jwt_secret = env::var("JWT_SECRET")
         .expect("JWT_SECRET environment variable must be set");
-    
+
     let claims = Claims { sub: user_id };
-    
+
     let mut header = Header::default();
     header.alg = Algorithm::HS256;
-    
+
     encode(
         &header,
         &claims,
@@ -207,7 +207,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         debug!("AuthUser extractor called");
-        
+
         // Extract Authorization header
         let auth_header = parts
             .headers
@@ -233,10 +233,10 @@ where
         // Decode and validate token (no expiration check since tokens never expire)
         let jwt_secret = env::var("JWT_SECRET")
             .expect("JWT_SECRET environment variable must be set");
-        
+
         let mut validation = Validation::new(Algorithm::HS256);
         validation.required_spec_claims.clear(); // Don't require exp, iat, etc.
-        
+
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(jwt_secret.as_bytes()),
@@ -247,7 +247,7 @@ where
             AppError::InvalidCredentials
         })?;
 
-        info!("Token validated successfully for user_id: {}", token_data.claims.sub);
+        debug!("Token validated successfully for user_id: {}", token_data.claims.sub);
         Ok(AuthUser(token_data.claims.sub))
     }
 }
@@ -263,7 +263,7 @@ impl FromRequestParts<SqlitePool> for AdminUser
     async fn from_request_parts(parts: &mut Parts, state: &SqlitePool) -> Result<Self, Self::Rejection> {
         // First, extract the user using AuthUser
         let AuthUser(user_id) = AuthUser::from_request_parts(parts, state).await?;
-        
+
         // Check if user is admin
         let is_admin: bool = sqlx::query_scalar(
             "SELECT is_admin FROM users WHERE id = ?"
@@ -272,14 +272,13 @@ impl FromRequestParts<SqlitePool> for AdminUser
         .fetch_optional(state)
         .await?
         .unwrap_or(false);
-        
+
         if !is_admin {
             warn!("Non-admin user {} attempted to access admin endpoint", user_id);
             return Err(AppError::Unauthorized);
         }
-        
+
         info!("Admin user {} authenticated", user_id);
         Ok(AdminUser(user_id))
     }
 }
-
