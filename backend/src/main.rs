@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting Annyeong backend...");
+    tracing::debug!("Starting Annyeong backend...");
 
     // Initialize database
     let pool = db::init().await?;
@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
     let static_dir = env::var("STATIC_DIR")
         .expect("STATIC_DIR environment variable must be set");
     let index_path = format!("{}/index.html", static_dir);
-    
+
     let serve_dir = ServeDir::new(&static_dir)
         .not_found_service(ServeFile::new(index_path));
 
