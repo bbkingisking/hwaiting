@@ -18,6 +18,13 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
     return () => clearInterval(interval)
   }, [])
 
+  // Update tab title with due count
+  useEffect(() => {
+    if (dueCount !== null) {
+      document.title = dueCount > 0 ? `(${dueCount}) Hwaiting` : 'Hwaiting'
+    }
+  }, [dueCount])
+
   // Notify parent when cards transition from 0 to due
   useEffect(() => {
     if (prevDueRef.current !== null && prevDueRef.current === 0 && dueCount !== null && dueCount > 0) {
