@@ -16,6 +16,7 @@ interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   card: Card
+  onSaved?: (updates: Partial<Card>) => void
 }
 
 interface FormState {
@@ -56,7 +57,7 @@ function nullIfEmpty(val: string): string | null {
   return val.trim() === '' ? null : val.trim()
 }
 
-export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps) {
+export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDialogProps) {
   const [form, setForm] = useState<FormState>(toFormState(card))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +80,7 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     setSaving(true)
     setError(null)
     try {
-      await editCard(card.card_id, {
+      const updates = {
         word: form.word.trim() || undefined,
         definition: nullIfEmpty(form.definition),
         pos: nullIfEmpty(form.pos),
@@ -93,7 +94,9 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
         sentence_translation: form.sentence_translation.trim() || undefined,
         target: form.target.trim() || undefined,
         alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
-      })
+      }
+      await editCard(card.card_id, updates)
+      onSaved?.(updates)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')

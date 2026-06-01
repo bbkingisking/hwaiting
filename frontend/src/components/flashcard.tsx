@@ -21,6 +21,7 @@ interface FlashcardProps {
   card: Card
   onReview: (rating: number) => void
   onSuppress?: () => void
+  onCardUpdated?: (updates: Partial<Card>) => void
 }
 
 function isHanja(char: string): boolean {
@@ -87,7 +88,7 @@ function HanjaHintText({
   )
 }
 
-export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
+export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: FlashcardProps) {
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
@@ -323,6 +324,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
           open={editOpen}
           onOpenChange={setEditOpen}
           card={card}
+          onSaved={onCardUpdated}
         />
       )}
 

@@ -182,6 +182,13 @@ function AppContent() {
     setStatsKey((prev) => prev + 1)
   }
 
+  const handleCardUpdated = (updates: Partial<Card>) => {
+    const filtered = Object.fromEntries(
+      Object.entries(updates).filter(([, v]) => v !== undefined)
+    ) as Partial<Card>
+    setCard(prev => prev ? { ...prev, ...filtered } : prev)
+  }
+
   return (
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
@@ -230,6 +237,7 @@ function AppContent() {
               card={card}
               onReview={handleReview}
               onSuppress={handleSuppress}
+              onCardUpdated={handleCardUpdated}
             />
           </>
         ) : (

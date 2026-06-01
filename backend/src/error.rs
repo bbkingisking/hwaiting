@@ -28,6 +28,9 @@ pub enum AppError {
     #[error("Not found")]
     NotFound,
 
+    #[error("Bad request")]
+    BadRequest,
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -63,6 +66,9 @@ impl IntoResponse for AppError {
             }
             AppError::NotFound => {
                 (StatusCode::NOT_FOUND, "Not found")
+            }
+            AppError::BadRequest => {
+                (StatusCode::BAD_REQUEST, "Bad request")
             }
             AppError::Internal(ref msg) => {
                 eprintln!("Internal error: {}", msg);
