@@ -149,10 +149,10 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
           )}
 
           {!isLoading && !error && hasData && (
-            <ChartContainer config={chartConfig} className="h-52 w-full">
+            <ChartContainer config={chartConfig} className="aspect-auto h-40 sm:h-52 w-full">
               <AreaChart
                 data={chartData}
-                margin={{ top: 10, right: 16, left: -8, bottom: 0 }}
+                margin={{ top: 10, right: 8, left: -8, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="fillPercentage" x1="0" y1="0" x2="0" y2="1">
@@ -184,9 +184,9 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                   tickFormatter={v => `${v}%`}
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: 11 }}
                   className="fill-muted-foreground"
-                  width={52}
+                  width={40}
                 />
                 <ChartTooltip
                   content={
@@ -269,7 +269,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
             <h4 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wide">
               History Summary
             </h4>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
               <SummaryStat label="Total Reviews" value={summary.total_reviews.toLocaleString()} />
               <SummaryStat label="Cards Reviewed" value={summary.total_cards_reviewed.toLocaleString()} />
               <SummaryStat label="Accuracy" value={`${summary.total_accuracy.toFixed(1)}%`} />
