@@ -4,28 +4,30 @@ use axum::{
 };
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{Row, SqlitePool};
-use tracing::info;
+use tracing::{debug, info};
 
 
 use crate::auth::AdminUser;
 use crate::error::AppError;
 
-#[derive(Deserialize)]
-pub struct EditCardRequest {
-    pub word: Option<String>,
-    pub definition: Option<Option<String>>,
-    pub pos: Option<Option<String>>,
-    pub origin_type: Option<Option<String>>,
-    pub hanja: Option<Option<String>>,
-    pub hanja_eum: Option<Option<String>>,
-    pub grade: Option<Option<String>>,
-    pub trans_word: Option<String>,
-    pub trans_dfn: Option<Option<String>>,
-    pub sentence: Option<String>,
-    pub sentence_translation: Option<String>,
-    pub target: Option<String>,
-    pub alternatives: Option<Vec<String>>,
+/// Extract a nullable string field from JSON, distinguishing absent from null.
+/// Returns `Some(None)` for explicit null, `Some(Some(s))` for a string, `None` for absent.
+fn get_nullable_str(obj: &serde_json::Map<String, Value>, key: &str) -> Option<Option<String>> {
+    match obj.get(key) {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(v) => Some(v.as_str().map(|s| s.to_owned())),
+    }
+}
+
+/// Extract an optional string field from JSON. Returns None for absent or null.
+fn get_opt_str(obj: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    match obj.get(key) {
+        None | Some(Value::Null) => None,
+        Some(v) => v.as_str().map(|s| s.to_owned()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -139,9 +141,34 @@ pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     Path(card_id): Path<i64>,
-    Json(payload): Json<EditCardRequest>,
+    Json(payload): Json<Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     info!("Admin editing card {}", card_id);
+
+    let obj = payload.as_object().ok_or(AppError::BadRequest)?;
+
+    // Extract fields — nullable ones use get_nullable_str so we can distinguish
+    // "absent" (don't touch) from "explicit null" (set to NULL).
+    let word = get_opt_str(obj, "word");
+    let definition = get_nullable_str(obj, "definition");
+    let pos = get_nullable_str(obj, "pos");
+    let origin_type = get_nullable_str(obj, "origin_type");
+    let hanja = get_nullable_str(obj, "hanja");
+    let hanja_eum = get_nullable_str(obj, "hanja_eum");
+    let grade = get_nullable_str(obj, "grade");
+    let trans_word = get_opt_str(obj, "trans_word");
+    let trans_dfn = get_nullable_str(obj, "trans_dfn");
+    let sentence = get_opt_str(obj, "sentence");
+    let sentence_translation = get_opt_str(obj, "sentence_translation");
+    let target = get_opt_str(obj, "target");
+    let alternatives: Option<Vec<String>> = obj.get("alternatives").and_then(|v| {
+        serde_json::from_value(v.clone()).ok()
+    });
+
+    debug!(
+        "Parsed fields: word={:?}, hanja={:?}, hanja_eum={:?}, definition={:?}",
+        word, hanja, hanja_eum, definition
+    );
 
     // Verify the card exists
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)")
@@ -159,33 +186,35 @@ pub async fn edit_card(
     // and nullable fields can be explicitly set to NULL
     {
         let mut sets: Vec<&str> = Vec::new();
-        if payload.word.is_some()        { sets.push("word = ?") }
-        if payload.definition.is_some()  { sets.push("definition = ?") }
-        if payload.pos.is_some()         { sets.push("pos = ?") }
-        if payload.origin_type.is_some() { sets.push("origin_type = ?") }
-        if payload.hanja.is_some()       { sets.push("hanja = ?") }
-        if payload.hanja_eum.is_some()   { sets.push("hanja_eum = ?") }
-        if payload.grade.is_some()       { sets.push("grade = ?") }
+        if word.is_some()        { sets.push("word = ?") }
+        if definition.is_some()  { sets.push("definition = ?") }
+        if pos.is_some()         { sets.push("pos = ?") }
+        if origin_type.is_some() { sets.push("origin_type = ?") }
+        if hanja.is_some()       { sets.push("hanja = ?") }
+        if hanja_eum.is_some()   { sets.push("hanja_eum = ?") }
+        if grade.is_some()       { sets.push("grade = ?") }
 
         if !sets.is_empty() {
             let sql = format!("UPDATE cards SET {} WHERE id = ?", sets.join(", "));
+            debug!("Cards update SQL: {}", sql);
             let mut q = sqlx::query(&sql);
-            if let Some(ref v) = payload.word        { q = q.bind(v.as_str()) }
-            if let Some(ref v) = payload.definition  { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = payload.pos         { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = payload.origin_type { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = payload.hanja       { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = payload.hanja_eum   { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = payload.grade       { q = q.bind(v.as_deref()) }
-            q.bind(card_id).execute(&mut *tx).await?;
+            if let Some(ref v) = word        { q = q.bind(v.as_str()) }
+            if let Some(ref v) = definition  { q = q.bind(v.as_deref()) }
+            if let Some(ref v) = pos         { q = q.bind(v.as_deref()) }
+            if let Some(ref v) = origin_type { q = q.bind(v.as_deref()) }
+            if let Some(ref v) = hanja       { q = q.bind(v.as_deref()) }
+            if let Some(ref v) = hanja_eum   { q = q.bind(v.as_deref()) }
+            if let Some(ref v) = grade       { q = q.bind(v.as_deref()) }
+            let result = q.bind(card_id).execute(&mut *tx).await?;
+            debug!("Cards update rows_affected: {}", result.rows_affected());
         }
     }
 
     // Update card_translations (first English row)
     {
         let mut sets: Vec<&str> = Vec::new();
-        if payload.trans_word.is_some() { sets.push("trans_word = ?") }
-        if payload.trans_dfn.is_some()  { sets.push("trans_dfn = ?") }
+        if trans_word.is_some() { sets.push("trans_word = ?") }
+        if trans_dfn.is_some()  { sets.push("trans_dfn = ?") }
 
         if !sets.is_empty() {
             let ct_exists: bool = sqlx::query_scalar(
@@ -201,15 +230,15 @@ pub async fn edit_card(
                     sets.join(", ")
                 );
                 let mut q = sqlx::query(&sql);
-                if let Some(ref v) = payload.trans_word { q = q.bind(v.as_str()) }
-                if let Some(ref v) = payload.trans_dfn  { q = q.bind(v.as_deref()) }
+                if let Some(ref v) = trans_word { q = q.bind(v.as_str()) }
+                if let Some(ref v) = trans_dfn  { q = q.bind(v.as_deref()) }
                 q.bind(card_id).execute(&mut *tx).await?;
             }
         }
     }
 
     // Update sentences + sentence_translations (first sentence row for this card)
-    if payload.sentence.is_some() || payload.target.is_some() || payload.sentence_translation.is_some() {
+    if sentence.is_some() || target.is_some() || sentence_translation.is_some() {
         let sentence_id: Option<i64> =
             sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
                 .bind(card_id)
@@ -218,18 +247,18 @@ pub async fn edit_card(
 
         if let Some(sid) = sentence_id {
             let mut sets: Vec<&str> = Vec::new();
-            if payload.sentence.is_some() { sets.push("text = ?") }
-            if payload.target.is_some()   { sets.push("target = ?") }
+            if sentence.is_some() { sets.push("text = ?") }
+            if target.is_some()   { sets.push("target = ?") }
 
             if !sets.is_empty() {
                 let sql = format!("UPDATE sentences SET {} WHERE id = ?", sets.join(", "));
                 let mut q = sqlx::query(&sql);
-                if let Some(ref v) = payload.sentence { q = q.bind(v.as_str()) }
-                if let Some(ref v) = payload.target   { q = q.bind(v.as_str()) }
+                if let Some(ref v) = sentence { q = q.bind(v.as_str()) }
+                if let Some(ref v) = target   { q = q.bind(v.as_str()) }
                 q.bind(sid).execute(&mut *tx).await?;
             }
 
-            if let Some(ref st) = payload.sentence_translation {
+            if let Some(ref st) = sentence_translation {
                 sqlx::query(
                     "UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?",
                 )
@@ -242,7 +271,7 @@ pub async fn edit_card(
     }
 
     // Update alternative targets
-    if let Some(ref alts) = payload.alternatives {
+    if let Some(ref alts) = alternatives {
         let sentence_id: Option<i64> =
             sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
                 .bind(card_id)
