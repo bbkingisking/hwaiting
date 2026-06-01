@@ -1,7 +1,7 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 use std::env;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn init() -> anyhow::Result<SqlitePool> {
     let database_url = env::var("DATABASE_URL")
@@ -16,11 +16,11 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
         .await?;
 
     // Run migrations
-    info!("Running database migrations...");
+    debug!("Running database migrations...");
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await?;
-    info!("Database migrations complete");
+    debug!("Database migrations complete");
 
     // Seed admin user if doesn't exist
     seed_admin_user(&pool).await?;
@@ -49,7 +49,7 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
     .await?;
 
     if let Some(_existing_id) = admin_exists {
-        info!("Admin user already exists, skipping seed");
+        debug!("Admin user already exists, skipping seed");
         return Ok(None);
     }
 
