@@ -91,6 +91,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
+  const [submittedAnswer, setSubmittedAnswer] = useState('')
   const [suppressing, setSuppressing] = useState(false)
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -114,6 +115,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     setInput('')
     setAnswered(false)
     setCorrect(false)
+    setSubmittedAnswer('')
     setIsAutoProgressing(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
@@ -155,6 +157,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
     const trimmed = input.trim()
     const isCorrect = trimmed === card.target || (card.alternatives ?? []).includes(trimmed)
     setCorrect(isCorrect)
+    setSubmittedAnswer(trimmed)
 
     // Auto-progress if correct and setting is enabled
     if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
@@ -251,7 +254,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                     <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
                   </span>
                 )}
-                <span className="text-green-600">{card.target}</span>
+                <span className="text-green-600">{submittedAnswer}</span>
                 {showInfinitive && (
                   <span className="text-xs text-muted-foreground/60 mt-1">({card.word})</span>
                 )}
@@ -264,7 +267,7 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                   </span>
                 )}
                 {correct ? (
-                  <span className="text-green-600">{card.target}</span>
+                  <span className="text-green-600">{submittedAnswer}</span>
                 ) : (
                   <span className="inline-flex flex-wrap items-baseline gap-0">
                     {input.split('').map((char, i) => (
