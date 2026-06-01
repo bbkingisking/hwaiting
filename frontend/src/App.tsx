@@ -141,25 +141,27 @@ function AppContent() {
   // `waitForBeforePrefetch` defers the *next* prefetch (for N+2) until
   // the given promise settles, so we don't read stale DB state while
   // the previous review is still being persisted.
+  //
+  // IMPORTANT: a prefetched result with card === null is NOT trusted.
+  // "No cards" from a prefetch only means "no cards were due at the
+  // time the prefetch fired" — which can be arbitrarily stale if the
+  // user was idle (alt-tabbed, slow to review, etc.). Cards may have
+  // become due in the meantime. In that case we always fall through
+  // to loadCardCold for a fresh fetch. A prefetched *card* is fine
+  // to use optimistically; a prefetched "no cards" is not.
   const advanceToNextCard = async (waitForBeforePrefetch?: Promise<unknown>) => {
     setError(null)
     setNoCards(false)
 
     const slot = prefetchRef.current
 
-    // Fast path: prefetch already resolved.
-    if (slot?.result) {
-      const envelope = slot.result
+    // Fast path: prefetch already resolved with a concrete card.
+    if (slot?.result?.card) {
+      const nextCard = slot.result.card
       prefetchRef.current = null
-      if (envelope.card) {
-        setCard(envelope.card)
-        setNoCards(false)
-        startPrefetch(envelope.card.card_id, waitForBeforePrefetch)
-      } else {
-        setCard(null)
-        setNoCards(true)
-        setNextDueAt(envelope.next_due_at)
-      }
+      setCard(nextCard)
+      setNoCards(false)
+      startPrefetch(nextCard.card_id, waitForBeforePrefetch)
       return
     }
 
@@ -168,26 +170,24 @@ function AppContent() {
       setLoading(true)
       try {
         const envelope = await slot.promise
-        if (envelope) {
+        const nextCard = envelope?.card
+        if (nextCard) {
           prefetchRef.current = null
-          if (envelope.card) {
-            setCard(envelope.card)
-            setNoCards(false)
-            startPrefetch(envelope.card.card_id, waitForBeforePrefetch)
-          } else {
-            setCard(null)
-            setNoCards(true)
-            setNextDueAt(envelope.next_due_at)
-          }
+          setCard(nextCard)
+          setNoCards(false)
+          startPrefetch(nextCard.card_id, waitForBeforePrefetch)
           return
         }
+        // Prefetch returned null or card === null — can't trust it
+        // (may be stale). Fall through to cold load.
       } finally {
         setLoading(false)
       }
     }
 
-    // Cold path: no prefetch available, do a regular fetch.
-    // Wait for the review submission so the DB reflects the updated due_date.
+    // Cold path: no prefetch available, or prefetch had no card.
+    // Do a fresh fetch. Wait for the review submission so the DB
+    // reflects the updated due_date.
     await loadCardCold(waitForBeforePrefetch)
   }
 
@@ -197,11 +197,14 @@ function AppContent() {
   const handleReview = (rating: number) => {
     if (!card) return
 
-    // Fire submission. The returned promise is used to defer the
-    // *next* prefetch (for N+2) until the DB has the updated due_date
-    // for this card; otherwise the prefetch can return the same card
-    // again because it still looks "due now" in the DB.
-    const submitPromise = submitReview(card.card_id, rating).catch((err) => {
+    // Fire submission. The raw promise (without .catch) is passed to
+    // advanceToNextCard so that the prefetch for N+2 actually waits
+    // for the submission to complete before reading the DB - otherwise
+    // the prefetch can return stale data (the just-reviewed card still
+    // looks "due") or a failed submission leaves the card due while
+    // the UI has already moved on, causing a stuck "No cards" state.
+    const submitPromise = submitReview(card.card_id, rating)
+    submitPromise.catch((err) => {
       if (err instanceof ApiError) {
         setError(`Failed to submit review: ${err.message}`)
       } else {
