@@ -250,19 +250,19 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
               // Show green answer during auto-progress for positive feedback
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
                     <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
                   </span>
                 )}
                 <span className="text-green-600">{submittedAnswer}</span>
                 {showInfinitive && (
-                  <span className="text-xs text-muted-foreground/60 mt-1">({card.word})</span>
+                  <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
                 )}
               </span>
             ) : answered ? (
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
                     <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
                   </span>
                 )}
@@ -275,17 +275,17 @@ export function Flashcard({ card, onReview, onSuppress }: FlashcardProps) {
                         {char}
                       </span>
                     ))}
-                    <span className="text-muted-foreground/50 ml-1">({card.target})</span>
+                    <span className="text-muted-foreground/50 ml-1 select-none">({card.target})</span>
                   </span>
                 )}
                 {showInfinitive && (
-                  <span className="text-xs text-muted-foreground/60 mt-1">({card.word})</span>
+                  <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
                 )}
               </span>
             ) : (
               <span className="inline-flex flex-col items-center relative pt-5">
                 {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2">
+                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
                     <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum={false} hanjaEum={card.hanja_eum} showTarget={false} />
                   </span>
                 )}
