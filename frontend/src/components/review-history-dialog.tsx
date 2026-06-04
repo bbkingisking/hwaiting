@@ -23,7 +23,7 @@ import {
   ReferenceLine,
   Dot,
 } from 'recharts'
-import { getReviewHistory, getHistorySummary, type DayHistory, type HistorySummary } from '@/lib/api'
+import { getReviewHistory, getHistorySummary, getHistoryBreakdown, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
 
 interface ReviewHistoryDialogProps {
@@ -72,10 +72,58 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
+function accuracyBarColor(percentage: number, redThreshold: number, yellowThreshold: number): string {
+  if (percentage >= yellowThreshold) return 'bg-green-500'
+  if (percentage >= redThreshold)    return 'bg-yellow-500'
+  return 'bg-red-500'
+}
+
+function BreakdownTable({ title, rows, redThreshold, yellowThreshold }: {
+  title: string
+  rows: BreakdownRow[]
+  redThreshold: number
+  yellowThreshold: number
+}) {
+  if (rows.length === 0) return null
+
+  const maxReviews = Math.max(...rows.map(r => r.reviews))
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+        {title}
+      </h4>
+      <div className="flex flex-col gap-1.5">
+        {rows.map(row => (
+          <div key={row.label} className="flex items-center gap-2">
+            <span className="text-xs w-24 shrink-0 truncate" title={row.label}>
+              {row.label}
+            </span>
+            <div className="flex-1 h-3 bg-muted rounded-sm overflow-hidden">
+              <div
+                className={`h-full rounded-sm ${accuracyBarColor(row.accuracy, redThreshold, yellowThreshold)}`}
+                style={{ width: `${Math.max((row.reviews / maxReviews) * 100, 2)}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold tabular-nums w-12 text-right">
+              {Math.round(row.accuracy)}%
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+              ({row.reviews})
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings, updateSettings } = useSettings()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
+  const [breakdownPos, setBreakdownPos] = useState<BreakdownRow[]>([])
+  const [breakdownOrigin, setBreakdownOrigin] = useState<BreakdownRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -100,10 +148,12 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
     if (!open) return
     setIsLoading(true)
     setError(null)
-    Promise.all([getReviewHistory(), getHistorySummary()])
-      .then(([historyRes, summaryRes]) => {
+    Promise.all([getReviewHistory(), getHistorySummary(), getHistoryBreakdown()])
+      .then(([historyRes, summaryRes, breakdownRes]) => {
         setDays(historyRes.days)
         setSummary(summaryRes)
+        setBreakdownPos(breakdownRes.by_pos)
+        setBreakdownOrigin(breakdownRes.by_origin)
       })
       .catch(() => setError('Failed to load review history.'))
       .finally(() => setIsLoading(false))
@@ -285,6 +335,23 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                 <SummaryStat label="Studying Since" value={formatFirstDate(summary.first_review_date)} />
               )}
             </div>
+          </div>
+        )}
+
+        {!isLoading && !error && (breakdownPos.length > 0 || breakdownOrigin.length > 0) && (
+          <div className="border-t pt-3 mt-1 flex flex-col gap-3">
+            <BreakdownTable
+              title="By Part of Speech"
+              rows={breakdownPos}
+              redThreshold={settings?.redThreshold ?? 80}
+              yellowThreshold={settings?.yellowThreshold ?? 90}
+            />
+            <BreakdownTable
+              title="By Origin"
+              rows={breakdownOrigin}
+              redThreshold={settings?.redThreshold ?? 80}
+              yellowThreshold={settings?.yellowThreshold ?? 90}
+            />
           </div>
         )}
 
