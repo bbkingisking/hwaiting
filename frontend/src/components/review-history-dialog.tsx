@@ -25,6 +25,7 @@ import {
 } from 'recharts'
 import { getReviewHistory, getHistorySummary, getHistoryBreakdown, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
+import { getPosLabel, getOriginTypeLabel } from '@/lib/utils'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -72,21 +73,12 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function accuracyBarColor(percentage: number, redThreshold: number, yellowThreshold: number): string {
-  if (percentage >= yellowThreshold) return 'bg-green-500'
-  if (percentage >= redThreshold)    return 'bg-yellow-500'
-  return 'bg-red-500'
-}
-
-function BreakdownTable({ title, rows, redThreshold, yellowThreshold }: {
+function BreakdownTable({ title, rows, labelFn }: {
   title: string
   rows: BreakdownRow[]
-  redThreshold: number
-  yellowThreshold: number
+  labelFn: (label: string) => string | null
 }) {
   if (rows.length === 0) return null
-
-  const maxReviews = Math.max(...rows.map(r => r.reviews))
 
   return (
     <div>
@@ -94,25 +86,23 @@ function BreakdownTable({ title, rows, redThreshold, yellowThreshold }: {
         {title}
       </h4>
       <div className="flex flex-col gap-1.5">
-        {rows.map(row => (
-          <div key={row.label} className="flex items-center gap-2">
-            <span className="text-xs w-24 shrink-0 truncate" title={row.label}>
-              {row.label}
-            </span>
-            <div className="flex-1 h-3 bg-muted rounded-sm overflow-hidden">
-              <div
-                className={`h-full rounded-sm ${accuracyBarColor(row.accuracy, redThreshold, yellowThreshold)}`}
-                style={{ width: `${Math.max((row.reviews / maxReviews) * 100, 2)}%` }}
-              />
+        {rows.map(row => {
+          const english = labelFn(row.label)
+          const display = english ? `${row.label} (${english})` : row.label
+          return (
+            <div key={row.label} className="flex items-center gap-2">
+              <span className="text-xs flex-1 truncate" title={display}>
+                {display}
+              </span>
+              <span className="text-xs font-semibold tabular-nums w-12 text-right">
+                {Math.round(row.accuracy)}%
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                ({row.reviews})
+              </span>
             </div>
-            <span className="text-xs font-semibold tabular-nums w-12 text-right">
-              {Math.round(row.accuracy)}%
-            </span>
-            <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-              ({row.reviews})
-            </span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -343,14 +333,12 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
             <BreakdownTable
               title="By Part of Speech"
               rows={breakdownPos}
-              redThreshold={settings?.redThreshold ?? 80}
-              yellowThreshold={settings?.yellowThreshold ?? 90}
+              labelFn={getPosLabel}
             />
             <BreakdownTable
               title="By Origin"
               rows={breakdownOrigin}
-              redThreshold={settings?.redThreshold ?? 80}
-              yellowThreshold={settings?.yellowThreshold ?? 90}
+              labelFn={getOriginTypeLabel}
             />
           </div>
         )}
