@@ -73,37 +73,66 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function BreakdownTable({ title, rows, labelFn }: {
+const PRIMARY_POS = ['동사', '명사', '형용사', '부사']
+
+function BreakdownRowItem({ row, labelFn }: { row: BreakdownRow; labelFn: (label: string) => string | null }) {
+  const english = labelFn(row.label)
+  const display = english ? `${row.label} (${english})` : row.label
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs flex-1 truncate" title={display}>
+        {display}
+      </span>
+      <span className="text-xs font-semibold tabular-nums w-12 text-right">
+        {Math.round(row.accuracy)}%
+      </span>
+      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+        ({row.reviews})
+      </span>
+    </div>
+  )
+}
+
+function BreakdownSubsection({ title, rows, labelFn }: {
   title: string
   rows: BreakdownRow[]
   labelFn: (label: string) => string | null
 }) {
   if (rows.length === 0) return null
 
+  // For POS breakdown, split primary (verb/noun/adj/adv) from the rest
+  const isPos = labelFn === getPosLabel
+  let primary: typeof rows = []
+  let secondary: typeof rows = []
+  if (isPos) {
+    primary = rows.filter(r => PRIMARY_POS.includes(r.label))
+    secondary = rows.filter(r => !PRIMARY_POS.includes(r.label))
+  }
+
   return (
     <div>
       <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
         {title}
       </h4>
-      <div className="flex flex-col gap-1.5">
-        {rows.map(row => {
-          const english = labelFn(row.label)
-          const display = english ? `${row.label} (${english})` : row.label
-          return (
-            <div key={row.label} className="flex items-center gap-2">
-              <span className="text-xs flex-1 truncate" title={display}>
-                {display}
-              </span>
-              <span className="text-xs font-semibold tabular-nums w-12 text-right">
-                {Math.round(row.accuracy)}%
-              </span>
-              <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-                ({row.reviews})
-              </span>
-            </div>
-          )
-        })}
-      </div>
+      {isPos && primary.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="flex flex-col gap-1.5">
+            {primary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {secondary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="flex flex-col gap-1.5">
+            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -330,12 +359,15 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
 
         {!isLoading && !error && (breakdownPos.length > 0 || breakdownOrigin.length > 0) && (
           <div className="border-t pt-3 mt-1 flex flex-col gap-3">
-            <BreakdownTable
+            <h3 className="text-sm font-semibold text-muted-foreground">
+              Accuracy by card type
+            </h3>
+            <BreakdownSubsection
               title="By Part of Speech"
               rows={breakdownPos}
               labelFn={getPosLabel}
             />
-            <BreakdownTable
+            <BreakdownSubsection
               title="By Origin"
               rows={breakdownOrigin}
               labelFn={getOriginTypeLabel}
