@@ -23,8 +23,9 @@ import {
   ReferenceLine,
   Dot,
 } from 'recharts'
-import { getReviewHistory, getHistorySummary, type DayHistory, type HistorySummary } from '@/lib/api'
+import { getReviewHistory, getHistorySummary, getHistoryBreakdown, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
+import { getPosLabel, getOriginTypeLabel } from '@/lib/utils'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -72,10 +73,76 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
+const PRIMARY_POS = ['동사', '명사', '형용사', '부사']
+
+function BreakdownRowItem({ row, labelFn }: { row: BreakdownRow; labelFn: (label: string) => string | null }) {
+  const english = labelFn(row.label)
+  const display = english ? `${row.label} (${english})` : row.label
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs flex-1 truncate" title={display}>
+        {display}
+      </span>
+      <span className="text-xs font-semibold tabular-nums w-12 text-right">
+        {Math.round(row.accuracy)}%
+      </span>
+      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+        ({row.reviews})
+      </span>
+    </div>
+  )
+}
+
+function BreakdownSubsection({ title, rows, labelFn }: {
+  title: string
+  rows: BreakdownRow[]
+  labelFn: (label: string) => string | null
+}) {
+  if (rows.length === 0) return null
+
+  // For POS breakdown, split primary (verb/noun/adj/adv) from the rest
+  const isPos = labelFn === getPosLabel
+  let primary: typeof rows = []
+  let secondary: typeof rows = []
+  if (isPos) {
+    primary = rows.filter(r => PRIMARY_POS.includes(r.label))
+    secondary = rows.filter(r => !PRIMARY_POS.includes(r.label))
+  }
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+        {title}
+      </h4>
+      {isPos && primary.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="flex flex-col gap-1.5">
+            {primary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {secondary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="flex flex-col gap-1.5">
+            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings, updateSettings } = useSettings()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
+  const [breakdownPos, setBreakdownPos] = useState<BreakdownRow[]>([])
+  const [breakdownOrigin, setBreakdownOrigin] = useState<BreakdownRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -100,10 +167,12 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
     if (!open) return
     setIsLoading(true)
     setError(null)
-    Promise.all([getReviewHistory(), getHistorySummary()])
-      .then(([historyRes, summaryRes]) => {
+    Promise.all([getReviewHistory(), getHistorySummary(), getHistoryBreakdown()])
+      .then(([historyRes, summaryRes, breakdownRes]) => {
         setDays(historyRes.days)
         setSummary(summaryRes)
+        setBreakdownPos(breakdownRes.by_pos)
+        setBreakdownOrigin(breakdownRes.by_origin)
       })
       .catch(() => setError('Failed to load review history.'))
       .finally(() => setIsLoading(false))
@@ -285,6 +354,24 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                 <SummaryStat label="Studying Since" value={formatFirstDate(summary.first_review_date)} />
               )}
             </div>
+          </div>
+        )}
+
+        {!isLoading && !error && (breakdownPos.length > 0 || breakdownOrigin.length > 0) && (
+          <div className="border-t pt-3 mt-1 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">
+              Accuracy by card type
+            </h3>
+            <BreakdownSubsection
+              title="By Part of Speech"
+              rows={breakdownPos}
+              labelFn={getPosLabel}
+            />
+            <BreakdownSubsection
+              title="By Origin"
+              rows={breakdownOrigin}
+              labelFn={getOriginTypeLabel}
+            />
           </div>
         )}
 

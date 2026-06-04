@@ -1224,6 +1224,107 @@ pub async fn optimize_fsrs(
     }))
 }
 
+#[derive(Serialize)]
+pub struct BreakdownRow {
+    label: String,
+    reviews: i64,
+    correct: i64,
+    accuracy: f64,
+}
+
+#[derive(Serialize)]
+pub struct HistoryBreakdownResponse {
+    by_pos: Vec<BreakdownRow>,
+    by_origin: Vec<BreakdownRow>,
+}
+
+pub async fn get_history_breakdown(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<HistoryBreakdownResponse>, AppError> {
+    let user_id = auth.0;
+
+    // Breakdown by POS — only include rows where pos is not null/empty
+    let pos_rows = sqlx::query(
+        r#"
+        SELECT
+            c.pos AS label,
+            COUNT(*) AS reviews,
+            SUM(CASE WHEN rh.rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS correct
+        FROM review_history rh
+        JOIN cards c ON c.id = rh.card_id
+        WHERE rh.user_id = ?
+          AND c.pos IS NOT NULL
+          AND c.pos != ''
+        GROUP BY c.pos
+        ORDER BY reviews DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    let by_pos: Vec<BreakdownRow> = pos_rows
+        .iter()
+        .map(|row| {
+            let reviews: i64 = row.get("reviews");
+            let correct: i64 = row.get("correct");
+            let accuracy = if reviews > 0 {
+                (correct as f64 / reviews as f64) * 100.0
+            } else {
+                0.0
+            };
+            BreakdownRow {
+                label: row.get("label"),
+                reviews,
+                correct,
+                accuracy,
+            }
+        })
+        .collect();
+
+    // Breakdown by origin_type
+    let origin_rows = sqlx::query(
+        r#"
+        SELECT
+            c.origin_type AS label,
+            COUNT(*) AS reviews,
+            SUM(CASE WHEN rh.rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS correct
+        FROM review_history rh
+        JOIN cards c ON c.id = rh.card_id
+        WHERE rh.user_id = ?
+          AND c.origin_type IS NOT NULL
+          AND c.origin_type != ''
+        GROUP BY c.origin_type
+        ORDER BY reviews DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    let by_origin: Vec<BreakdownRow> = origin_rows
+        .iter()
+        .map(|row| {
+            let reviews: i64 = row.get("reviews");
+            let correct: i64 = row.get("correct");
+            let accuracy = if reviews > 0 {
+                (correct as f64 / reviews as f64) * 100.0
+            } else {
+                0.0
+            };
+            BreakdownRow {
+                label: row.get("label"),
+                reviews,
+                correct,
+                accuracy,
+            }
+        })
+        .collect();
+
+    Ok(Json(HistoryBreakdownResponse { by_pos, by_origin }))
+}
+
 // Reset FSRS parameters to defaults
 pub async fn reset_fsrs_parameters(
     State(pool): State<SqlitePool>,
@@ -1241,3 +1342,4 @@ pub async fn reset_fsrs_parameters(
 
     Ok(Json(ReviewResponse { success: true }))
 }
+

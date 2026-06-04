@@ -243,6 +243,23 @@ export async function getHistorySummary(): Promise<HistorySummary> {
   return fetchWithAuth(url)
 }
 
+export interface BreakdownRow {
+  label: string
+  reviews: number
+  correct: number
+  accuracy: number
+}
+
+export interface HistoryBreakdownResponse {
+  by_pos: BreakdownRow[]
+  by_origin: BreakdownRow[]
+}
+
+export async function getHistoryBreakdown(): Promise<HistoryBreakdownResponse> {
+  const url = `${window.location.origin}/api/cards/history-breakdown`
+  return fetchWithAuth(url)
+}
+
 export async function getStats(): Promise<StatsResponse> {
   const url = `${window.location.origin}/api/cards/stats`
   return fetchWithAuth(url)

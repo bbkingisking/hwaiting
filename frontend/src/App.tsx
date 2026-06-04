@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -9,8 +9,16 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { getNextCard, submitReview, ApiError } from '@/lib/api'
+import type { NextCardEnvelope } from '@/lib/api'
 import type { Card } from '@/lib/types'
 import { formatTimeUntil } from '@/lib/utils'
+
+// Tracks a background fetch for the next card.
+type PrefetchSlot = {
+  abort: AbortController
+  promise: Promise<NextCardEnvelope | null>
+  result: NextCardEnvelope | null
+}
 
 function AppContent() {
   const [card, setCard] = useState<Card | null>(null)
@@ -23,20 +31,64 @@ function AppContent() {
 
   const { isAuthenticated } = useAuth()
 
+  const prefetchRef = useRef<PrefetchSlot | null>(null)
+
   useEffect(() => {
     if (!isAuthenticated) {
       setAuthDialogOpen(true)
     } else {
-      loadCard()
+      loadCardCold()
     }
   }, [isAuthenticated])
 
-  // Fetch the next card from the API. Shows a loading indicator only
-  // when there is no current card to display (initial load, after
-  // suppress). During card-to-card transitions the old card stays
-  // visible until the new one arrives — no flash.
-  const loadCard = async (showLoading = true) => {
-    if (showLoading) setLoading(true)
+  // Cancel any in-flight prefetch and clear the cached prefetched card.
+  const cancelPrefetch = () => {
+    if (prefetchRef.current) {
+      prefetchRef.current.abort.abort()
+      prefetchRef.current = null
+    }
+  }
+
+  // Kick off a background fetch for the card after `currentCardId`.
+  // Fires immediately — no waitFor. The `exclude` parameter prevents
+  // the API from returning the current card.
+  const startPrefetch = (currentCardId: number): PrefetchSlot => {
+    cancelPrefetch()
+
+    const controller = new AbortController()
+    const slot: PrefetchSlot = {
+      abort: controller,
+      result: null,
+      promise: Promise.resolve(null),
+    }
+
+    slot.promise = (async () => {
+      try {
+        const envelope = await getNextCard({
+          excludeCardId: currentCardId,
+          signal: controller.signal,
+        })
+        if (prefetchRef.current === slot) {
+          slot.result = envelope
+        }
+        return envelope
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.debug('Prefetch failed:', err)
+        }
+        return null
+      }
+    })()
+
+    prefetchRef.current = slot
+    return slot
+  }
+
+  // Cold load: shows a loading state. Used for initial load, after
+  // errors, after suppress, and when cards become available again.
+  const loadCardCold = async () => {
+    cancelPrefetch()
+    setLoading(true)
     setError(null)
     setNoCards(false)
     try {
@@ -44,6 +96,7 @@ function AppContent() {
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
+        startPrefetch(envelope.card.card_id)
       } else {
         setCard(null)
         setNoCards(true)
@@ -57,41 +110,43 @@ function AppContent() {
       }
       console.error('Error fetching card:', err)
     } finally {
-      if (showLoading) setLoading(false)
+      setLoading(false)
     }
   }
 
-  const handleReview = async (rating: number) => {
-    if (!card) return
-    const reviewedId = card.card_id
+  // Advance to the next card. Uses the prefetched card if ready;
+  // otherwise fetches fresh. Never sets loading=true during a
+  // card-to-card transition — the old card stays visible until
+  // the new one arrives, so there's no flash.
+  const advanceToNextCard = async () => {
+    setError(null)
+    setNoCards(false)
 
-    // Bump stats counter immediately for snappy UX.
-    setStatsKey((prev) => prev + 1)
+    const slot = prefetchRef.current
 
-    try {
-      await submitReview(reviewedId, rating)
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(`Failed to submit review: ${err.message}`)
-      } else {
-        setError('Failed to submit review')
-      }
-      console.error('Error submitting review:', err)
+    // Fast path: prefetch already resolved with a card.
+    if (slot?.result?.card) {
+      const nextCard = slot.result.card
+      prefetchRef.current = null
+      setCard(nextCard)
+      setNoCards(false)
+      startPrefetch(nextCard.card_id)
+      return
     }
 
-    // Fetch next card without a loading state — the old card stays
-    // visible until the new one arrives, so there's no flash.
+    // Any other case (in-flight, null result, no prefetch): fetch
+    // fresh. Old card stays visible during the fetch.
+    prefetchRef.current = null
     try {
-      const envelope = await getNextCard({ excludeCardId: reviewedId })
+      const envelope = await getNextCard()
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
-        setError(null)
+        startPrefetch(envelope.card.card_id)
       } else {
         setCard(null)
         setNoCards(true)
         setNextDueAt(envelope.next_due_at)
-        setError(null)
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -103,9 +158,35 @@ function AppContent() {
     }
   }
 
-  const handleSuppress = async () => {
-    await loadCard()
+  const handleReview = async (rating: number) => {
+    if (!card) return
+
     setStatsKey((prev) => prev + 1)
+
+    try {
+      await submitReview(card.card_id, rating)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(`Failed to submit review: ${err.message}`)
+      } else {
+        setError('Failed to submit review')
+      }
+      console.error('Error submitting review:', err)
+    }
+
+    await advanceToNextCard()
+  }
+
+  const handleSuppress = async () => {
+    await loadCardCold()
+    setStatsKey((prev) => prev + 1)
+  }
+
+  const handleCardUpdated = (updates: Partial<Card>) => {
+    const filtered = Object.fromEntries(
+      Object.entries(updates).filter(([, v]) => v !== undefined)
+    ) as Partial<Card>
+    setCard(prev => prev ? { ...prev, ...filtered } : prev)
   }
 
   const handleCardUpdated = (updates: Partial<Card>) => {
@@ -147,7 +228,7 @@ function AppContent() {
           <div className="text-center">
             <p className="text-destructive mb-4">{error}</p>
             <button
-              onClick={() => loadCard()}
+              onClick={() => loadCardCold()}
               className="text-sm text-primary hover:underline"
             >
               Try again
@@ -172,7 +253,7 @@ function AppContent() {
           </div>
         )}
       </div>
-      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={() => loadCard()} />}
+      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
     </>
   )
 }
