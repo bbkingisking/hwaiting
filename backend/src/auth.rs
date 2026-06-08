@@ -10,7 +10,6 @@ use argon2::{
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
-use std::env;
 use tracing::{debug, info, warn};
 
 use crate::error::AppError;
@@ -174,8 +173,7 @@ pub async fn signup(
 fn generate_token(user_id: i64) -> Result<String, AppError> {
     use jsonwebtoken::{encode, EncodingKey, Header};
 
-    let jwt_secret = env::var("JWT_SECRET")
-        .expect("JWT_SECRET environment variable must be set");
+    let jwt_secret = crate::credentials::jwt_secret();
 
     let claims = Claims { sub: user_id };
 
@@ -231,8 +229,7 @@ where
         debug!("Token extracted, attempting to decode");
 
         // Decode and validate token (no expiration check since tokens never expire)
-        let jwt_secret = env::var("JWT_SECRET")
-            .expect("JWT_SECRET environment variable must be set");
+        let jwt_secret = crate::credentials::jwt_secret();
 
         let mut validation = Validation::new(Algorithm::HS256);
         validation.required_spec_claims.clear(); // Don't require exp, iat, etc.

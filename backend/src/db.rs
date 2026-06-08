@@ -34,11 +34,10 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
         Argon2,
     };
 
-    // Get admin credentials from environment variables
+    // Get admin credentials from environment or systemd credential store
     let admin_username = env::var("ADMIN_USERNAME")
         .expect("ADMIN_USERNAME environment variable must be set");
-    let admin_password = env::var("ADMIN_PASSWORD")
-        .expect("ADMIN_PASSWORD environment variable must be set");
+    let admin_password = crate::credentials::admin_password();
 
     // Check if admin user already exists
     let admin_exists: Option<i64> = sqlx::query_scalar(

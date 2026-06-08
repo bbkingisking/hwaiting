@@ -13,6 +13,7 @@ use dotenvy::dotenv;
 mod admin;
 mod auth;
 mod cards;
+mod credentials;
 mod custom_cards;
 mod db;
 mod error;
