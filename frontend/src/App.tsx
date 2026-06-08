@@ -189,13 +189,6 @@ function AppContent() {
     setCard(prev => prev ? { ...prev, ...filtered } : prev)
   }
 
-  const handleCardUpdated = (updates: Partial<Card>) => {
-    const filtered = Object.fromEntries(
-      Object.entries(updates).filter(([, v]) => v !== undefined)
-    ) as Partial<Card>
-    setCard(prev => prev ? { ...prev, ...filtered } : prev)
-  }
-
   return (
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
