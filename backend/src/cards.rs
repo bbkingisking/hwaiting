@@ -499,9 +499,16 @@ pub async fn submit_review(
         let last_review: Option<String> = row.get("last_review");
 
         if let (Some(stability), Some(difficulty), Some(last_review_str)) = (stability, difficulty, last_review) {
+            // last_review is normally RFC3339 (written by to_rfc3339()), but after a backup
+            // restore it may be in SQLite's datetime('now') format ("YYYY-MM-DD HH:MM:SS").
             let last_review_time = chrono::DateTime::parse_from_rfc3339(&last_review_str)
-                .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?
-                .with_timezone(&Utc);
+                .map(|dt| dt.with_timezone(&Utc))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&last_review_str, "%Y-%m-%d %H:%M:%S%.f")
+                        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&last_review_str, "%Y-%m-%d %H:%M:%S"))
+                        .map(|ndt| chrono::DateTime::from_naive_utc_and_offset(ndt, Utc))
+                })
+                .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?;
 
             let now = Utc::now();
             let elapsed_days = (now - last_review_time).num_days().max(0) as u32;
