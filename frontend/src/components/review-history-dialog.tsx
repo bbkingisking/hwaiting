@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { Copy, Check } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
@@ -145,6 +146,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
   const [breakdownOrigin, setBreakdownOrigin] = useState<BreakdownRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isCopied, setIsCopied] = useState(false)
 
   const colorizedArea     = settings?.historyColorizedArea  ?? false
   const colorizedDots     = settings?.historyColoredDots    ?? false
@@ -177,6 +179,39 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
       .catch(() => setError('Failed to load review history.'))
       .finally(() => setIsLoading(false))
   }, [open])
+
+  const handleCopy = useCallback(() => {
+    if (!summary) return
+    const payload = {
+      exported_at: new Date().toISOString().slice(0, 10),
+      summary: {
+        total_reviews: summary.total_reviews,
+        total_cards_reviewed: summary.total_cards_reviewed,
+        accuracy: parseFloat(summary.total_accuracy.toFixed(1)),
+        avg_reviews_per_day: parseFloat(summary.avg_reviews_per_day.toFixed(1)),
+        current_streak: summary.current_streak,
+        longest_streak: summary.longest_streak,
+        cards_learning: summary.cards_learning,
+        cards_mastered: summary.cards_review,
+        cards_relearning: summary.cards_relearning,
+        studying_since: summary.first_review_date,
+      },
+      recent_days: days.map(d => ({
+        date: d.date,
+        correct: d.correct,
+        total: d.total,
+        accuracy: Math.round(d.percentage),
+      })),
+      breakdown: {
+        by_pos: breakdownPos.map(r => ({ label: r.label, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
+        by_origin: breakdownOrigin.map(r => ({ label: r.label, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
+      },
+    }
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(() => {
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    })
+  }, [summary, days, breakdownPos, breakdownOrigin])
 
   const chartData = days.map(d => ({
     date: d.date,
@@ -335,9 +370,19 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
 
         {!isLoading && !error && summary && summary.total_reviews > 0 && (
           <div className="border-t pt-3 mt-1">
-            <h4 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wide">
-              History Summary
-            </h4>
+            <div className="flex items-center justify-between mb-2.5">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                History Summary
+              </h4>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy stats as JSON"
+              >
+                {isCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                {isCopied ? 'Copied!' : 'Copy JSON'}
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
               <SummaryStat label="Total Reviews" value={summary.total_reviews.toLocaleString()} />
               <SummaryStat label="Cards Reviewed" value={summary.total_cards_reviewed.toLocaleString()} />
