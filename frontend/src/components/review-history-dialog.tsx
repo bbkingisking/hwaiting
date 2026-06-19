@@ -207,10 +207,24 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
         by_origin: breakdownOrigin.map(r => ({ label: r.label, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
       },
     }
-    navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(() => {
+    const text = JSON.stringify(payload, null, 2)
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+      })
+    } else {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
       setIsCopied(true)
       setTimeout(() => setIsCopied(false), 2000)
-    })
+    }
   }, [summary, days, breakdownPos, breakdownOrigin])
 
   const chartData = days.map(d => ({
