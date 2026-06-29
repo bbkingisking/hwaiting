@@ -81,8 +81,8 @@ pub struct SentenceExport {
 
 #[derive(Serialize, Deserialize)]
 pub struct InflectionHintExport {
-    pub speech_level: String,
-    pub tense: String,
+    pub speech_level: Option<String>,
+    pub tense: Option<String>,
 }
 
 #[derive(Deserialize)]

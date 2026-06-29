@@ -164,6 +164,8 @@ pub async fn edit_card(
     let alternatives: Option<Vec<String>> = obj.get("alternatives").and_then(|v| {
         serde_json::from_value(v.clone()).ok()
     });
+    let speech_level = get_opt_str(obj, "speech_level");
+    let tense = get_opt_str(obj, "tense");
 
     debug!(
         "Parsed fields: word={:?}, hanja={:?}, hanja_eum={:?}, definition={:?}",
@@ -297,6 +299,49 @@ pub async fn edit_card(
                     .execute(&mut *tx)
                     .await?;
                 }
+            }
+        }
+    }
+
+    // Update sentence_inflection_hints (speech_level / tense)
+    if speech_level.is_some() || tense.is_some() {
+        let sentence_id: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
+                .bind(card_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        if let Some(sid) = sentence_id {
+            let hint_exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sentence_inflection_hints WHERE sentence_id = ?)")
+                    .bind(sid)
+                    .fetch_one(&mut *tx)
+                    .await?;
+
+            if hint_exists {
+                if let Some(ref sl) = speech_level {
+                    sqlx::query("UPDATE sentence_inflection_hints SET speech_level = ? WHERE sentence_id = ?")
+                        .bind(sl.as_str())
+                        .bind(sid)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                if let Some(ref t) = tense {
+                    sqlx::query("UPDATE sentence_inflection_hints SET tense = ? WHERE sentence_id = ?")
+                        .bind(t.as_str())
+                        .bind(sid)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            } else if speech_level.is_some() || tense.is_some() {
+                sqlx::query(
+                    "INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense) VALUES (?, ?, ?)"
+                )
+                .bind(sid)
+                .bind(speech_level.as_deref())
+                .bind(tense.as_deref())
+                .execute(&mut *tx)
+                .await?;
             }
         }
     }

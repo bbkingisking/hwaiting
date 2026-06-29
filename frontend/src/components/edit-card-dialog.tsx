@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Card } from '@/lib/types'
 import { editCard } from '@/lib/api'
+import { SPEECH_LEVEL_LABELS, TENSE_LABELS } from '@/lib/constants'
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,8 @@ interface FormState {
   sentence_translation: string
   target: string
   alternatives: string
+  speech_level: string
+  tense: string
 }
 
 function toFormState(card: Card): FormState {
@@ -50,6 +53,8 @@ function toFormState(card: Card): FormState {
     sentence_translation: card.sentence_translation ?? '',
     target: card.target ?? '',
     alternatives: (card.alternatives ?? []).join(', '),
+    speech_level: card.speech_level ?? '',
+    tense: card.tense ?? '',
   }
 }
 
@@ -71,7 +76,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   }, [open, card])
 
   function handleChange(field: keyof FormState) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       setForm(prev => ({ ...prev, [field]: e.target.value }))
     }
   }
@@ -94,6 +99,8 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         sentence_translation: form.sentence_translation.trim() || undefined,
         target: form.target.trim() || undefined,
         alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
+        speech_level: nullIfEmpty(form.speech_level),
+        tense: nullIfEmpty(form.tense),
       }
       await editCard(card.card_id, updates)
       onSaved?.(updates)
@@ -147,6 +154,33 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
           <Field label="Origin type">
             <Input value={form.origin_type} onChange={handleChange('origin_type')} placeholder="e.g. 고유어, 한자어" />
           </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Politeness level">
+              <select
+                value={form.speech_level}
+                onChange={handleChange('speech_level')}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">—</option>
+                {Object.entries(SPEECH_LEVEL_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Tense">
+              <select
+                value={form.tense}
+                onChange={handleChange('tense')}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">—</option>
+                {Object.entries(TENSE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
 
           <div className="border-t pt-3 flex flex-col gap-3">
             <Field label="Translation word (English)">

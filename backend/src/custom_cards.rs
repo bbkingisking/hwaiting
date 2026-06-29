@@ -170,17 +170,14 @@ pub async fn create_custom_card(
     .execute(&mut *tx)
     .await?;
 
-    // Insert into sentence_inflection_hints if speech_level and tense are provided
-    if payload.speech_level.is_some() && payload.tense.is_some() {
+    // Insert into sentence_inflection_hints if either speech_level or tense is provided
+    if payload.speech_level.is_some() || payload.tense.is_some() {
         sqlx::query(
-            r#"
-            INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense)
-            VALUES (?, ?, ?)
-            "#
+            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense) VALUES (?, ?, ?)"
         )
         .bind(sentence_id)
-        .bind(payload.speech_level.as_ref().unwrap())
-        .bind(payload.tense.as_ref().unwrap())
+        .bind(payload.speech_level.as_deref())
+        .bind(payload.tense.as_deref())
         .execute(&mut *tx)
         .await?;
     }
