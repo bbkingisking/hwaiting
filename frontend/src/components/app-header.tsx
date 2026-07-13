@@ -12,17 +12,19 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { CustomCardsDialog } from '@/components/custom-cards-dialog'
 import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { ReviewHistoryDialog } from '@/components/review-history-dialog'
-import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2 } from 'lucide-react'
+import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
+import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
 
 export function AppHeader() {
-  const { username, isAuthenticated, logout } = useAuth()
+  const { username, isAuthenticated, isAdmin, logout } = useAuth()
   const { theme, setTheme } = useTheme()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [customCardsOpen, setCustomCardsOpen] = useState(false)
+  const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
@@ -65,6 +67,12 @@ export function AppHeader() {
               <Plus className="mr-2 h-4 w-4" />
               Custom Cards
             </DropdownMenuItem>
+            {isAdmin && (
+              <DropdownMenuItem onClick={() => setBrowseCardsOpen(true)}>
+                <Search className="mr-2 h-4 w-4" />
+                Browse Cards
+              </DropdownMenuItem>
+            )}
             {hasSuppressedCards && (
               <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
                 <EyeOff className="mr-2 h-4 w-4" />
@@ -99,6 +107,9 @@ export function AppHeader() {
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
+      {isAdmin && (
+        <BrowseCardsDialog open={browseCardsOpen} onOpenChange={setBrowseCardsOpen} />
+      )}
       <ReviewHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <SuppressedCardsDialog 
         open={suppressedCardsOpen} 

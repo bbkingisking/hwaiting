@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { Card } from '@/lib/types'
+import type { EditableCard } from '@/lib/types'
 import { editCard } from '@/lib/api'
 import { SPEECH_LEVEL_LABELS, TENSE_LABELS } from '@/lib/constants'
 import {
@@ -16,8 +16,8 @@ import { Label } from '@/components/ui/label'
 interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  card: Card
-  onSaved?: (updates: Partial<Card>) => void
+  card: EditableCard
+  onSaved?: (updates: Partial<EditableCard>) => void
 }
 
 interface FormState {
@@ -38,7 +38,7 @@ interface FormState {
   tense: string
 }
 
-function toFormState(card: Card): FormState {
+function toFormState(card: EditableCard): FormState {
   return {
     word: card.word ?? '',
     definition: card.definition ?? '',

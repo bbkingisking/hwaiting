@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use rand::RngExt;
@@ -135,6 +135,110 @@ pub async fn delete_invite(
     info!("Invite code deleted: {}", code);
     
     Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[derive(Deserialize)]
+pub struct SearchCardsQuery {
+    pub q: String,
+}
+
+#[derive(Serialize)]
+pub struct AdminCard {
+    pub card_id: i64,
+    pub word: String,
+    pub definition: Option<String>,
+    pub pos: Option<String>,
+    pub origin_type: Option<String>,
+    pub hanja: Option<String>,
+    pub hanja_eum: Option<String>,
+    pub grade: Option<String>,
+    pub trans_word: String,
+    pub trans_dfn: Option<String>,
+    pub sentence: String,
+    pub sentence_translation: String,
+    pub target: String,
+    pub alternatives: Vec<String>,
+    pub speech_level: Option<String>,
+    pub tense: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SearchCardsResponse {
+    pub cards: Vec<AdminCard>,
+}
+
+pub async fn search_cards(
+    _admin: AdminUser,
+    State(pool): State<SqlitePool>,
+    Query(params): Query<SearchCardsQuery>,
+) -> Result<Json<SearchCardsResponse>, AppError> {
+    let q = params.q.trim();
+    if q.is_empty() {
+        return Ok(Json(SearchCardsResponse { cards: Vec::new() }));
+    }
+
+    info!("Admin searching cards by target: {}", q);
+
+    let pattern = format!(
+        "%{}%",
+        q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    );
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            c.id, c.word, c.definition, c.pos, c.origin_type, c.hanja, c.hanja_eum, c.grade,
+            ct.trans_word, ct.trans_dfn,
+            s.id as sentence_id, s.text as sentence, s.target,
+            st.translation as sentence_translation,
+            sih.speech_level, sih.tense
+        FROM cards c
+        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN sentences s ON c.id = s.card_id
+        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        WHERE s.target LIKE ? ESCAPE '\'
+        ORDER BY length(s.target) ASC, s.target ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(&pattern)
+    .fetch_all(&pool)
+    .await?;
+
+    let mut cards = Vec::with_capacity(rows.len());
+    for row in rows {
+        let sentence_id: i64 = row.get("sentence_id");
+        let alternatives: Vec<String> = sqlx::query_scalar(
+            "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?",
+        )
+        .bind(sentence_id)
+        .fetch_all(&pool)
+        .await?;
+
+        cards.push(AdminCard {
+            card_id: row.get("id"),
+            word: row.get("word"),
+            definition: row.get("definition"),
+            pos: row.get("pos"),
+            origin_type: row.get("origin_type"),
+            hanja: row.get("hanja"),
+            hanja_eum: row.get("hanja_eum"),
+            grade: row.get("grade"),
+            trans_word: row.get("trans_word"),
+            trans_dfn: row.get("trans_dfn"),
+            sentence: row.get("sentence"),
+            sentence_translation: row
+                .get::<Option<String>, _>("sentence_translation")
+                .unwrap_or_default(),
+            target: row.get("target"),
+            alternatives,
+            speech_level: row.get("speech_level"),
+            tense: row.get("tense"),
+        });
+    }
+
+    Ok(Json(SearchCardsResponse { cards }))
 }
 
 pub async fn edit_card(

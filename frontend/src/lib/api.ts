@@ -412,6 +412,34 @@ export async function updateCustomCard(cardId: number, updates: UpdateCustomCard
   })
 }
 
+interface AdminCard {
+  card_id: number
+  word: string
+  definition: string | null
+  pos: string | null
+  origin_type: string | null
+  hanja: string | null
+  hanja_eum: string | null
+  grade: string | null
+  trans_word: string
+  trans_dfn: string | null
+  sentence: string
+  sentence_translation: string
+  target: string
+  alternatives: string[]
+  speech_level: string | null
+  tense: string | null
+}
+
+interface SearchCardsResponse {
+  cards: AdminCard[]
+}
+
+export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
+  const url = `${window.location.origin}/api/admin/cards/search?q=${encodeURIComponent(query)}`
+  return fetchWithAuth(url, { signal })
+}
+
 export async function editCard(cardId: number, updates: EditCardRequest): Promise<EditCardResponse> {
   const url = `${window.location.origin}/api/admin/cards/${cardId}`
   return fetchWithAuth(url, {
@@ -472,4 +500,6 @@ export type {
   DeleteCustomCardResponse,
   SuppressedCard,
   SuppressedCardsResponse,
+  AdminCard,
+  SearchCardsResponse,
 }

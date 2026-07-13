@@ -59,6 +59,27 @@ export interface Card {
   hanja_hints: HanjaHint[]
 }
 
+// Subset of Card that the edit dialog needs (also matches admin card search results)
+export type EditableCard = Pick<
+  Card,
+  | 'card_id'
+  | 'word'
+  | 'definition'
+  | 'pos'
+  | 'origin_type'
+  | 'hanja'
+  | 'hanja_eum'
+  | 'grade'
+  | 'trans_word'
+  | 'trans_dfn'
+  | 'sentence'
+  | 'sentence_translation'
+  | 'target'
+  | 'alternatives'
+  | 'speech_level'
+  | 'tense'
+>
+
 // Theme types
 export type Theme = 'light' | 'dark' | 'system'
 

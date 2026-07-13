@@ -78,7 +78,8 @@ pub struct DayHistory {
     pub date: String,
     pub total: i64,
     pub correct: i64,
-    pub percentage: f64,
+    // Truncated integer, same computation as the status bar percentage
+    pub percentage: i64,
 }
 
 #[derive(Serialize)]
@@ -123,6 +124,48 @@ pub struct NextCardQuery {
     // Optional word_id to exclude from the result (used by client prefetch
     // to skip the card currently being shown to the user).
     exclude: Option<i64>,
+}
+
+// Accuracy stats must agree everywhere they are shown (status bar, review
+// history chart, summary, breakdowns). These fragments define which
+// review_history rows count: a card's first-ever review is recorded with
+// state = 'learning' and is excluded from accuracy either way.
+const COUNTED_REVIEW_SQL: &str = "state != 'learning'";
+const CORRECT_REVIEW_SQL: &str = "rating IN ('good', 'easy')";
+
+/// Start of the user's current logical day: `day_boundary_hour` o'clock local
+/// time, today if that moment has passed, otherwise yesterday.
+fn logical_today_start(day_boundary_hour: i64) -> chrono::DateTime<Utc> {
+    let now_local = Local::now();
+    let today_start_naive = if now_local.hour() >= day_boundary_hour as u32 {
+        now_local.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+    } else {
+        (now_local.date_naive() - chrono::Duration::days(1))
+            .and_hms_opt(day_boundary_hour as u32, 0, 0)
+            .unwrap()
+    };
+    Local
+        .from_local_datetime(&today_start_naive)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
+/// Format a UTC datetime for comparison against SQLite datetime() values.
+fn sqlite_datetime(dt: chrono::DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// SQLite datetime modifier that shifts a UTC `reviewed_at` so that date()
+/// yields its logical day — the same boundary as `logical_today_start`.
+fn logical_day_shift(day_boundary_hour: i64) -> String {
+    let utc_offset_minutes = i64::from(Local::now().offset().local_minus_utc()) / 60;
+    format!("{:+} minutes", utc_offset_minutes - day_boundary_hour * 60)
+}
+
+/// Truncated integer accuracy percentage; None when there are no reviews.
+fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
+    (total > 0).then(|| correct * 100 / total)
 }
 
 // Get next card due for review
@@ -624,25 +667,8 @@ pub async fn get_stats(
     .await?
     .unwrap_or(4);
 
-    // Calculate the "today" start timestamp (in local time)
-    let now_local = Local::now();
-    let today_start_naive = if now_local.hour() >= day_boundary_hour as u32 {
-        now_local.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
-    } else {
-        (now_local.date_naive() - chrono::Duration::days(1))
-            .and_hms_opt(day_boundary_hour as u32, 0, 0)
-            .unwrap()
-    };
-    
-    // Convert to UTC for database comparison
-    let today_start_utc = Local
-        .from_local_datetime(&today_start_naive)
-        .single()
-        .unwrap()
-        .with_timezone(&Utc);
-    
-    // Format as SQLite datetime string (YYYY-MM-DD HH:MM:SS)
-    let today_start = today_start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+    // Start of the user's current logical day, as UTC for database comparison
+    let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
 
     // Count new cards (cards not in card_states, excluding suspended)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
@@ -698,42 +724,37 @@ pub async fn get_stats(
     .await?;
 
     // Count reviews today (after day_boundary_hour)
-    let reviews_today: i64 = sqlx::query_scalar(
+    let reviews_today: i64 = sqlx::query_scalar(&format!(
         r#"
         SELECT COUNT(*)
         FROM review_history
         WHERE user_id = ?
-        AND state != 'learning'
+        AND {COUNTED_REVIEW_SQL}
         AND datetime(reviewed_at) >= datetime(?)
         "#,
-    )
+    ))
     .bind(user_id)
     .bind(&today_start)
     .fetch_one(&pool)
     .await?;
 
-    // Count correct reviews today (rating = 'good' or 'easy')
-    let correct_today: i64 = sqlx::query_scalar(
+    // Count correct reviews today
+    let correct_today: i64 = sqlx::query_scalar(&format!(
         r#"
         SELECT COUNT(*)
         FROM review_history
         WHERE user_id = ?
-        AND state != 'learning'
-        AND rating IN ('good', 'easy')
+        AND {COUNTED_REVIEW_SQL}
+        AND {CORRECT_REVIEW_SQL}
         AND datetime(reviewed_at) >= datetime(?)
         "#,
-    )
+    ))
     .bind(user_id)
     .bind(&today_start)
     .fetch_one(&pool)
     .await?;
 
-    // Calculate percentage
-    let percentage = if reviews_today > 0 {
-        Some((correct_today * 100) / reviews_today)
-    } else {
-        None
-    };
+    let percentage = accuracy_percentage(correct_today, reviews_today);
 
     // Find when the next card becomes due
     let next_due_at: Option<String> = sqlx::query_scalar(
@@ -898,28 +919,30 @@ pub async fn get_review_history(
     .await?
     .unwrap_or(4);
 
-    // Subtracting day_boundary_hour from reviewed_at shifts timestamps so that
-    // date() gives the correct "logical day" regardless of the boundary hour.
-    // We look back far enough to cover 5 full boundary-aligned days.
-    let lookback_hours = day_boundary_hour + 24 * 5;
+    // Same logical-day definition as get_stats, so today's bucket here matches
+    // the status bar exactly. The window covers today plus the 4 days before.
+    let day_shift = logical_day_shift(day_boundary_hour);
+    let window_start = sqlite_datetime(
+        logical_today_start(day_boundary_hour) - chrono::Duration::days(4),
+    );
 
-    let rows = sqlx::query(
+    let rows = sqlx::query(&format!(
         r#"
         SELECT
-            date(datetime(reviewed_at, printf('-%d hours', ?))) AS day,
+            date(datetime(reviewed_at, ?)) AS day,
             COUNT(*) AS total,
-            SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) AS correct
+            SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history
         WHERE user_id = ?
-          AND reviewed_at >= datetime('now', printf('-%d hours', ?))
+          AND {COUNTED_REVIEW_SQL}
+          AND datetime(reviewed_at) >= datetime(?)
         GROUP BY day
         ORDER BY day ASC
-        LIMIT 5
         "#,
-    )
-    .bind(day_boundary_hour)
+    ))
+    .bind(&day_shift)
     .bind(user_id)
-    .bind(lookback_hours)
+    .bind(&window_start)
     .fetch_all(&pool)
     .await?;
 
@@ -928,16 +951,11 @@ pub async fn get_review_history(
         .map(|row| {
             let total: i64 = row.get("total");
             let correct: i64 = row.get("correct");
-            let percentage = if total > 0 {
-                (correct as f64 / total as f64) * 100.0
-            } else {
-                0.0
-            };
             DayHistory {
                 date: row.get("day"),
                 total,
                 correct,
-                percentage,
+                percentage: accuracy_percentage(correct, total).unwrap_or(0),
             }
         })
         .collect();
@@ -960,15 +978,16 @@ pub async fn get_history_summary(
     .await?
     .unwrap_or(4);
 
-    // Query 1: Aggregate review stats
-    let stats_row = sqlx::query(
+    // Query 1: Aggregate review stats. Accuracy only counts post-first-exposure
+    // reviews (same rule as the status bar); the volume stats count everything.
+    let stats_row = sqlx::query(&format!(
         r#"
         SELECT
             COUNT(*) AS total_reviews,
             COUNT(DISTINCT card_id) AS total_cards_reviewed,
             COALESCE(
-                CAST(SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS REAL)
-                / NULLIF(COUNT(*), 0) * 100,
+                CAST(SUM(CASE WHEN {COUNTED_REVIEW_SQL} AND {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS REAL)
+                / NULLIF(SUM(CASE WHEN {COUNTED_REVIEW_SQL} THEN 1 ELSE 0 END), 0) * 100,
                 0
             ) AS total_accuracy,
             MIN(reviewed_at) AS first_review_date,
@@ -976,7 +995,7 @@ pub async fn get_history_summary(
         FROM review_history
         WHERE user_id = ?
         "#,
-    )
+    ))
     .bind(user_id)
     .fetch_one(&pool)
     .await?;
@@ -1028,16 +1047,16 @@ pub async fn get_history_summary(
         }
     }
 
-    // Query 3: All review days (boundary-adjusted) for streak calculation
+    // Query 3: All review days (logical days) for streak calculation
     let day_rows = sqlx::query_scalar::<_, String>(
         r#"
-        SELECT DISTINCT date(datetime(reviewed_at, printf('-%d hours', ?))) AS day
+        SELECT DISTINCT date(datetime(reviewed_at, ?)) AS day
         FROM review_history
         WHERE user_id = ?
         ORDER BY day ASC
         "#,
     )
-    .bind(day_boundary_hour)
+    .bind(logical_day_shift(day_boundary_hour))
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
@@ -1252,21 +1271,22 @@ pub async fn get_history_breakdown(
     let user_id = auth.0;
 
     // Breakdown by POS — only include rows where pos is not null/empty
-    let pos_rows = sqlx::query(
+    let pos_rows = sqlx::query(&format!(
         r#"
         SELECT
             c.pos AS label,
             COUNT(*) AS reviews,
-            SUM(CASE WHEN rh.rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS correct
+            SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         WHERE rh.user_id = ?
+          AND {COUNTED_REVIEW_SQL}
           AND c.pos IS NOT NULL
           AND c.pos != ''
         GROUP BY c.pos
         ORDER BY reviews DESC
         "#,
-    )
+    ))
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
@@ -1291,21 +1311,22 @@ pub async fn get_history_breakdown(
         .collect();
 
     // Breakdown by origin_type
-    let origin_rows = sqlx::query(
+    let origin_rows = sqlx::query(&format!(
         r#"
         SELECT
             c.origin_type AS label,
             COUNT(*) AS reviews,
-            SUM(CASE WHEN rh.rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS correct
+            SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         WHERE rh.user_id = ?
+          AND {COUNTED_REVIEW_SQL}
           AND c.origin_type IS NOT NULL
           AND c.origin_type != ''
         GROUP BY c.origin_type
         ORDER BY reviews DESC
         "#,
-    )
+    ))
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
