@@ -329,7 +329,7 @@ pub async fn get_next_card(
         // No card available — find when the next one becomes due
         let next_due_at: Option<String> = sqlx::query_scalar(
             r#"
-            SELECT MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days'))
+            SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
             FROM cards c
             LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
             INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
@@ -342,7 +342,7 @@ pub async fn get_next_card(
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)
-        .fetch_optional(&pool)
+        .fetch_one(&pool)
         .await?;
 
         return Ok(Json(NextCardEnvelope {
@@ -760,7 +760,7 @@ pub async fn get_stats(
     // Find when the next card becomes due
     let next_due_at: Option<String> = sqlx::query_scalar(
         r#"
-        SELECT MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days'))
+        SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
@@ -773,7 +773,7 @@ pub async fn get_stats(
     .bind(user_id)
     .bind(user_id)
     .bind(user_id)
-    .fetch_optional(&pool)
+    .fetch_one(&pool)
     .await?;
 
     // Count how many NEW cards were reviewed today

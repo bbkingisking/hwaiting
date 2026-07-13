@@ -41,8 +41,14 @@ export function splitSentence(sentence: string, target: string): { before: strin
 
 // Format time until a due date in a human-readable format
 export function formatTimeUntil(isoTimestamp: string): string | null {
+  // Zone-less SQLite datetimes ("YYYY-MM-DD HH:MM:SS") are UTC; without the
+  // T/Z normalization, browsers parse them as local time (or reject them).
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(isoTimestamp)
+    ? isoTimestamp.replace(' ', 'T') + 'Z'
+    : isoTimestamp
   const now = new Date()
-  const due = new Date(isoTimestamp)
+  const due = new Date(normalized)
+  if (Number.isNaN(due.getTime())) return null
   const diffMs = due.getTime() - now.getTime()
   if (diffMs <= 0) return null
   const diffMinutes = Math.floor(diffMs / 60000)
