@@ -228,6 +228,7 @@ export interface HistorySummary {
   cards_learning: number
   cards_review: number
   cards_relearning: number
+  cards_unseen: number
   total_accuracy: number
   avg_reviews_per_day: number
   first_review_date: string | null

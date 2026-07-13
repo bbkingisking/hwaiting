@@ -94,6 +94,7 @@ pub struct HistorySummary {
     pub cards_learning: i64,
     pub cards_review: i64,
     pub cards_relearning: i64,
+    pub cards_unseen: i64,
     pub total_accuracy: f64,
     pub avg_reviews_per_day: f64,
     pub first_review_date: Option<String>,
@@ -1047,6 +1048,26 @@ pub async fn get_history_summary(
         }
     }
 
+    // Query 2b: Cards never reviewed by this user (same definition as the
+    // status bar's new count, but ignoring the daily new card limit)
+    let cards_unseen: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM cards c
+        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        AND (cs.last_review IS NULL)
+        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        "#,
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await?;
+
     // Query 3: All review days (logical days) for streak calculation
     let day_rows = sqlx::query_scalar::<_, String>(
         r#"
@@ -1111,6 +1132,7 @@ pub async fn get_history_summary(
         cards_learning,
         cards_review,
         cards_relearning,
+        cards_unseen,
         total_accuracy,
         avg_reviews_per_day,
         first_review_date,
