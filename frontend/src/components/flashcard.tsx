@@ -118,6 +118,8 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     setCorrect(false)
     setSubmittedAnswer('')
     setIsAutoProgressing(false)
+    setEditOpen(false)
+    setMenuOpen(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
   }, [card])
@@ -247,66 +249,63 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         <form onSubmit={handleSubmit}>
           <p className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
             {before}
-            {isAutoProgressing ? (
-              // Show green answer during auto-progress for positive feedback
-              <span className="inline-flex flex-col items-center relative pt-5">
-                {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
-                  </span>
-                )}
+            <span className="inline-flex flex-col items-center relative pt-5">
+              {card.hanja && (
+                <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
+                  <HanjaHintText
+                    hanja={card.hanja}
+                    hints={card.hanja_hints ?? []}
+                    showEum={answered || isAutoProgressing}
+                    hanjaEum={card.hanja_eum}
+                    showTarget={answered || isAutoProgressing}
+                  />
+                </span>
+              )}
+              {isAutoProgressing ? (
+                // Show green answer during auto-progress for positive feedback
                 <span className="text-green-600">{submittedAnswer}</span>
-                {showInfinitive && (
-                  <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
-                )}
-              </span>
-            ) : answered ? (
-              <span className="inline-flex flex-col items-center relative pt-5">
-                {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum hanjaEum={card.hanja_eum} showTarget />
-                  </span>
-                )}
-                {correct ? (
+              ) : answered ? (
+                correct ? (
                   <span className="text-green-600">{submittedAnswer}</span>
                 ) : (
                   <span className="inline-flex flex-wrap items-baseline gap-0">
-                    {input.split('').map((char, i) => (
+                    {submittedAnswer.split('').map((char, i) => (
                       <span key={i} className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}>
                         {char}
                       </span>
                     ))}
                     <span className="text-muted-foreground/50 ml-1 select-none">({card.target})</span>
                   </span>
+                )
+              ) : null}
+              {/*
+                Always mounted and never blurred, even after grading — on mobile,
+                unmounting/refocusing this field dismisses and reopens the on-screen
+                keyboard between cards. Hidden with sr-only (not removed) once
+                answered, so focus (and the keyboard) survive into the next card.
+              */}
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => {
+                  if (!answered && !isAutoProgressing) setInput(e.target.value)
+                }}
+                style={{ width: `${Math.max(input.length, 2)}em` }}
+                className={cn(
+                  'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
+                  'text-center text-2xl md:text-3xl font-semibold',
+                  'outline-none pb-0.5',
+                  'focus:border-primary',
+                  !settings.autoProgressOnCorrect && 'transition-colors',
+                  (answered || isAutoProgressing) && 'sr-only',
                 )}
-                {showInfinitive && (
-                  <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
-                )}
-              </span>
-            ) : (
-              <span className="inline-flex flex-col items-center relative pt-5">
-                {card.hanja && (
-                  <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
-                    <HanjaHintText hanja={card.hanja} hints={card.hanja_hints ?? []} showEum={false} hanjaEum={card.hanja_eum} showTarget={false} />
-                  </span>
-                )}
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  style={{ width: `${Math.max(input.length, 2)}em` }}
-                  className={cn(
-                    'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
-                    'text-center text-2xl md:text-3xl font-semibold',
-                    'outline-none pb-0.5',
-                    'focus:border-primary',
-                    !settings.autoProgressOnCorrect && 'transition-colors',
-                  )}
-                  autoFocus
-                />
-              </span>
-            )}
+                autoFocus
+              />
+              {(answered || isAutoProgressing) && showInfinitive && (
+                <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
+              )}
+            </span>
             {after}
           </p>
         </form>

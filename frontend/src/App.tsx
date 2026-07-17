@@ -233,7 +233,6 @@ function AppContent() {
               <p className="text-destructive text-sm mb-4">{error}</p>
             )}
             <Flashcard
-              key={card.card_id}
               card={card}
               onReview={handleReview}
               onSuppress={handleSuppress}
