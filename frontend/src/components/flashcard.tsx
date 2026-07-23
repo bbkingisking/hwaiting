@@ -176,6 +176,24 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     }
   }
 
+  const handleCopyJson = () => {
+    const text = JSON.stringify(card, null, 2)
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch((err) => {
+        console.error('Error copying card JSON:', err)
+      })
+    } else {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
+  }
+
   const handleSuppress = async () => {
     if (suppressing) return
     setSuppressing(true)
@@ -235,6 +253,9 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                   Edit card
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={handleCopyJson}>
+                Copy card as JSON
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleSuppress}
                 disabled={suppressing}
