@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { EditableCard } from '@/lib/types'
 import { editCard } from '@/lib/api'
 import { SPEECH_LEVEL_LABELS, TENSE_LABELS } from '@/lib/constants'
+import { useGrammarPatterns } from '@/components/grammar-patterns-provider'
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ interface FormState {
   alternatives: string
   speech_level: string
   tense: string
+  grammar_pattern: string
 }
 
 function toFormState(card: EditableCard): FormState {
@@ -55,6 +57,7 @@ function toFormState(card: EditableCard): FormState {
     alternatives: (card.alternatives ?? []).join(', '),
     speech_level: card.speech_level ?? '',
     tense: card.tense ?? '',
+    grammar_pattern: card.grammar_pattern ?? '',
   }
 }
 
@@ -66,6 +69,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   const [form, setForm] = useState<FormState>(toFormState(card))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { patterns: grammarPatterns } = useGrammarPatterns()
 
   // Reset form whenever the dialog opens with a (potentially new) card
   useEffect(() => {
@@ -101,6 +105,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
         speech_level: nullIfEmpty(form.speech_level),
         tense: nullIfEmpty(form.tense),
+        grammar_pattern: nullIfEmpty(form.grammar_pattern),
       }
       await editCard(card.card_id, updates)
       onSaved?.(updates)
@@ -181,6 +186,19 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
               </select>
             </Field>
           </div>
+
+          <Field label="Grammar pattern">
+            <select
+              value={form.grammar_pattern}
+              onChange={handleChange('grammar_pattern')}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">—</option>
+              {Object.values(grammarPatterns).map(p => (
+                <option key={p.slug} value={p.slug}>{p.label}</option>
+              ))}
+            </select>
+          </Field>
 
           <div className="border-t pt-3 flex flex-col gap-3">
             <Field label="Translation word (English)">

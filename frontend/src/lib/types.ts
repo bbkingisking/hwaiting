@@ -53,6 +53,7 @@ export interface Card {
   alternatives: string[]
   speech_level: string | null
   tense: string | null
+  grammar_pattern: string | null
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number
@@ -78,6 +79,7 @@ export type EditableCard = Pick<
   | 'alternatives'
   | 'speech_level'
   | 'tense'
+  | 'grammar_pattern'
 >
 
 // Theme types

@@ -16,6 +16,7 @@ interface EditCardRequest {
   alternatives?: string[]
   speech_level?: string | null
   tense?: string | null
+  grammar_pattern?: string | null
 }
 
 interface EditCardResponse {
@@ -45,6 +46,7 @@ interface CardResponse {
   alternatives: string[]
   speech_level: string | null
   tense: string | null
+  grammar_pattern: string | null
   difficulty: number | null
   guess_count: number
   wrong_guess_count: number
@@ -113,6 +115,17 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   const qs = params.toString()
   const url = `${window.location.origin}/api/cards/next${qs ? `?${qs}` : ''}`
   return fetchWithAuth(url, { signal: options.signal })
+}
+
+export interface GrammarPattern {
+  slug: string
+  label: string
+  tooltip: string
+}
+
+export async function getGrammarPatterns(): Promise<GrammarPattern[]> {
+  const url = `${window.location.origin}/api/cards/grammar-patterns`
+  return fetchWithAuth(url)
 }
 
 export async function submitReview(cardId: number, rating: number): Promise<ReviewResponse> {
@@ -430,6 +443,7 @@ interface AdminCard {
   alternatives: string[]
   speech_level: string | null
   tense: string | null
+  grammar_pattern: string | null
 }
 
 interface SearchCardsResponse {

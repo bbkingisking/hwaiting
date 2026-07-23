@@ -160,6 +160,7 @@ pub struct AdminCard {
     pub alternatives: Vec<String>,
     pub speech_level: Option<String>,
     pub tense: Option<String>,
+    pub grammar_pattern: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -191,12 +192,14 @@ pub async fn search_cards(
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
-            sih.speech_level, sih.tense
+            sih.speech_level, sih.tense,
+            gp.slug as grammar_pattern
         FROM cards c
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         WHERE s.target LIKE ? ESCAPE '\'
         ORDER BY length(s.target) ASC, s.target ASC
         LIMIT 50
@@ -235,6 +238,7 @@ pub async fn search_cards(
             alternatives,
             speech_level: row.get("speech_level"),
             tense: row.get("tense"),
+            grammar_pattern: row.get("grammar_pattern"),
         });
     }
 
@@ -270,6 +274,7 @@ pub async fn edit_card(
     });
     let speech_level = get_opt_str(obj, "speech_level");
     let tense = get_opt_str(obj, "tense");
+    let grammar_pattern_slug = get_nullable_str(obj, "grammar_pattern");
 
     debug!(
         "Parsed fields: word={:?}, hanja={:?}, hanja_eum={:?}, definition={:?}",
@@ -288,6 +293,21 @@ pub async fn edit_card(
 
     let mut tx = pool.begin().await?;
 
+    // Resolve grammar pattern slug -> id (None: field absent; Some(None): clear it;
+    // Some(Some(id)): set it). Unlike the plain string fields, this one needs a lookup
+    // since the frontend sends the slug but the column stores grammar_patterns.id.
+    let grammar_pattern_id: Option<Option<i64>> = match grammar_pattern_slug {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(ref slug)) => {
+            let id: i64 = sqlx::query_scalar("SELECT id FROM grammar_patterns WHERE slug = ?")
+                .bind(slug)
+                .fetch_one(&mut *tx)
+                .await?;
+            Some(Some(id))
+        }
+    };
+
     // Update cards table — build SET clause dynamically so absent fields are untouched
     // and nullable fields can be explicitly set to NULL
     {
@@ -299,6 +319,7 @@ pub async fn edit_card(
         if hanja.is_some()       { sets.push("hanja = ?") }
         if hanja_eum.is_some()   { sets.push("hanja_eum = ?") }
         if grade.is_some()       { sets.push("grade = ?") }
+        if grammar_pattern_id.is_some() { sets.push("grammar_pattern_id = ?") }
 
         if !sets.is_empty() {
             let sql = format!("UPDATE cards SET {} WHERE id = ?", sets.join(", "));
@@ -311,6 +332,7 @@ pub async fn edit_card(
             if let Some(ref v) = hanja       { q = q.bind(v.as_deref()) }
             if let Some(ref v) = hanja_eum   { q = q.bind(v.as_deref()) }
             if let Some(ref v) = grade       { q = q.bind(v.as_deref()) }
+            if let Some(v) = grammar_pattern_id { q = q.bind(v) }
             let result = q.bind(card_id).execute(&mut *tx).await?;
             debug!("Cards update rows_affected: {}", result.rows_affected());
         }

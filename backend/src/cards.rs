@@ -40,10 +40,38 @@ pub struct NextCardResponse {
     alternatives: Vec<String>,
     speech_level: Option<String>,
     tense: Option<String>,
+    grammar_pattern: Option<String>,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
     hanja_hints: Vec<HanjaHint>,
+}
+
+#[derive(Serialize)]
+pub struct GrammarPattern {
+    pub slug: String,
+    pub label: String,
+    pub tooltip: String,
+}
+
+pub async fn list_grammar_patterns(
+    State(pool): State<SqlitePool>,
+    _auth: crate::auth::AuthUser,
+) -> Result<Json<Vec<GrammarPattern>>, AppError> {
+    let rows = sqlx::query("SELECT slug, label, tooltip FROM grammar_patterns ORDER BY id")
+        .fetch_all(&pool)
+        .await?;
+
+    let patterns: Vec<GrammarPattern> = rows
+        .iter()
+        .map(|row| GrammarPattern {
+            slug: row.get("slug"),
+            label: row.get("label"),
+            tooltip: row.get("tooltip"),
+        })
+        .collect();
+
+    Ok(Json(patterns))
 }
 
 #[derive(Serialize)]
@@ -283,6 +311,7 @@ pub async fn get_next_card(
             s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
             sih.speech_level, sih.tense,
+            gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
@@ -290,6 +319,7 @@ pub async fn get_next_card(
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
@@ -366,6 +396,7 @@ pub async fn get_next_card(
     let target: String = row.get("target");
     let speech_level: Option<String> = row.get("speech_level");
     let tense: Option<String> = row.get("tense");
+    let grammar_pattern: Option<String> = row.get("grammar_pattern");
     let sentence_id: i64 = row.get("sentence_id");
 
     debug!("Selected card_id: {} ({})", card_id, word);
@@ -469,6 +500,7 @@ pub async fn get_next_card(
             alternatives,
             speech_level,
             tense,
+            grammar_pattern,
             difficulty,
             guess_count,
             wrong_guess_count,

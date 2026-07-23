@@ -16,6 +16,7 @@ import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { useGrammarPatterns } from '@/components/grammar-patterns-provider'
 
 interface FlashcardProps {
   card: Card
@@ -88,6 +89,26 @@ function HanjaHintText({
   )
 }
 
+function GrammarPatternPill({ label, tooltip }: { label: string; tooltip: string }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger
+        delay={300}
+        closeOnClick
+        render={<span />}
+        className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground cursor-help"
+      >
+        {label}
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: FlashcardProps) {
   const [input, setInput] = useState('')
   const [answered, setAnswered] = useState(false)
@@ -100,6 +121,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
+  const { patterns: grammarPatterns } = useGrammarPatterns()
   const hasAutoProgressedRef = useRef(false)
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
@@ -232,6 +254,12 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {getTenseLabel(card.tense)}
             </span>
+          )}
+          {card.grammar_pattern && grammarPatterns[card.grammar_pattern] && (
+            <GrammarPatternPill
+              label={grammarPatterns[card.grammar_pattern].label}
+              tooltip={grammarPatterns[card.grammar_pattern].tooltip}
+            />
           )}
           </div>
           <DropdownMenu onOpenChange={setMenuOpen}>
