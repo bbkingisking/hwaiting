@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card, HanjaHint } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn, getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -16,7 +16,7 @@ import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useGrammarPatterns } from '@/components/grammar-patterns-provider'
+import { useEnumLookups } from '@/components/enum-lookups-provider'
 
 interface FlashcardProps {
   card: Card
@@ -89,7 +89,17 @@ function HanjaHintText({
   )
 }
 
-function GrammarPatternPill({ label, tooltip }: { label: string; tooltip: string }) {
+function GrammarPatternPill({
+  label,
+  tooltip,
+  endings,
+  showEndings,
+}: {
+  label: string
+  tooltip: string
+  endings?: string | null
+  showEndings: boolean
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -103,7 +113,7 @@ function GrammarPatternPill({ label, tooltip }: { label: string; tooltip: string
         {label}
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={6}>
-        {tooltip}
+        {tooltip}{showEndings && endings && ` (${endings})`}
       </TooltipContent>
     </Tooltip>
   )
@@ -121,7 +131,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
-  const { patterns: grammarPatterns } = useGrammarPatterns()
+  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useEnumLookups()
   const hasAutoProgressedRef = useRef(false)
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
@@ -240,25 +250,27 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
           )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
-          {card.pos && (
+          {card.pos && posLookup[card.pos] && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {getPosLabel(card.pos)}
+              {posLookup[card.pos].label}
             </span>
           )}
-          {card.speech_level && (
+          {card.speech_level && speechLevelLookup[card.speech_level] && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {getSpeechLevelLabel(card.speech_level)}
+              {speechLevelLookup[card.speech_level].label}
             </span>
           )}
-          {card.tense && (
+          {card.tense && tenseLookup[card.tense] && (
             <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              {getTenseLabel(card.tense)}
+              {tenseLookup[card.tense].label}
             </span>
           )}
           {card.grammar_pattern && grammarPatterns[card.grammar_pattern] && (
             <GrammarPatternPill
               label={grammarPatterns[card.grammar_pattern].label}
-              tooltip={grammarPatterns[card.grammar_pattern].tooltip}
+              tooltip={grammarPatterns[card.grammar_pattern].tooltip ?? ''}
+              endings={grammarPatterns[card.grammar_pattern].endings}
+              showEndings={answered || isAutoProgressing}
             />
           )}
           </div>

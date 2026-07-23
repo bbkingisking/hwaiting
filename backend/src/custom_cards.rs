@@ -99,18 +99,23 @@ pub async fn create_custom_card(
 
     let mut tx = pool.begin().await?;
 
+    // Resolve enum slugs -> lookup table ids
+    let pos_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "parts_of_speech", payload.pos.clone().map(Some)).await?.flatten();
+    let grade_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "grades", payload.grade.clone().map(Some)).await?.flatten();
+    let origin_type_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", payload.origin_type.clone().map(Some)).await?.flatten();
+
     // Insert into cards table
     let card_result = sqlx::query(
         r#"
-        INSERT INTO cards (word, definition, pos, grade, origin_type, hanja, hanja_eum, created_at)
+        INSERT INTO cards (word, definition, pos_id, grade_id, origin_type_id, hanja, hanja_eum, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
         "#
     )
     .bind(&payload.word)
     .bind(&payload.definition)
-    .bind(&payload.pos)
-    .bind(&payload.grade)
-    .bind(&payload.origin_type)
+    .bind(pos_id)
+    .bind(grade_id)
+    .bind(origin_type_id)
     .bind(&payload.hanja)
     .bind(&payload.hanja_eum)
     .execute(&mut *tx)
@@ -171,13 +176,15 @@ pub async fn create_custom_card(
     .await?;
 
     // Insert into sentence_inflection_hints if either speech_level or tense is provided
-    if payload.speech_level.is_some() || payload.tense.is_some() {
+    let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.speech_level.clone().map(Some)).await?.flatten();
+    let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.tense.clone().map(Some)).await?.flatten();
+    if speech_level_id.is_some() || tense_id.is_some() {
         sqlx::query(
-            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense) VALUES (?, ?, ?)"
+            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id) VALUES (?, ?, ?)"
         )
         .bind(sentence_id)
-        .bind(payload.speech_level.as_deref())
-        .bind(payload.tense.as_deref())
+        .bind(speech_level_id)
+        .bind(tense_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -222,9 +229,9 @@ pub async fn list_custom_cards(
             c.id,
             c.word,
             c.definition,
-            c.pos,
-            c.grade,
-            c.origin_type,
+            pop.slug as pos,
+            g.slug as grade,
+            ot.slug as origin_type,
             c.hanja,
             c.hanja_eum,
             ct.trans_word,
@@ -232,8 +239,8 @@ pub async fn list_custom_cards(
             s.text as sentence,
             s.target,
             st.translation as sentence_translation,
-            sih.speech_level,
-            sih.tense,
+            sl.slug as speech_level,
+            tn.slug as tense,
             datetime(ccm.created_at) as created_at
         FROM cards c
         INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
@@ -241,6 +248,11 @@ pub async fn list_custom_cards(
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+        LEFT JOIN grades g ON g.id = c.grade_id
+        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
+        LEFT JOIN tenses tn ON tn.id = sih.tense_id
         WHERE ccm.user_id = ?
         ORDER BY ccm.created_at DESC
         "#
@@ -323,9 +335,9 @@ pub async fn get_custom_card(
             c.id,
             c.word,
             c.definition,
-            c.pos,
-            c.grade,
-            c.origin_type,
+            pop.slug as pos,
+            g.slug as grade,
+            ot.slug as origin_type,
             c.hanja,
             c.hanja_eum,
             ct.trans_word,
@@ -333,8 +345,8 @@ pub async fn get_custom_card(
             s.text as sentence,
             s.target,
             st.translation as sentence_translation,
-            sih.speech_level,
-            sih.tense,
+            sl.slug as speech_level,
+            tn.slug as tense,
             datetime(ccm.created_at) as created_at
         FROM cards c
         INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
@@ -342,6 +354,11 @@ pub async fn get_custom_card(
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+        LEFT JOIN grades g ON g.id = c.grade_id
+        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
+        LEFT JOIN tenses tn ON tn.id = sih.tense_id
         WHERE c.id = ? AND ccm.user_id = ?
         "#
     )
@@ -442,24 +459,27 @@ pub async fn update_custom_card(
     }
 
     if payload.pos.is_some() {
-        sqlx::query("UPDATE cards SET pos = ? WHERE id = ?")
-            .bind(&payload.pos)
+        let pos_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "parts_of_speech", payload.pos.clone().map(Some)).await?.flatten();
+        sqlx::query("UPDATE cards SET pos_id = ? WHERE id = ?")
+            .bind(pos_id)
             .bind(card_id)
             .execute(&mut *tx)
             .await?;
     }
 
     if payload.grade.is_some() {
-        sqlx::query("UPDATE cards SET grade = ? WHERE id = ?")
-            .bind(&payload.grade)
+        let grade_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "grades", payload.grade.clone().map(Some)).await?.flatten();
+        sqlx::query("UPDATE cards SET grade_id = ? WHERE id = ?")
+            .bind(grade_id)
             .bind(card_id)
             .execute(&mut *tx)
             .await?;
     }
 
     if payload.origin_type.is_some() {
-        sqlx::query("UPDATE cards SET origin_type = ? WHERE id = ?")
-            .bind(&payload.origin_type)
+        let origin_type_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", payload.origin_type.clone().map(Some)).await?.flatten();
+        sqlx::query("UPDATE cards SET origin_type_id = ? WHERE id = ?")
+            .bind(origin_type_id)
             .bind(card_id)
             .execute(&mut *tx)
             .await?;
@@ -586,30 +606,33 @@ pub async fn update_custom_card(
         .fetch_one(&mut *tx)
         .await?;
 
+        let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.speech_level.clone().map(Some)).await?.flatten();
+        let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.tense.clone().map(Some)).await?.flatten();
+
         if hints_exist {
-            if let Some(speech_level) = &payload.speech_level {
-                sqlx::query("UPDATE sentence_inflection_hints SET speech_level = ? WHERE sentence_id = ?")
-                    .bind(speech_level)
+            if payload.speech_level.is_some() {
+                sqlx::query("UPDATE sentence_inflection_hints SET speech_level_id = ? WHERE sentence_id = ?")
+                    .bind(speech_level_id)
                     .bind(sentence_id)
                     .execute(&mut *tx)
                     .await?;
             }
 
-            if let Some(tense) = &payload.tense {
-                sqlx::query("UPDATE sentence_inflection_hints SET tense = ? WHERE sentence_id = ?")
-                    .bind(tense)
+            if payload.tense.is_some() {
+                sqlx::query("UPDATE sentence_inflection_hints SET tense_id = ? WHERE sentence_id = ?")
+                    .bind(tense_id)
                     .bind(sentence_id)
                     .execute(&mut *tx)
                     .await?;
             }
-        } else if payload.speech_level.is_some() && payload.tense.is_some() {
-            // Insert new hints only if both are provided
+        } else {
+            // Insert new hints if either is provided (matches create_custom_card's behavior)
             sqlx::query(
-                "INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense) VALUES (?, ?, ?)"
+                "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id) VALUES (?, ?, ?)"
             )
             .bind(sentence_id)
-            .bind(payload.speech_level.as_ref().unwrap())
-            .bind(payload.tense.as_ref().unwrap())
+            .bind(speech_level_id)
+            .bind(tense_id)
             .execute(&mut *tx)
             .await?;
         }

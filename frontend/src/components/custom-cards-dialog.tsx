@@ -10,14 +10,15 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
-import { 
-  createCustomCard, 
-  listCustomCards, 
+import {
+  createCustomCard,
+  listCustomCards,
   deleteCustomCard,
   type CustomCard,
   ApiError
 } from '@/lib/api'
-import { getPosLabel, getSpeechLevelLabel, getTenseLabel } from '@/lib/utils'
+import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { EnumSelect } from '@/components/enum-select'
 
 interface CustomCardsDialogProps {
   open: boolean
@@ -43,6 +44,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [isLoading, setIsLoading] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { pos: posLookup, originType: originTypeLookup, speechLevel: speechLevelLookup, tense: tenseLookup } = useEnumLookups()
 
   const resetForm = () => {
     setWord('')
@@ -169,19 +171,19 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                         </div>
                         {(card.pos || card.speech_level || card.tense) && (
                           <div className="flex gap-2 pt-1">
-                            {card.pos && (
+                            {card.pos && posLookup[card.pos] && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                                {getPosLabel(card.pos)}
+                                {posLookup[card.pos].label}
                               </span>
                             )}
-                            {card.speech_level && (
+                            {card.speech_level && speechLevelLookup[card.speech_level] && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                                {getSpeechLevelLabel(card.speech_level)}
+                                {speechLevelLookup[card.speech_level].label}
                               </span>
                             )}
-                            {card.tense && (
+                            {card.tense && tenseLookup[card.tense] && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                                {getTenseLabel(card.tense)}
+                                {tenseLookup[card.tense].label}
                               </span>
                             )}
                           </div>
@@ -274,36 +276,21 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                 <Label htmlFor="pos">
                   Part of Speech
                 </Label>
-                <Input
-                  id="pos"
-                  value={pos}
-                  onChange={(e) => setPos(e.target.value)}
-                  placeholder="e.g., adverb, verb, noun"
-                />
+                <EnumSelect id="pos" options={posLookup} value={pos} onChange={(e) => setPos(e.target.value)} />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="speech-level">
                   Speech Level
                 </Label>
-                <Input
-                  id="speech-level"
-                  value={speechLevel}
-                  onChange={(e) => setSpeechLevel(e.target.value)}
-                  placeholder="e.g., informal polite, formal"
-                />
+                <EnumSelect id="speech-level" options={speechLevelLookup} value={speechLevel} onChange={(e) => setSpeechLevel(e.target.value)} />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="tense">
                   Tense
                 </Label>
-                <Input
-                  id="tense"
-                  value={tense}
-                  onChange={(e) => setTense(e.target.value)}
-                  placeholder="e.g., past, present, future"
-                />
+                <EnumSelect id="tense" options={tenseLookup} value={tense} onChange={(e) => setTense(e.target.value)} />
               </div>
 
               <div className="space-y-2">
@@ -324,12 +311,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                 <Label htmlFor="origin-type">
                   Origin Type
                 </Label>
-                <Input
-                  id="origin-type"
-                  value={originType}
-                  onChange={(e) => setOriginType(e.target.value)}
-                  placeholder="e.g., 고유어, 한자어, 외래어, 혼종어"
-                />
+                <EnumSelect id="origin-type" options={originTypeLookup} value={originType} onChange={(e) => setOriginType(e.target.value)} />
               </div>
 
               <div className="space-y-2">

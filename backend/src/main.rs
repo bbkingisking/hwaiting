@@ -16,6 +16,7 @@ mod cards;
 mod credentials;
 mod custom_cards;
 mod db;
+mod enum_lookup;
 mod error;
 mod export_import;
 mod user;
@@ -49,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
         .route("/cards/next", get(cards::get_next_card))
-        .route("/cards/grammar-patterns", get(cards::list_grammar_patterns))
+        .route("/cards/enum-lookups", get(cards::list_enum_lookups))
         .route("/cards/{card_id}/review", post(cards::submit_review))
         .route("/cards/{card_id}/suppress", put(cards::suppress_card))
         .route("/cards/suppressed", get(cards::list_suppressed_cards))

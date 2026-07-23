@@ -8,12 +8,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Trash2, Loader2 } from 'lucide-react'
-import { 
+import {
   listSuppressedCards,
   unsuppressCard,
   type SuppressedCard,
   ApiError
 } from '@/lib/api'
+import { useEnumLookups } from '@/components/enum-lookups-provider'
 
 interface SuppressedCardsDialogProps {
   open: boolean
@@ -24,6 +25,7 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
   const [cards, setCards] = useState<SuppressedCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { pos: posLookup, grade: gradeLookup } = useEnumLookups()
 
   const loadCards = async () => {
     setIsLoading(true)
@@ -95,14 +97,14 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
                     </div>
                     {(card.pos || card.grade) && (
                       <div className="flex gap-2 pt-1">
-                        {card.pos && (
+                        {card.pos && posLookup[card.pos] && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                            {card.pos}
+                            {posLookup[card.pos].label}
                           </span>
                         )}
-                        {card.grade && (
+                        {card.grade && gradeLookup[card.grade] && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                            {card.grade}
+                            {gradeLookup[card.grade].label}
                           </span>
                         )}
                       </div>

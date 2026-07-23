@@ -48,30 +48,65 @@ pub struct NextCardResponse {
 }
 
 #[derive(Serialize)]
-pub struct GrammarPattern {
+pub struct EnumEntry {
     pub slug: String,
     pub label: String,
-    pub tooltip: String,
+    pub tooltip: Option<String>,
+    pub rank: Option<i64>,
+    pub endings: Option<String>,
 }
 
-pub async fn list_grammar_patterns(
-    State(pool): State<SqlitePool>,
-    _auth: crate::auth::AuthUser,
-) -> Result<Json<Vec<GrammarPattern>>, AppError> {
-    let rows = sqlx::query("SELECT slug, label, tooltip FROM grammar_patterns ORDER BY id")
-        .fetch_all(&pool)
+#[derive(Serialize)]
+pub struct EnumLookups {
+    pub pos: Vec<EnumEntry>,
+    pub origin_type: Vec<EnumEntry>,
+    pub grade: Vec<EnumEntry>,
+    pub speech_level: Vec<EnumEntry>,
+    pub tense: Vec<EnumEntry>,
+    pub grammar_pattern: Vec<EnumEntry>,
+}
+
+async fn fetch_enum_entries(
+    pool: &SqlitePool,
+    table: &str,
+    has_tooltip: bool,
+    has_rank: bool,
+    has_endings: bool,
+) -> Result<Vec<EnumEntry>, AppError> {
+    let cols = format!(
+        "slug, label{}{}{}",
+        if has_tooltip { ", tooltip" } else { "" },
+        if has_rank { ", rank" } else { "" },
+        if has_endings { ", endings" } else { "" },
+    );
+    let rows = sqlx::query(&format!("SELECT {cols} FROM {table} ORDER BY id"))
+        .fetch_all(pool)
         .await?;
 
-    let patterns: Vec<GrammarPattern> = rows
+    Ok(rows
         .iter()
-        .map(|row| GrammarPattern {
+        .map(|row| EnumEntry {
             slug: row.get("slug"),
             label: row.get("label"),
-            tooltip: row.get("tooltip"),
+            tooltip: if has_tooltip { row.get("tooltip") } else { None },
+            rank: if has_rank { row.get("rank") } else { None },
+            endings: if has_endings { row.get("endings") } else { None },
         })
-        .collect();
+        .collect())
+}
 
-    Ok(Json(patterns))
+pub async fn list_enum_lookups(
+    State(pool): State<SqlitePool>,
+    _auth: crate::auth::AuthUser,
+) -> Result<Json<EnumLookups>, AppError> {
+    Ok(Json(EnumLookups {
+        pos: fetch_enum_entries(&pool, "parts_of_speech", false, false, false).await?,
+        origin_type: fetch_enum_entries(&pool, "origin_types", false, false, false).await?,
+        grade: fetch_enum_entries(&pool, "grades", false, true, false).await?,
+        speech_level: fetch_enum_entries(&pool, "speech_levels", false, false, false).await?,
+        tense: fetch_enum_entries(&pool, "tenses", false, false, false).await?,
+        grammar_pattern: fetch_enum_entries(&pool, "grammar_patterns", true, false, true).await?,
+    }))
 }
 
 #[derive(Serialize)]
@@ -306,11 +341,12 @@ pub async fn get_next_card(
     let query = format!(
         r#"
         SELECT
-            c.id, c.word, c.definition, c.pos, c.origin_type, c.hanja, c.hanja_eum, c.grade,
+            c.id, c.word, c.definition, c.hanja, c.hanja_eum,
+            pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
-            sih.speech_level, sih.tense,
+            sl.slug as speech_level, tn.slug as tense,
             gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
@@ -319,6 +355,11 @@ pub async fn get_next_card(
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+        LEFT JOIN grades g ON g.id = c.grade_id
+        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
+        LEFT JOIN tenses tn ON tn.id = sih.tense_id
         LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
@@ -879,7 +920,7 @@ pub async fn list_suppressed_cards(
     let rows = sqlx::query(
         r#"
         SELECT
-            c.id, c.word, c.pos, c.grade,
+            c.id, c.word, pop.slug as pos, g.slug as grade,
             ct.trans_word,
             s.text as sentence,
             st.translation as sentence_translation
@@ -888,6 +929,8 @@ pub async fn list_suppressed_cards(
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
         INNER JOIN sentences s ON c.id = s.card_id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+        LEFT JOIN grades g ON g.id = c.grade_id
         WHERE ucf.suspended = 1
         ORDER BY c.word ASC
         "#,
@@ -1328,16 +1371,15 @@ pub async fn get_history_breakdown(
     let pos_rows = sqlx::query(&format!(
         r#"
         SELECT
-            c.pos AS label,
+            pop.slug AS label,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
+        JOIN parts_of_speech pop ON pop.id = c.pos_id
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-          AND c.pos IS NOT NULL
-          AND c.pos != ''
-        GROUP BY c.pos
+        GROUP BY pop.slug
         ORDER BY reviews DESC
         "#,
     ))
@@ -1368,16 +1410,15 @@ pub async fn get_history_breakdown(
     let origin_rows = sqlx::query(&format!(
         r#"
         SELECT
-            c.origin_type AS label,
+            ot.slug AS label,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
+        JOIN origin_types ot ON ot.id = c.origin_type_id
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-          AND c.origin_type IS NOT NULL
-          AND c.origin_type != ''
-        GROUP BY c.origin_type
+        GROUP BY ot.slug
         ORDER BY reviews DESC
         "#,
     ))

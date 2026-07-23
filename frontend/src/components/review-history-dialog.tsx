@@ -26,7 +26,7 @@ import {
 } from 'recharts'
 import { getReviewHistory, getHistorySummary, getHistoryBreakdown, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
-import { getPosLabel, getOriginTypeLabel } from '@/lib/utils'
+import { useEnumLookups } from '@/components/enum-lookups-provider'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -76,8 +76,13 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 
 const PRIMARY_POS = ['동사', '명사', '형용사', '부사']
 
-function BreakdownRowItem({ row, labelFn }: { row: BreakdownRow; labelFn: (label: string) => string | null }) {
-  const english = labelFn(row.label)
+type BreakdownCategory = 'pos' | 'origin_type'
+
+function BreakdownRowItem({ row, labelMap }: {
+  row: BreakdownRow
+  labelMap: Record<string, { label: string }>
+}) {
+  const english = labelMap[row.label]?.label ?? null
   const display = english ? `${row.label} (${english})` : row.label
   return (
     <div className="flex items-center gap-2">
@@ -94,15 +99,16 @@ function BreakdownRowItem({ row, labelFn }: { row: BreakdownRow; labelFn: (label
   )
 }
 
-function BreakdownSubsection({ title, rows, labelFn }: {
+function BreakdownSubsection({ title, rows, category, labelMap }: {
   title: string
   rows: BreakdownRow[]
-  labelFn: (label: string) => string | null
+  category: BreakdownCategory
+  labelMap: Record<string, { label: string }>
 }) {
   if (rows.length === 0) return null
 
   // For POS breakdown, split primary (verb/noun/adj/adv) from the rest
-  const isPos = labelFn === getPosLabel
+  const isPos = category === 'pos'
   let primary: typeof rows = []
   let secondary: typeof rows = []
   if (isPos) {
@@ -118,19 +124,19 @@ function BreakdownSubsection({ title, rows, labelFn }: {
       {isPos && primary.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
           <div className="flex flex-col gap-1.5">
-            {primary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+            {primary.map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
           </div>
           <div className="flex flex-col gap-1.5">
-            {secondary.map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+            {secondary.map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
           <div className="flex flex-col gap-1.5">
-            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
           </div>
           <div className="flex flex-col gap-1.5">
-            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelFn={labelFn} />)}
+            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
           </div>
         </div>
       )}
@@ -140,6 +146,7 @@ function BreakdownSubsection({ title, rows, labelFn }: {
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings, updateSettings } = useSettings()
+  const { pos: posLookup, originType: originTypeLookup } = useEnumLookups()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
   const [breakdownPos, setBreakdownPos] = useState<BreakdownRow[]>([])
@@ -427,12 +434,14 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
             <BreakdownSubsection
               title="By Part of Speech"
               rows={breakdownPos}
-              labelFn={getPosLabel}
+              category="pos"
+              labelMap={posLookup}
             />
             <BreakdownSubsection
               title="By Origin"
               rows={breakdownOrigin}
-              labelFn={getOriginTypeLabel}
+              category="origin_type"
+              labelMap={originTypeLookup}
             />
           </div>
         )}

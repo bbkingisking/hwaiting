@@ -172,9 +172,13 @@ pub async fn export_data(
         // Get card info
         let card_row = sqlx::query(
             r#"
-            SELECT word, definition, pos, origin_type, hanja, hanja_eum, grade
-            FROM cards
-            WHERE id = ?
+            SELECT c.word, c.definition, pop.slug as pos, ot.slug as origin_type,
+                   c.hanja, c.hanja_eum, g.slug as grade
+            FROM cards c
+            LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+            LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+            LEFT JOIN grades g ON g.id = c.grade_id
+            WHERE c.id = ?
             "#
         )
         .bind(card_id)
@@ -227,7 +231,13 @@ pub async fn export_data(
 
             // Get inflection hint
             let inflection_hint_row = sqlx::query(
-                "SELECT speech_level, tense FROM sentence_inflection_hints WHERE sentence_id = ?"
+                r#"
+                SELECT sl.slug as speech_level, tn.slug as tense
+                FROM sentence_inflection_hints sih
+                LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
+                LEFT JOIN tenses tn ON tn.id = sih.tense_id
+                WHERE sih.sentence_id = ?
+                "#
             )
             .bind(sentence_id)
             .fetch_optional(&pool)
@@ -351,21 +361,28 @@ pub async fn import_data(
 
     // Import custom cards first (so we have valid card_ids for card_states)
     for custom_card in data.custom_cards {
+        // Resolve enum slugs -> lookup table ids, auto-registering any slug that
+        // doesn't already exist (e.g. from an older export) so import never fails
+        // just because of a stale/unknown enum value.
+        let pos_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "parts_of_speech", custom_card.pos.clone()).await?;
+        let origin_type_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "origin_types", custom_card.origin_type.clone()).await?;
+        let grade_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "grades", custom_card.grade.clone()).await?;
+
         // Insert card
         let card_id = sqlx::query_scalar::<_, i64>(
             r#"
-            INSERT INTO cards (word, definition, pos, origin_type, hanja, hanja_eum, grade)
+            INSERT INTO cards (word, definition, pos_id, origin_type_id, hanja, hanja_eum, grade_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             "#
         )
         .bind(&custom_card.word)
         .bind(&custom_card.definition)
-        .bind(&custom_card.pos)
-        .bind(&custom_card.origin_type)
+        .bind(pos_id)
+        .bind(origin_type_id)
         .bind(&custom_card.hanja)
         .bind(&custom_card.hanja_eum)
-        .bind(&custom_card.grade)
+        .bind(grade_id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -422,15 +439,17 @@ pub async fn import_data(
 
             // Insert inflection hint if present
             if let Some(hint) = sentence.inflection_hint {
+                let speech_level_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "speech_levels", hint.speech_level).await?;
+                let tense_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "tenses", hint.tense).await?;
                 sqlx::query(
                     r#"
-                    INSERT INTO sentence_inflection_hints (sentence_id, speech_level, tense)
+                    INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id)
                     VALUES (?, ?, ?)
                     "#
                 )
                 .bind(sentence_id)
-                .bind(&hint.speech_level)
-                .bind(&hint.tense)
+                .bind(speech_level_id)
+                .bind(tense_id)
                 .execute(&mut *tx)
                 .await?;
             }

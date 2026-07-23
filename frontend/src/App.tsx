@@ -3,7 +3,7 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
-import { GrammarPatternsProvider } from '@/components/grammar-patterns-provider'
+import { EnumLookupsProvider } from '@/components/enum-lookups-provider'
 
 import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
@@ -256,9 +256,9 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <SettingsProvider>
-          <GrammarPatternsProvider>
+          <EnumLookupsProvider>
             <AppContent />
-          </GrammarPatternsProvider>
+          </EnumLookupsProvider>
         </SettingsProvider>
       </AuthProvider>
     </ThemeProvider>

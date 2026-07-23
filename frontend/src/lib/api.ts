@@ -117,14 +117,25 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   return fetchWithAuth(url, { signal: options.signal })
 }
 
-export interface GrammarPattern {
+export interface EnumEntry {
   slug: string
   label: string
-  tooltip: string
+  tooltip: string | null
+  rank: number | null
+  endings: string | null
 }
 
-export async function getGrammarPatterns(): Promise<GrammarPattern[]> {
-  const url = `${window.location.origin}/api/cards/grammar-patterns`
+export interface EnumLookups {
+  pos: EnumEntry[]
+  origin_type: EnumEntry[]
+  grade: EnumEntry[]
+  speech_level: EnumEntry[]
+  tense: EnumEntry[]
+  grammar_pattern: EnumEntry[]
+}
+
+export async function getEnumLookups(): Promise<EnumLookups> {
+  const url = `${window.location.origin}/api/cards/enum-lookups`
   return fetchWithAuth(url)
 }
 
