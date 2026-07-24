@@ -7,9 +7,11 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
+use std::env;
 use tracing::{debug, info, warn};
 
 use crate::error::{AppError, AppJson};
@@ -170,12 +172,33 @@ pub async fn signup(
     })))
 }
 
+/// TTL for newly issued JWTs, in seconds, from `JWT_EXPIRY_SECONDS`. Unset or
+/// `0` means tokens never expire - the default, so existing single-user
+/// deployments are unaffected unless this is set explicitly. A negative
+/// value is a config error and panics at token-generation time, same as an
+/// unparseable one.
+fn jwt_ttl_seconds() -> Option<i64> {
+    let raw = env::var("JWT_EXPIRY_SECONDS").ok()?;
+    let secs: i64 = raw
+        .trim()
+        .parse()
+        .unwrap_or_else(|_| panic!("JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw));
+
+    if secs < 0 {
+        panic!("JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw);
+    }
+
+    (secs > 0).then_some(secs)
+}
+
 fn generate_token(user_id: i64) -> Result<String, AppError> {
     use jsonwebtoken::{encode, EncodingKey, Header};
 
     let jwt_secret = crate::credentials::jwt_secret();
 
-    let claims = Claims { sub: user_id };
+    let exp = jwt_ttl_seconds().map(|ttl| (Utc::now() + Duration::seconds(ttl)).timestamp());
+
+    let claims = Claims { sub: user_id, exp };
 
     let mut header = Header::default();
     header.alg = Algorithm::HS256;
@@ -192,6 +215,8 @@ fn generate_token(user_id: i64) -> Result<String, AppError> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: i64, // user_id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exp: Option<i64>, // unix timestamp; absent means the token never expires
 }
 
 // Auth extractor - extracts user_id from JWT token
