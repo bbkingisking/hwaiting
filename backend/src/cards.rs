@@ -25,25 +25,37 @@ pub struct HanjaHint {
     pub trans_word: Option<String>,
 }
 
+/// The canonical card shape: a `cards` row joined with its English
+/// translation and primary example sentence. Shared verbatim by the review
+/// flow (`NextCardResponse`, below) and admin search (`admin::search_cards`)
+/// - previously two independently hand-declared structs that happened to
+/// agree on 14 of their fields, which is exactly the kind of duplication
+/// that drifts silently over time.
+#[derive(Serialize, ToSchema)]
+pub struct Card {
+    pub card_id: i64,
+    pub word: String,
+    pub definition: Option<String>,
+    pub pos: Option<String>,
+    pub origin_type: Option<String>,
+    pub hanja: Option<String>,
+    pub hanja_eum: Option<String>,
+    pub grade: Option<String>,
+    pub trans_word: String,
+    pub trans_dfn: Option<String>,
+    pub sentence: String,
+    pub sentence_translation: String,
+    pub target: String,
+    pub alternatives: Vec<String>,
+    pub speech_level: Option<String>,
+    pub tense: Option<String>,
+    pub grammar_pattern: Option<String>,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct NextCardResponse {
-    card_id: i64,
-    word: String,
-    definition: Option<String>,
-    pos: Option<String>,
-    origin_type: Option<String>,
-    hanja: Option<String>,
-    hanja_eum: Option<String>,
-    grade: Option<String>,
-    trans_word: String,
-    trans_dfn: Option<String>,
-    sentence: String,
-    sentence_translation: String,
-    target: String,
-    alternatives: Vec<String>,
-    speech_level: Option<String>,
-    tense: Option<String>,
-    grammar_pattern: Option<String>,
+    #[serde(flatten)]
+    card: Card,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
@@ -551,23 +563,25 @@ pub async fn get_next_card(
 
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
-            card_id,
-            word,
-            definition,
-            pos,
-            origin_type,
-            hanja,
-            hanja_eum,
-            grade,
-            trans_word,
-            trans_dfn,
-            sentence,
-            sentence_translation,
-            target,
-            alternatives,
-            speech_level,
-            tense,
-            grammar_pattern,
+            card: Card {
+                card_id,
+                word,
+                definition,
+                pos,
+                origin_type,
+                hanja,
+                hanja_eum,
+                grade,
+                trans_word,
+                trans_dfn,
+                sentence,
+                sentence_translation,
+                target,
+                alternatives,
+                speech_level,
+                tense,
+                grammar_pattern,
+            },
             difficulty,
             guess_count,
             wrong_guess_count,

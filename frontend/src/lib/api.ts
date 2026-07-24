@@ -253,7 +253,10 @@ export async function updateCustomCard(cardId: number, updates: UpdateCustomCard
   })
 }
 
-type AdminCard = Schemas['AdminCard']
+// Backend's admin::AdminCard and cards::NextCardResponse used to be two
+// independently hand-declared structs that happened to agree on most
+// fields - now unified into one schema, cards::Card, reused by both.
+type AdminCard = Schemas['Card']
 type SearchCardsResponse = Schemas['SearchCardsResponse']
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {

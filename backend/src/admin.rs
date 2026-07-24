@@ -11,6 +11,7 @@ use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::auth::AdminUser;
+use crate::cards::Card;
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 /// Extract a nullable string field from JSON, distinguishing absent from null.
@@ -181,29 +182,8 @@ pub struct SearchCardsQuery {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct AdminCard {
-    pub card_id: i64,
-    pub word: String,
-    pub definition: Option<String>,
-    pub pos: Option<String>,
-    pub origin_type: Option<String>,
-    pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
-    pub grade: Option<String>,
-    pub trans_word: String,
-    pub trans_dfn: Option<String>,
-    pub sentence: String,
-    pub sentence_translation: String,
-    pub target: String,
-    pub alternatives: Vec<String>,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
-    pub grammar_pattern: Option<String>,
-}
-
-#[derive(Serialize, ToSchema)]
 pub struct SearchCardsResponse {
-    pub cards: Vec<AdminCard>,
+    pub cards: Vec<Card>,
 }
 
 #[utoipa::path(
@@ -276,7 +256,7 @@ pub async fn search_cards(
         .fetch_all(&pool)
         .await?;
 
-        cards.push(AdminCard {
+        cards.push(Card {
             card_id: row.get("id"),
             word: row.get("word"),
             definition: row.get("definition"),

@@ -400,7 +400,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AdminCard: {
+        AuthResponse: {
+            is_admin: boolean;
+            token: string;
+            username: string;
+        };
+        BreakdownRow: {
+            /** Format: double */
+            accuracy: number;
+            /** Format: int64 */
+            correct: number;
+            label: string;
+            /** Format: int64 */
+            reviews: number;
+        };
+        /**
+         * @description The canonical card shape: a `cards` row joined with its English
+         *     translation and primary example sentence. Shared verbatim by the review
+         *     flow (`NextCardResponse`, below) and admin search (`admin::search_cards`)
+         *     - previously two independently hand-declared structs that happened to
+         *     agree on 14 of their fields, which is exactly the kind of duplication
+         *     that drifts silently over time.
+         */
+        Card: {
             alternatives: string[];
             /** Format: int64 */
             card_id: number;
@@ -419,20 +441,6 @@ export interface components {
             trans_dfn?: string | null;
             trans_word: string;
             word: string;
-        };
-        AuthResponse: {
-            is_admin: boolean;
-            token: string;
-            username: string;
-        };
-        BreakdownRow: {
-            /** Format: double */
-            accuracy: number;
-            /** Format: int64 */
-            correct: number;
-            label: string;
-            /** Format: int64 */
-            reviews: number;
         };
         CardTranslationExport: {
             language_tag: string;
@@ -614,30 +622,12 @@ export interface components {
             card?: null | components["schemas"]["NextCardResponse"];
             next_due_at?: string | null;
         };
-        NextCardResponse: {
-            alternatives: string[];
-            /** Format: int64 */
-            card_id: number;
-            definition?: string | null;
+        NextCardResponse: components["schemas"]["Card"] & {
             /** Format: double */
             difficulty?: number | null;
-            grade?: string | null;
-            grammar_pattern?: string | null;
             /** Format: int64 */
             guess_count: number;
-            hanja?: string | null;
-            hanja_eum?: string | null;
             hanja_hints: components["schemas"]["HanjaHint"][];
-            origin_type?: string | null;
-            pos?: string | null;
-            sentence: string;
-            sentence_translation: string;
-            speech_level?: string | null;
-            target: string;
-            tense?: string | null;
-            trans_dfn?: string | null;
-            trans_word: string;
-            word: string;
             /** Format: int64 */
             wrong_guess_count: number;
         };
@@ -675,7 +665,7 @@ export interface components {
             success: boolean;
         };
         SearchCardsResponse: {
-            cards: components["schemas"]["AdminCard"][];
+            cards: components["schemas"]["Card"][];
         };
         SentenceExport: {
             alternatives?: string[];
