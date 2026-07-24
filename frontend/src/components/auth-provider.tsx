@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ who, really }),
+        body: JSON.stringify({ username: who, password: really }),
       })
     } catch (error) {
       return { success: false, error: 'Network error - could not connect to server' }
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ who, really, invite_code: inviteCode }),
+        body: JSON.stringify({ username: who, password: really, invite_code: inviteCode }),
       })
     } catch (error) {
       return { success: false, error: 'Network error - could not connect to server' }

@@ -16,14 +16,14 @@ use crate::error::AppError;
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
-    pub who: String,
-    pub really: String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Deserialize)]
 pub struct SignupRequest {
-    pub who: String,
-    pub really: String,
+    pub username: String,
+    pub password: String,
     pub invite_code: String,
 }
 
@@ -38,8 +38,8 @@ pub async fn login(
     State(pool): State<SqlitePool>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    let username = payload.who.trim();
-    let password = payload.really.trim();
+    let username = payload.username.trim();
+    let password = payload.password.trim();
 
     info!("Login attempt for user: {}", username);
 
@@ -93,8 +93,8 @@ pub async fn signup(
     State(pool): State<SqlitePool>,
     Json(payload): Json<SignupRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
-    let username = payload.who.trim();
-    let password = payload.really.trim();
+    let username = payload.username.trim();
+    let password = payload.password.trim();
     let invite_code = payload.invite_code.trim();
 
     info!("Signup attempt for user: {}", username);
