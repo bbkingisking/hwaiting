@@ -1,5 +1,18 @@
 // API module for card operations and user management
+//
+// Request/response types are generated from the backend's OpenAPI spec
+// (see scripts/generate-api-types.sh) rather than hand-typed, so a renamed
+// or restructured backend field shows up as a compile error here instead of
+// silently drifting (this is exactly the class of bug that caused the old
+// card_states_imported/card_states_derived mismatch).
 
+import type { components } from './api-schema'
+
+type Schemas = components['schemas']
+
+// admin::edit_card accepts/returns freeform JSON (serde_json::Value) by
+// design - there's no backend schema to generate these from, so they stay
+// hand-typed deliberately.
 interface EditCardRequest {
   word?: string
   definition?: string | null
@@ -23,52 +36,11 @@ interface EditCardResponse {
   success: boolean
 }
 
-interface HanjaHint {
-  hanja: string
-  hanja_eum: string | null
-  trans_word: string | null
-}
-
-interface CardResponse {
-  card_id: number
-  word: string
-  definition: string | null
-  pos: string | null
-  origin_type: string | null
-  hanja: string | null
-  hanja_eum: string | null
-  grade: string | null
-  trans_word: string
-  trans_dfn: string | null
-  sentence: string
-  sentence_translation: string
-  target: string
-  alternatives: string[]
-  speech_level: string | null
-  tense: string | null
-  grammar_pattern: string | null
-  difficulty: number | null
-  guess_count: number
-  wrong_guess_count: number
-  hanja_hints: HanjaHint[]
-}
-
-interface NextCardEnvelope {
-  card: CardResponse | null
-  next_due_at: string | null
-}
-
-interface ReviewRequest {
-  rating: number // 1 = Again, 3 = Good
-}
-
-interface ReviewResponse {
-  success: boolean
-}
-
-interface UserProfile {
-  username: string
-}
+type CardResponse = Schemas['NextCardResponse']
+type NextCardEnvelope = Schemas['NextCardEnvelope']
+type ReviewRequest = Schemas['ReviewRequest']
+type ReviewResponse = Schemas['ReviewResponse']
+type UserProfile = Schemas['UserProfile']
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -79,7 +51,7 @@ class ApiError extends Error {
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem('annyeong-token')
-  
+
   if (!token) {
     throw new ApiError(401, 'Not authenticated')
   }
@@ -121,22 +93,8 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   return fetchWithAuth(url, { signal: options.signal })
 }
 
-export interface EnumEntry {
-  slug: string
-  label: string
-  tooltip: string | null
-  rank: number | null
-  endings: string | null
-}
-
-export interface EnumLookups {
-  pos: EnumEntry[]
-  origin_type: EnumEntry[]
-  grade: EnumEntry[]
-  speech_level: EnumEntry[]
-  tense: EnumEntry[]
-  grammar_pattern: EnumEntry[]
-}
+export type EnumEntry = Schemas['EnumEntry']
+export type EnumLookups = Schemas['EnumLookups']
 
 export async function getEnumLookups(): Promise<EnumLookups> {
   const url = `${window.location.origin}/api/cards/enum-lookups`
@@ -158,19 +116,8 @@ export async function suppressCard(cardId: number): Promise<ReviewResponse> {
   })
 }
 
-interface SuppressedCard {
-  card_id: number
-  word: string
-  trans_word: string
-  sentence: string
-  sentence_translation: string
-  pos: string | null
-  grade: string | null
-}
-
-interface SuppressedCardsResponse {
-  cards: SuppressedCard[]
-}
+type SuppressedCard = Schemas['SuppressedCard']
+type SuppressedCardsResponse = Schemas['SuppressedCardsResponse']
 
 export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
   const url = `${window.location.origin}/api/cards/suppressed`
@@ -189,23 +136,13 @@ export async function getUserProfile(): Promise<UserProfile> {
   return fetchWithAuth(url)
 }
 
-interface ImportStats {
-  card_states_derived: number
-  reviews_imported: number
-  suspended_cards_imported: number
-  custom_cards_imported: number
-}
-
-interface ImportResponse {
-  success: boolean
-  message: string
-  stats: ImportStats
-}
+type ImportStats = Schemas['ImportStats']
+type ImportResponse = Schemas['ImportDataResponse']
 
 export async function importUserData(file: File, overwrite: boolean = false): Promise<ImportResponse> {
   const text = await file.text()
   const data = JSON.parse(text)
-  
+
   const url = `${window.location.origin}/api/user/import`
   return fetchWithAuth(url, {
     method: 'POST',
@@ -216,7 +153,7 @@ export async function importUserData(file: File, overwrite: boolean = false): Pr
 export async function exportUserData(): Promise<void> {
   const url = `${window.location.origin}/api/user/export`
   const data = await fetchWithAuth(url)
-  
+
   // Create a blob and download it
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const downloadUrl = window.URL.createObjectURL(blob)
@@ -229,40 +166,11 @@ export async function exportUserData(): Promise<void> {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
-interface StatsResponse {
-  new_count: number
-  due_count: number
-  reviews_today: number
-  correct_today: number
-  percentage: number | null
-  next_due_at: string | null
-  new_today_count: number
-}
+type StatsResponse = Schemas['StatsResponse']
 
-export interface DayHistory {
-  date: string
-  total: number
-  correct: number
-  percentage: number
-}
-
-export interface ReviewHistoryResponse {
-  days: DayHistory[]
-}
-
-export interface HistorySummary {
-  total_reviews: number
-  total_cards_reviewed: number
-  cards_learning: number
-  cards_review: number
-  cards_relearning: number
-  cards_unseen: number
-  total_accuracy: number
-  avg_reviews_per_day: number
-  first_review_date: string | null
-  current_streak: number
-  longest_streak: number
-}
+export type DayHistory = Schemas['DayHistory']
+export type ReviewHistoryResponse = Schemas['ReviewHistoryResponse']
+export type HistorySummary = Schemas['HistorySummary']
 
 export async function getReviewHistory(): Promise<ReviewHistoryResponse> {
   const url = `${window.location.origin}/api/cards/history`
@@ -274,17 +182,8 @@ export async function getHistorySummary(): Promise<HistorySummary> {
   return fetchWithAuth(url)
 }
 
-export interface BreakdownRow {
-  label: string
-  reviews: number
-  correct: number
-  accuracy: number
-}
-
-export interface HistoryBreakdownResponse {
-  by_pos: BreakdownRow[]
-  by_origin: BreakdownRow[]
-}
+export type BreakdownRow = Schemas['BreakdownRow']
+export type HistoryBreakdownResponse = Schemas['HistoryBreakdownResponse']
 
 export async function getHistoryBreakdown(): Promise<HistoryBreakdownResponse> {
   const url = `${window.location.origin}/api/cards/history-breakdown`
@@ -296,38 +195,9 @@ export async function getStats(): Promise<StatsResponse> {
   return fetchWithAuth(url)
 }
 
-interface UserSettings {
-  show_percentage: boolean
-  red_threshold: number
-  yellow_threshold: number
-  day_boundary_hour: number
-  auto_progress_on_correct: boolean
-  auto_progress_delay: number
-  desired_retention: number
-  daily_new_card_limit: number
-  history_colorized_area: boolean
-  history_colored_dots: boolean
-  history_threshold_lines: boolean
-  has_fsrs_parameters: boolean
-}
-
-interface UpdateSettingsRequest {
-  show_percentage?: boolean
-  red_threshold?: number
-  yellow_threshold?: number
-  day_boundary_hour?: number
-  auto_progress_on_correct?: boolean
-  auto_progress_delay?: number
-  desired_retention?: number
-  daily_new_card_limit?: number
-  history_colorized_area?: boolean
-  history_colored_dots?: boolean
-  history_threshold_lines?: boolean
-}
-
-interface UpdateSettingsResponse {
-  success: boolean
-}
+type UserSettings = Schemas['UserSettings']
+type UpdateSettingsRequest = Schemas['UpdateSettingsRequest']
+type UpdateSettingsResponse = Schemas['UpdateSettingsResponse']
 
 export async function getUserSettings(): Promise<UserSettings> {
   const url = `${window.location.origin}/api/user/settings`
@@ -344,73 +214,15 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
 
 // Custom Cards API
 
-interface CustomCard {
-  id: number
-  word: string
-  definition: string | null
-  pos: string | null
-  grade: string | null
-  origin_type: string | null
-  hanja: string | null
-  hanja_eum: string | null
-  trans_word: string
-  trans_dfn: string | null
-  sentence: string
-  sentence_translation: string
-  target: string
-  speech_level: string | null
-  tense: string | null
-  created_at: string
-}
+type CustomCard = Schemas['CustomCard']
+type CreateCustomCardRequest = Schemas['CreateCustomCardRequest']
+type CreateCustomCardResponse = Schemas['CreateCustomCardResponse']
+type ListCustomCardsResponse = Schemas['ListCustomCardsResponse']
+type UpdateCustomCardRequest = Schemas['UpdateCustomCardRequest']
+type UpdateCustomCardResponse = Schemas['UpdateCustomCardResponse']
 
-interface CreateCustomCardRequest {
-  word: string
-  definition?: string | null
-  pos?: string | null
-  grade?: string | null
-  origin_type?: string | null
-  hanja?: string | null
-  hanja_eum?: string | null
-  trans_word: string
-  trans_dfn?: string | null
-  sentence: string
-  sentence_translation: string
-  target: string
-  speech_level?: string | null
-  tense?: string | null
-}
-
-interface CreateCustomCardResponse {
-  id: number
-  success: boolean
-}
-
-interface ListCustomCardsResponse {
-  cards: CustomCard[]
-}
-
-interface UpdateCustomCardRequest {
-  word?: string
-  definition?: string | null
-  pos?: string | null
-  grade?: string | null
-  origin_type?: string | null
-  hanja?: string | null
-  hanja_eum?: string | null
-  trans_word?: string
-  trans_dfn?: string | null
-  sentence?: string
-  sentence_translation?: string
-  target?: string
-  speech_level?: string | null
-  tense?: string | null
-  alternatives?: string[]
-}
-
-interface UpdateCustomCardResponse {
-  success: boolean
-}
-
+// custom_cards::delete_custom_card returns 204 No Content - no response body,
+// no backend schema. fetchWithAuth synthesizes { success: true } for any 204.
 interface DeleteCustomCardResponse {
   success: boolean
 }
@@ -441,29 +253,8 @@ export async function updateCustomCard(cardId: number, updates: UpdateCustomCard
   })
 }
 
-interface AdminCard {
-  card_id: number
-  word: string
-  definition: string | null
-  pos: string | null
-  origin_type: string | null
-  hanja: string | null
-  hanja_eum: string | null
-  grade: string | null
-  trans_word: string
-  trans_dfn: string | null
-  sentence: string
-  sentence_translation: string
-  target: string
-  alternatives: string[]
-  speech_level: string | null
-  tense: string | null
-  grammar_pattern: string | null
-}
-
-interface SearchCardsResponse {
-  cards: AdminCard[]
-}
+type AdminCard = Schemas['AdminCard']
+type SearchCardsResponse = Schemas['SearchCardsResponse']
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
   const url = `${window.location.origin}/api/admin/cards/search?q=${encodeURIComponent(query)}`
@@ -487,11 +278,7 @@ export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCard
 
 // FSRS Parameter Optimization
 
-interface OptimizeFsrsResponse {
-  success: boolean
-  parameters: number[]
-  review_count: number
-}
+type OptimizeFsrsResponse = Schemas['OptimizeFsrsResponse']
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
   const url = `${window.location.origin}/api/cards/optimize-fsrs`

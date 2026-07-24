@@ -1,3 +1,5 @@
+import type { components } from './api-schema'
+
 // Settings types
 export interface Settings {
   showPercentage: boolean
@@ -28,37 +30,15 @@ export interface Word {
   wrongGuessCount: number
 }
 
-// Hanja hint type
-export interface HanjaHint {
-  hanja: string
-  hanja_eum: string | null
-  trans_word: string | null
-}
+// Hanja hint and card types are generated from the backend's OpenAPI spec
+// (see scripts/generate-api-types.sh) rather than hand-typed - this used to
+// be an independent hand-written mirror of the same shape api.ts also
+// hand-typed, which is exactly the kind of duplication that let the two
+// drift apart.
+export type HanjaHint = components['schemas']['HanjaHint']
 
 // Card type from backend (includes stats and card_id)
-export interface Card {
-  card_id: number
-  word: string
-  definition: string | null
-  pos: string | null
-  origin_type: string | null
-  hanja: string | null
-  hanja_eum: string | null
-  grade: string | null
-  trans_word: string
-  trans_dfn: string | null
-  sentence: string
-  sentence_translation: string
-  target: string
-  alternatives: string[]
-  speech_level: string | null
-  tense: string | null
-  grammar_pattern: string | null
-  difficulty: number | null
-  guess_count: number
-  wrong_guess_count: number
-  hanja_hints: HanjaHint[]
-}
+export type Card = components['schemas']['NextCardResponse']
 
 // Subset of Card that the edit dialog needs (also matches admin card search results)
 export type EditableCard = Pick<
