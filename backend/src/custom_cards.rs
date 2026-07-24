@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, State},
+    http::{header, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -69,7 +70,7 @@ pub async fn create_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
     Json(payload): Json<CreateCustomCardRequest>,
-) -> Result<Json<CreateCustomCardResponse>, AppError> {
+) -> Result<(StatusCode, [(header::HeaderName, String); 1], Json<CreateCustomCardResponse>), AppError> {
     let user_id = auth.0;
     info!("Creating custom card for user_id: {}", user_id);
 
@@ -209,10 +210,14 @@ pub async fn create_custom_card(
 
     info!("Custom card created successfully with id: {}", card_id);
 
-    Ok(Json(CreateCustomCardResponse {
-        id: card_id,
-        success: true,
-    }))
+    Ok((
+        StatusCode::CREATED,
+        [(header::LOCATION, format!("/api/custom-cards/{}", card_id))],
+        Json(CreateCustomCardResponse {
+            id: card_id,
+            success: true,
+        }),
+    ))
 }
 
 // List all custom cards for the authenticated user

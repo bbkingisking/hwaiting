@@ -1,6 +1,6 @@
 use axum::{
     extract::{State, FromRequestParts},
-    http::request::Parts,
+    http::{request::Parts, StatusCode},
     Json,
 };
 use argon2::{
@@ -92,7 +92,7 @@ pub async fn login(
 pub async fn signup(
     State(pool): State<SqlitePool>,
     Json(payload): Json<SignupRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
     let username = payload.who.trim();
     let password = payload.really.trim();
     let invite_code = payload.invite_code.trim();
@@ -163,11 +163,11 @@ pub async fn signup(
     // Generate JWT token
     let token = generate_token(user_id)?;
 
-    Ok(Json(AuthResponse {
+    Ok((StatusCode::CREATED, Json(AuthResponse {
         token,
         username: username.to_string(),
         is_admin,
-    }))
+    })))
 }
 
 fn generate_token(user_id: i64) -> Result<String, AppError> {

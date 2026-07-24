@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     Json,
 };
 use rand::RngExt;
@@ -62,7 +63,7 @@ pub async fn generate_invites(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     Json(payload): Json<GenerateInvitesRequest>,
-) -> Result<Json<GenerateInvitesResponse>, AppError> {
+) -> Result<(StatusCode, Json<GenerateInvitesResponse>), AppError> {
     let count = payload.count.min(100); // Cap at 100 codes per request
     
     info!("Generating {} invite codes", count);
@@ -82,7 +83,7 @@ pub async fn generate_invites(
     
     info!("Successfully generated {} invite codes", codes.len());
     
-    Ok(Json(GenerateInvitesResponse { codes }))
+    Ok((StatusCode::CREATED, Json(GenerateInvitesResponse { codes })))
 }
 
 pub async fn list_invites(
