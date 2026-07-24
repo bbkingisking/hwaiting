@@ -4,8 +4,19 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
+use utoipa::ToSchema;
+
+/// Schema-only mirror of the `{"error": "..."}` envelope every error
+/// response uses (built ad hoc via `serde_json::json!` in
+/// `AppError::into_response`, not actually constructed from this struct) -
+/// exists purely so `#[utoipa::path]` annotations have something to point
+/// error responses at.
+#[derive(Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {

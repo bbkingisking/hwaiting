@@ -8,6 +8,8 @@ use std::env;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(debug_assertions)]
 use dotenvy::dotenv;
@@ -21,10 +23,20 @@ mod db;
 mod enum_lookup;
 mod error;
 mod export_import;
+mod openapi;
 mod user;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Static OpenAPI export: `PRINT_OPENAPI=1 ./hwaiting` prints the spec to
+    // stdout and exits, without touching the DB, credentials, or anything
+    // else - used to feed frontend type generation from CI/local builds
+    // without needing a running server.
+    if env::var("PRINT_OPENAPI").is_ok() {
+        println!("{}", openapi::ApiDoc::openapi().to_pretty_json()?);
+        return Ok(());
+    }
+
     // Load .env file in debug builds only
     #[cfg(debug_assertions)]
     {
@@ -82,7 +94,9 @@ async fn main() -> anyhow::Result<()> {
         .with_state(pool);
 
     // Combine routes - API takes precedence over static files
-    let mut app = Router::new().nest("/api", api_routes);
+    let mut app = Router::new()
+        .nest("/api", api_routes)
+        .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", openapi::ApiDoc::openapi()));
 
     // Serve static files from STATIC_DIR, if set. Unset means API-only mode:
     // no fallback service, unmatched paths just 404.
@@ -155,6 +169,14 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 200, description = "Service is up", body = String),
+    ),
+    tag = "misc"
+)]
 async fn health_check() -> &'static str {
     "OK"
 }

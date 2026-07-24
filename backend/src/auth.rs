@@ -13,29 +13,41 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
 use std::env;
 use tracing::{debug, info, warn};
+use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SignupRequest {
     pub username: String,
     pub password: String,
     pub invite_code: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
     pub token: String,
     pub username: String,
     pub is_admin: bool,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
+        (status = 401, description = "Invalid credentials", body = crate::error::ErrorResponse),
+    ),
+    tag = "auth"
+)]
 pub async fn login(
     State(pool): State<SqlitePool>,
     AppJson(payload): AppJson<LoginRequest>,
@@ -91,6 +103,17 @@ pub async fn login(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/auth/signup",
+    request_body = SignupRequest,
+    responses(
+        (status = 201, description = "Account created", body = AuthResponse),
+        (status = 400, description = "Invalid/used invite code, or malformed request body", body = crate::error::ErrorResponse),
+        (status = 409, description = "Username already exists", body = crate::error::ErrorResponse),
+    ),
+    tag = "auth"
+)]
 pub async fn signup(
     State(pool): State<SqlitePool>,
     AppJson(payload): AppJson<SignupRequest>,

@@ -6,11 +6,12 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
+use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson, AppPath};
 use crate::auth::AuthUser;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateCustomCardRequest {
     pub word: String,
     pub definition: Option<String>,
@@ -29,13 +30,13 @@ pub struct CreateCustomCardRequest {
     pub alternatives: Option<Vec<String>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CreateCustomCardResponse {
     pub id: i64,
     pub success: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CustomCard {
     pub id: i64,
     pub word: String,
@@ -55,12 +56,24 @@ pub struct CustomCard {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ListCustomCardsResponse {
     pub cards: Vec<CustomCard>,
 }
 
 // Create a new custom card
+#[utoipa::path(
+    post,
+    path = "/api/custom-cards",
+    request_body = CreateCustomCardRequest,
+    responses(
+        (status = 201, description = "Custom card created", body = CreateCustomCardResponse),
+        (status = 400, description = "Empty required field or target not in sentence", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "custom-cards"
+)]
 pub async fn create_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -216,6 +229,16 @@ pub async fn create_custom_card(
 }
 
 // List all custom cards for the authenticated user
+#[utoipa::path(
+    get,
+    path = "/api/custom-cards",
+    responses(
+        (status = 200, description = "All custom cards owned by the caller", body = ListCustomCardsResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "custom-cards"
+)]
 pub async fn list_custom_cards(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -286,6 +309,18 @@ pub async fn list_custom_cards(
 }
 
 // Delete a custom card
+#[utoipa::path(
+    delete,
+    path = "/api/custom-cards/{card_id}",
+    params(("card_id" = i64, Path, description = "Custom card ID")),
+    responses(
+        (status = 204, description = "Custom card deleted"),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Not found, or not owned by caller", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "custom-cards"
+)]
 pub async fn delete_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -321,6 +356,18 @@ pub async fn delete_custom_card(
 }
 
 // Get a single custom card by ID
+#[utoipa::path(
+    get,
+    path = "/api/custom-cards/{card_id}",
+    params(("card_id" = i64, Path, description = "Custom card ID")),
+    responses(
+        (status = 200, description = "Single custom card", body = CustomCard),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Not found, or not owned by caller", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "custom-cards"
+)]
 pub async fn get_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -390,7 +437,7 @@ pub async fn get_custom_card(
 }
 
 // Update a custom card
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateCustomCardRequest {
     pub word: Option<String>,
     pub definition: Option<String>,
@@ -409,11 +456,25 @@ pub struct UpdateCustomCardRequest {
     pub alternatives: Option<Vec<String>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UpdateCustomCardResponse {
     pub success: bool,
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/custom-cards/{card_id}",
+    params(("card_id" = i64, Path, description = "Custom card ID")),
+    request_body = UpdateCustomCardRequest,
+    responses(
+        (status = 200, description = "Custom card updated (partial update)", body = UpdateCustomCardResponse),
+        (status = 400, description = "Empty field or target not in sentence", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Not found, or not owned by caller", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "custom-cards"
+)]
 pub async fn update_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
