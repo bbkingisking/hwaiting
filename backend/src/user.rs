@@ -174,7 +174,7 @@ pub async fn update_settings(
     if let Some(day_boundary_hour) = payload.day_boundary_hour {
         // Validate hour is between 0 and 23
         if day_boundary_hour < 0 || day_boundary_hour > 23 {
-            return Err(AppError::Internal("day_boundary_hour must be between 0 and 23".to_string()));
+            return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
         }
         sqlx::query("UPDATE user_settings SET day_boundary_hour = ? WHERE user_id = ?")
             .bind(day_boundary_hour)
@@ -193,7 +193,7 @@ pub async fn update_settings(
 
     if let Some(auto_progress_delay) = payload.auto_progress_delay {
         if auto_progress_delay < 0 || auto_progress_delay > 3000 {
-            return Err(AppError::Internal("auto_progress_delay must be between 0 and 3000".to_string()));
+            return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
         }
         sqlx::query("UPDATE user_settings SET auto_progress_delay = ? WHERE user_id = ?")
             .bind(auto_progress_delay)
@@ -204,7 +204,7 @@ pub async fn update_settings(
 
     if let Some(desired_retention) = payload.desired_retention {
         if desired_retention < 0.5 || desired_retention > 0.99 {
-            return Err(AppError::Internal("desired_retention must be between 0.5 and 0.99".to_string()));
+            return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
         }
         sqlx::query("UPDATE user_settings SET desired_retention = ? WHERE user_id = ?")
             .bind(desired_retention)
@@ -215,7 +215,7 @@ pub async fn update_settings(
 
     if let Some(daily_new_card_limit) = payload.daily_new_card_limit {
         if daily_new_card_limit < 0 || daily_new_card_limit > 999 {
-            return Err(AppError::Internal("daily_new_card_limit must be between 0 and 999".to_string()));
+            return Err(AppError::BadRequest("daily_new_card_limit must be between 0 and 999".to_string()));
         }
         sqlx::query("UPDATE user_settings SET daily_new_card_limit = ? WHERE user_id = ?")
             .bind(daily_new_card_limit)

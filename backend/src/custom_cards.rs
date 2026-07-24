@@ -75,24 +75,24 @@ pub async fn create_custom_card(
 
     // Validate required fields
     if payload.word.trim().is_empty() {
-        return Err(AppError::Internal("Word cannot be empty".to_string()));
+        return Err(AppError::BadRequest("Word cannot be empty".to_string()));
     }
     if payload.trans_word.trim().is_empty() {
-        return Err(AppError::Internal("Translation cannot be empty".to_string()));
+        return Err(AppError::BadRequest("Translation cannot be empty".to_string()));
     }
     if payload.sentence.trim().is_empty() {
-        return Err(AppError::Internal("Sentence cannot be empty".to_string()));
+        return Err(AppError::BadRequest("Sentence cannot be empty".to_string()));
     }
     if payload.target.trim().is_empty() {
-        return Err(AppError::Internal("Target cannot be empty".to_string()));
+        return Err(AppError::BadRequest("Target cannot be empty".to_string()));
     }
     if payload.sentence_translation.trim().is_empty() {
-        return Err(AppError::Internal("Sentence translation cannot be empty".to_string()));
+        return Err(AppError::BadRequest("Sentence translation cannot be empty".to_string()));
     }
 
     // Validate that target appears in sentence
     if !payload.sentence.contains(&payload.target) {
-        return Err(AppError::Internal(
+        return Err(AppError::BadRequest(
             "Target word must appear in the sentence".to_string(),
         ));
     }
@@ -441,7 +441,7 @@ pub async fn update_custom_card(
     // Update cards table
     if let Some(word) = &payload.word {
         if word.trim().is_empty() {
-            return Err(AppError::Internal("Word cannot be empty".to_string()));
+            return Err(AppError::BadRequest("Word cannot be empty".to_string()));
         }
         sqlx::query("UPDATE cards SET word = ? WHERE id = ?")
             .bind(word)
@@ -504,7 +504,7 @@ pub async fn update_custom_card(
     // Update card_translations
     if let Some(trans_word) = &payload.trans_word {
         if trans_word.trim().is_empty() {
-            return Err(AppError::Internal("Translation cannot be empty".to_string()));
+            return Err(AppError::BadRequest("Translation cannot be empty".to_string()));
         }
         sqlx::query("UPDATE card_translations SET trans_word = ? WHERE card_id = ? AND language_tag = 'en'")
             .bind(trans_word)
@@ -541,13 +541,13 @@ pub async fn update_custom_card(
             .unwrap_or_else(|| current.get("target"));
 
         if sentence.trim().is_empty() {
-            return Err(AppError::Internal("Sentence cannot be empty".to_string()));
+            return Err(AppError::BadRequest("Sentence cannot be empty".to_string()));
         }
         if target.trim().is_empty() {
-            return Err(AppError::Internal("Target cannot be empty".to_string()));
+            return Err(AppError::BadRequest("Target cannot be empty".to_string()));
         }
         if !sentence.contains(target) {
-            return Err(AppError::Internal(
+            return Err(AppError::BadRequest(
                 "Target word must appear in the sentence".to_string(),
             ));
         }
@@ -572,7 +572,7 @@ pub async fn update_custom_card(
     // Update sentence_translations
     if let Some(sentence_translation) = &payload.sentence_translation {
         if sentence_translation.trim().is_empty() {
-            return Err(AppError::Internal("Sentence translation cannot be empty".to_string()));
+            return Err(AppError::BadRequest("Sentence translation cannot be empty".to_string()));
         }
         // Get sentence_id first
         let sentence_id: i64 = sqlx::query_scalar(

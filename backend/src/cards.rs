@@ -571,7 +571,7 @@ pub async fn submit_review(
         2 => (2, "hard"),
         3 => (3, "good"),
         4 => (4, "easy"),
-        _ => return Err(AppError::Internal("Invalid rating".to_string())),
+        _ => return Err(AppError::BadRequest("Invalid rating: must be 1, 2, 3, or 4".to_string())),
     };
 
     // Get existing card state if any
@@ -1238,7 +1238,7 @@ pub async fn optimize_fsrs(
     .await?;
 
     if rows.is_empty() {
-        return Err(AppError::Internal("No review history found".to_string()));
+        return Err(AppError::BadRequest("No review history found".to_string()));
     }
 
     // Group by card_id and build FSRSItem list
@@ -1301,7 +1301,7 @@ pub async fn optimize_fsrs(
     info!("Built {} FSRS training items from reviews", items.len());
 
     if items.is_empty() {
-        return Err(AppError::Internal(
+        return Err(AppError::BadRequest(
             "Not enough review history. Each card needs at least 2 reviews to optimize.".to_string()
         ));
     }

@@ -9,27 +9,27 @@ use serde_json::json;
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
-    
+
     #[error("Password hashing error")]
     PasswordHash,
-    
+
     #[error("Invalid credentials")]
     InvalidCredentials,
-    
+
     #[error("Invalid invite code")]
     InvalidInviteCode,
-    
+
     #[error("Username already exists")]
     UsernameExists,
-    
-    #[error("Unauthorized")]
-    Unauthorized,
-    
+
+    #[error("Forbidden")]
+    Forbidden,
+
     #[error("Not found")]
     NotFound,
 
-    #[error("Bad request")]
-    BadRequest,
+    #[error("Bad request: {0}")]
+    BadRequest(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -46,33 +46,33 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             AppError::Database(ref e) => {
                 eprintln!("Database error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
             }
             AppError::PasswordHash => {
                 eprintln!("Password hash error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error")
+                (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error".to_string())
             }
             AppError::InvalidCredentials => {
-                (StatusCode::UNAUTHORIZED, "Invalid credentials")
+                (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
             AppError::InvalidInviteCode => {
-                (StatusCode::BAD_REQUEST, "Invalid or already used invite code")
+                (StatusCode::BAD_REQUEST, "Invalid or already used invite code".to_string())
             }
             AppError::UsernameExists => {
-                (StatusCode::CONFLICT, "Username already exists")
+                (StatusCode::CONFLICT, "Username already exists".to_string())
             }
-            AppError::Unauthorized => {
-                (StatusCode::FORBIDDEN, "Unauthorized")
+            AppError::Forbidden => {
+                (StatusCode::FORBIDDEN, "Forbidden".to_string())
             }
             AppError::NotFound => {
-                (StatusCode::NOT_FOUND, "Not found")
+                (StatusCode::NOT_FOUND, "Not found".to_string())
             }
-            AppError::BadRequest => {
-                (StatusCode::BAD_REQUEST, "Bad request")
+            AppError::BadRequest(ref msg) => {
+                (StatusCode::BAD_REQUEST, msg.clone())
             }
             AppError::Internal(ref msg) => {
                 eprintln!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
             }
         };
 

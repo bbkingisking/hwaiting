@@ -259,7 +259,9 @@ pub async fn edit_card(
 ) -> Result<Json<serde_json::Value>, AppError> {
     info!("Admin editing card {}", card_id);
 
-    let obj = payload.as_object().ok_or(AppError::BadRequest)?;
+    let obj = payload
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("Request body must be a JSON object".to_string()))?;
 
     // Extract fields — nullable ones use get_nullable_str so we can distinguish
     // "absent" (don't touch) from "explicit null" (set to NULL).

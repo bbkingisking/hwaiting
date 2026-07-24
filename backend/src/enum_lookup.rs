@@ -15,10 +15,10 @@ pub async fn resolve_optional_id(
         Some(None) => Ok(Some(None)),
         Some(Some(s)) => {
             let id: i64 = sqlx::query_scalar(&format!("SELECT id FROM {table} WHERE slug = ?"))
-                .bind(s)
+                .bind(&s)
                 .fetch_one(&mut **tx)
                 .await
-                .map_err(|_| AppError::BadRequest)?;
+                .map_err(|_| AppError::BadRequest(format!("Unknown {table} value: '{s}'")))?;
             Ok(Some(Some(id)))
         }
     }

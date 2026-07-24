@@ -311,7 +311,7 @@ pub async fn import_data(
 
     // Validate version
     if data.version != "1.0" {
-        return Err(AppError::Internal(format!("Unsupported export version: {}", data.version)));
+        return Err(AppError::BadRequest(format!("Unsupported export version: {}", data.version)));
     }
 
     // Begin transaction

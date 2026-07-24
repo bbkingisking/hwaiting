@@ -272,7 +272,7 @@ impl FromRequestParts<SqlitePool> for AdminUser
 
         if !is_admin {
             warn!("Non-admin user {} attempted to access admin endpoint", user_id);
-            return Err(AppError::Unauthorized);
+            return Err(AppError::Forbidden);
         }
 
         info!("Admin user {} authenticated", user_id);
