@@ -1,5 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::State,
+    http::StatusCode,
     Json,
 };
 use chrono::{Local, TimeZone, Timelike, Utc};
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
 
-use crate::error::{AppError, AppJson};
+use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 #[derive(Deserialize)]
 pub struct ReviewRequest {
@@ -236,7 +237,7 @@ fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
 pub async fn get_next_card(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
-    Query(params): Query<NextCardQuery>,
+    AppQuery(params): AppQuery<NextCardQuery>,
 ) -> Result<Json<NextCardEnvelope>, AppError> {
     let user_id = auth.0;
     info!(
@@ -554,7 +555,7 @@ pub async fn get_next_card(
 // Submit a review for a card
 pub async fn submit_review(
     State(pool): State<SqlitePool>,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
     AppJson(payload): AppJson<ReviewRequest>,
 ) -> Result<Json<ReviewResponse>, AppError> {
@@ -883,7 +884,7 @@ pub async fn get_stats(
 
 pub async fn suppress_card(
     State(pool): State<SqlitePool>,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
@@ -957,7 +958,7 @@ pub async fn list_suppressed_cards(
 
 pub async fn unsuppress_card(
     State(pool): State<SqlitePool>,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
@@ -1452,7 +1453,7 @@ pub async fn get_history_breakdown(
 pub async fn reset_fsrs_parameters(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
-) -> Result<Json<ReviewResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     info!("Resetting FSRS parameters for user_id: {}", user_id);
 
@@ -1463,6 +1464,6 @@ pub async fn reset_fsrs_parameters(
 
     info!("FSRS parameters reset to defaults");
 
-    Ok(Json(ReviewResponse { success: true }))
+    Ok(StatusCode::NO_CONTENT)
 }
 
