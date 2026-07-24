@@ -1,9 +1,11 @@
 use axum::{
+    http::{header, HeaderValue, Method},
     routing::{delete, get, patch, post, put},
     Router,
 };
 use std::net::SocketAddr;
 use std::env;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -79,18 +81,59 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .with_state(pool);
 
-    // Serve static files from STATIC_DIR
-    let static_dir = env::var("STATIC_DIR")
-        .expect("STATIC_DIR environment variable must be set");
-    let index_path = format!("{}/index.html", static_dir);
-
-    let serve_dir = ServeDir::new(&static_dir)
-        .not_found_service(ServeFile::new(index_path));
-
     // Combine routes - API takes precedence over static files
-    let app = Router::new()
-        .nest("/api", api_routes)
-        .fallback_service(serve_dir);
+    let mut app = Router::new().nest("/api", api_routes);
+
+    // Serve static files from STATIC_DIR, if set. Unset means API-only mode:
+    // no fallback service, unmatched paths just 404.
+    match env::var("STATIC_DIR").ok().filter(|s| !s.trim().is_empty()) {
+        Some(static_dir) => {
+            tracing::info!("Serving static files from {}", static_dir);
+            let index_path = format!("{}/index.html", static_dir);
+            let serve_dir = ServeDir::new(&static_dir)
+                .not_found_service(ServeFile::new(index_path));
+            app = app.fallback_service(serve_dir);
+        }
+        None => {
+            tracing::info!("STATIC_DIR not set - running in API-only mode (no static file serving)");
+        }
+    }
+
+    // CORS: only add the layer if origins are explicitly configured. Unset
+    // means same-origin only, enforced by the browser for free - the
+    // correct default when STATIC_DIR is serving the frontend from this
+    // same binary.
+    match env::var("CORS_ALLOWED_ORIGINS").ok().filter(|s| !s.trim().is_empty()) {
+        Some(origins) => {
+            let allowed_origins: Vec<HeaderValue> = origins
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    s.parse::<HeaderValue>()
+                        .unwrap_or_else(|e| panic!("Invalid origin '{}' in CORS_ALLOWED_ORIGINS: {}", s, e))
+                })
+                .collect();
+
+            tracing::info!("CORS enabled for origins: {:?}", allowed_origins);
+
+            let cors = CorsLayer::new()
+                .allow_origin(AllowOrigin::list(allowed_origins))
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::PATCH,
+                    Method::DELETE,
+                ])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]);
+
+            app = app.layer(cors);
+        }
+        None => {
+            tracing::info!("CORS_ALLOWED_ORIGINS not set - no CORS layer added (same-origin only)");
+        }
+    }
 
     // Read HOST and PORT from environment variables
     let host = env::var("HOST")
