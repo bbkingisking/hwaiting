@@ -5,16 +5,17 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
+use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UserProfile {
     pub username: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct UserSettings {
     pub show_percentage: bool,
     pub red_threshold: i64,
@@ -30,7 +31,7 @@ pub struct UserSettings {
     pub has_fsrs_parameters: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
     pub show_percentage: Option<bool>,
     pub red_threshold: Option<i64>,
@@ -47,12 +48,22 @@ pub struct UpdateSettingsRequest {
 
 
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UpdateSettingsResponse {
     pub success: bool,
 }
 
 // Get current user's profile
+#[utoipa::path(
+    get,
+    path = "/api/user/me",
+    responses(
+        (status = 200, description = "Current user's profile", body = UserProfile),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "user"
+)]
 pub async fn get_profile(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -71,6 +82,16 @@ pub async fn get_profile(
 }
 
 // Get user settings
+#[utoipa::path(
+    get,
+    path = "/api/user/settings",
+    responses(
+        (status = 200, description = "Current user settings (row lazily created on first access)", body = UserSettings),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "user"
+)]
 pub async fn get_settings(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -126,6 +147,18 @@ pub async fn get_settings(
 }
 
 // Update user settings
+#[utoipa::path(
+    patch,
+    path = "/api/user/settings",
+    request_body = UpdateSettingsRequest,
+    responses(
+        (status = 200, description = "Settings updated (partial update, only provided fields written)", body = UpdateSettingsResponse),
+        (status = 400, description = "Out-of-range value or malformed request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "user"
+)]
 pub async fn update_settings(
     State(pool): State<SqlitePool>,
     auth: AuthUser,

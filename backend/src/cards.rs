@@ -8,22 +8,24 @@ use fsrs::{ComputeParametersInput, FSRSItem, FSRSReview, MemoryState, FSRS, DEFA
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
+use utoipa::{IntoParams, ToSchema};
 
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ReviewRequest {
-    rating: u8, // 1 = Again, 3 = Good
+    /// FSRS rating: 1 = Again, 2 = Hard, 3 = Good, 4 = Easy (UI only sends 1 or 3)
+    rating: u8,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, ToSchema)]
 pub struct HanjaHint {
     pub hanja: String,
     pub hanja_eum: Option<String>,
     pub trans_word: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct NextCardResponse {
     card_id: i64,
     word: String,
@@ -48,7 +50,7 @@ pub struct NextCardResponse {
     hanja_hints: Vec<HanjaHint>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct EnumEntry {
     pub slug: String,
     pub label: String,
@@ -57,7 +59,7 @@ pub struct EnumEntry {
     pub endings: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct EnumLookups {
     pub pos: Vec<EnumEntry>,
     pub origin_type: Vec<EnumEntry>,
@@ -96,6 +98,16 @@ async fn fetch_enum_entries(
         .collect())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/cards/enum-lookups",
+    responses(
+        (status = 200, description = "Lookup-table values for dropdowns/enum displays", body = EnumLookups),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn list_enum_lookups(
     State(pool): State<SqlitePool>,
     _auth: crate::auth::AuthUser,
@@ -110,13 +122,13 @@ pub async fn list_enum_lookups(
     }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct NextCardEnvelope {
     pub card: Option<NextCardResponse>,
     pub next_due_at: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SuppressedCard {
     card_id: i64,
     word: String,
@@ -127,17 +139,17 @@ pub struct SuppressedCard {
     grade: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SuppressedCardsResponse {
     cards: Vec<SuppressedCard>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ReviewResponse {
     success: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct DayHistory {
     pub date: String,
     pub total: i64,
@@ -146,12 +158,12 @@ pub struct DayHistory {
     pub percentage: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ReviewHistoryResponse {
     pub days: Vec<DayHistory>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct HistorySummary {
     pub total_reviews: i64,
     pub total_cards_reviewed: i64,
@@ -166,7 +178,7 @@ pub struct HistorySummary {
     pub longest_streak: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
     new_count: i64,
     due_count: i64,
@@ -177,14 +189,15 @@ pub struct StatsResponse {
     new_today_count: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct OptimizeFsrsResponse {
     success: bool,
     parameters: Vec<f32>,
     review_count: usize,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct NextCardQuery {
     // Optional word_id to exclude from the result (used by client prefetch
     // to skip the card currently being shown to the user).
@@ -234,6 +247,18 @@ fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
 }
 
 // Get next card due for review
+#[utoipa::path(
+    get,
+    path = "/api/cards/next",
+    params(NextCardQuery),
+    responses(
+        (status = 200, description = "Next due/new card, or null if none due", body = NextCardEnvelope),
+        (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn get_next_card(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -553,6 +578,19 @@ pub async fn get_next_card(
 }
 
 // Submit a review for a card
+#[utoipa::path(
+    post,
+    path = "/api/cards/{card_id}/review",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    request_body = ReviewRequest,
+    responses(
+        (status = 200, description = "Review recorded, FSRS state updated", body = ReviewResponse),
+        (status = 400, description = "Invalid rating or malformed request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn submit_review(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
@@ -718,6 +756,16 @@ pub async fn submit_review(
 }
 
 // Get statistics
+#[utoipa::path(
+    get,
+    path = "/api/cards/stats",
+    responses(
+        (status = 200, description = "Status-bar summary stats", body = StatsResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn get_stats(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -882,6 +930,17 @@ pub async fn get_stats(
     }))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/cards/{card_id}/suppress",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    responses(
+        (status = 200, description = "Card suspended from review rotation", body = ReviewResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn suppress_card(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
@@ -911,6 +970,16 @@ pub async fn suppress_card(
 }
 
 // List all suspended cards for the user
+#[utoipa::path(
+    get,
+    path = "/api/cards/suppressed",
+    responses(
+        (status = 200, description = "All suspended cards for the user", body = SuppressedCardsResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn list_suppressed_cards(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -956,6 +1025,17 @@ pub async fn list_suppressed_cards(
     Ok(Json(SuppressedCardsResponse { cards }))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/cards/{card_id}/unsuppress",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    responses(
+        (status = 200, description = "Card un-suspended", body = ReviewResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn unsuppress_card(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
@@ -981,6 +1061,16 @@ pub async fn unsuppress_card(
     Ok(Json(ReviewResponse { success: true }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/cards/history",
+    responses(
+        (status = 200, description = "Per-day review history for a rolling window", body = ReviewHistoryResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn get_review_history(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -1040,6 +1130,16 @@ pub async fn get_review_history(
     Ok(Json(ReviewHistoryResponse { days }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/cards/history-summary",
+    responses(
+        (status = 200, description = "Aggregate review history summary + streaks", body = HistorySummary),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn get_history_summary(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -1218,6 +1318,17 @@ pub async fn get_history_summary(
 }
 
 // Optimize FSRS parameters from user's review history
+#[utoipa::path(
+    post,
+    path = "/api/cards/optimize-fsrs",
+    responses(
+        (status = 200, description = "FSRS parameters optimized from full review history", body = OptimizeFsrsResponse),
+        (status = 400, description = "No/insufficient review history to optimize from", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn optimize_fsrs(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -1348,7 +1459,7 @@ pub async fn optimize_fsrs(
     }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BreakdownRow {
     label: String,
     reviews: i64,
@@ -1356,12 +1467,22 @@ pub struct BreakdownRow {
     accuracy: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct HistoryBreakdownResponse {
     by_pos: Vec<BreakdownRow>,
     by_origin: Vec<BreakdownRow>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/cards/history-breakdown",
+    responses(
+        (status = 200, description = "Accuracy broken down by part-of-speech and origin type", body = HistoryBreakdownResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn get_history_breakdown(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
@@ -1450,6 +1571,16 @@ pub async fn get_history_breakdown(
 }
 
 // Reset FSRS parameters to defaults
+#[utoipa::path(
+    delete,
+    path = "/api/cards/optimize-fsrs",
+    responses(
+        (status = 204, description = "FSRS parameters reset to library defaults"),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
 pub async fn reset_fsrs_parameters(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,

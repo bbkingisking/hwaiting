@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
-
+use utoipa::{IntoParams, ToSchema};
 
 use crate::auth::AdminUser;
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
@@ -31,22 +31,22 @@ fn get_opt_str(obj: &serde_json::Map<String, Value>, key: &str) -> Option<String
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct GenerateInvitesRequest {
     pub count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct GeneratedInvite {
     pub code: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct GenerateInvitesResponse {
     pub codes: Vec<GeneratedInvite>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct InviteCode {
     pub code: String,
     pub created_at: String,
@@ -54,11 +54,23 @@ pub struct InviteCode {
     pub used_by_username: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ListInvitesResponse {
     pub codes: Vec<InviteCode>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/invites",
+    request_body = GenerateInvitesRequest,
+    responses(
+        (status = 201, description = "Invite codes generated (capped at 100 per request)", body = GenerateInvitesResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
 pub async fn generate_invites(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -86,6 +98,17 @@ pub async fn generate_invites(
     Ok((StatusCode::CREATED, Json(GenerateInvitesResponse { codes })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/invites",
+    responses(
+        (status = 200, description = "All invite codes, used and unused", body = ListInvitesResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
 pub async fn list_invites(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -117,6 +140,19 @@ pub async fn list_invites(
     Ok(Json(ListInvitesResponse { codes }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/admin/invites/{code}",
+    params(("code" = String, Path, description = "Invite code")),
+    responses(
+        (status = 204, description = "Invite code deleted"),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+        (status = 404, description = "Code doesn't exist", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
 pub async fn delete_invite(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -138,12 +174,13 @@ pub async fn delete_invite(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchCardsQuery {
     pub q: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AdminCard {
     pub card_id: i64,
     pub word: String,
@@ -164,11 +201,24 @@ pub struct AdminCard {
     pub grammar_pattern: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SearchCardsResponse {
     pub cards: Vec<AdminCard>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/cards/search",
+    params(SearchCardsQuery),
+    responses(
+        (status = 200, description = "Cards matching a substring search over sentence targets (capped at 50)", body = SearchCardsResponse),
+        (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
 pub async fn search_cards(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -252,6 +302,27 @@ pub async fn search_cards(
     Ok(Json(SearchCardsResponse { cards }))
 }
 
+/// Freeform partial-update body: any subset of `word`, `definition`, `pos`,
+/// `origin_type`, `hanja`, `hanja_eum`, `grade`, `trans_word`, `trans_dfn`,
+/// `sentence`, `sentence_translation`, `target`, `alternatives` (array),
+/// `speech_level`, `tense`, `grammar_pattern`. Absent keys are left
+/// untouched; explicit `null` clears a nullable column. Enum-backed fields
+/// are sent as slugs, resolved server-side to lookup-table row IDs.
+#[utoipa::path(
+    patch,
+    path = "/api/admin/cards/{card_id}",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    request_body(content = Object, description = "Partial card edit, see handler doc comment for accepted fields"),
+    responses(
+        (status = 200, description = "Card updated"),
+        (status = 400, description = "Body isn't a JSON object", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+        (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
 pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,

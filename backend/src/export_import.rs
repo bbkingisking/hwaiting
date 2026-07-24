@@ -5,13 +5,14 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
+use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
 
 // Export/Import data structures
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct ExportData {
     pub version: String,
     pub exported_at: String,
@@ -21,7 +22,7 @@ pub struct ExportData {
     pub custom_cards: Vec<CustomCardExport>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct UserSettingsExport {
     pub show_percentage: bool,
     pub red_threshold: i64,
@@ -37,7 +38,7 @@ pub struct UserSettingsExport {
     pub fsrs_parameters: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct ReviewHistoryExport {
     pub card_id: i64,
     pub rating: String,
@@ -49,7 +50,7 @@ pub struct ReviewHistoryExport {
     pub state: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct CustomCardExport {
     pub word: String,
     pub definition: Option<String>,
@@ -62,14 +63,14 @@ pub struct CustomCardExport {
     pub sentences: Vec<SentenceExport>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct CardTranslationExport {
     pub language_tag: String,
     pub trans_word: String,
     pub trans_dfn: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct SentenceExport {
     pub text: String,
     pub target: String,
@@ -79,26 +80,26 @@ pub struct SentenceExport {
     pub inflection_hint: Option<InflectionHintExport>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct InflectionHintExport {
     pub speech_level: Option<String>,
     pub tense: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ImportDataRequest {
     pub data: ExportData,
     pub overwrite: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ImportDataResponse {
     pub success: bool,
     pub message: String,
     pub stats: ImportStats,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct ImportStats {
     pub card_states_derived: usize,
     pub reviews_imported: usize,
@@ -107,6 +108,16 @@ pub struct ImportStats {
 }
 
 // Export user data
+#[utoipa::path(
+    get,
+    path = "/api/user/export",
+    responses(
+        (status = 200, description = "Full data export: settings, review history, suspended cards, custom cards", body = ExportData),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "user"
+)]
 pub async fn export_data(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
@@ -299,6 +310,18 @@ pub async fn export_data(
 }
 
 // Import user data
+#[utoipa::path(
+    post,
+    path = "/api/user/import",
+    request_body = ImportDataRequest,
+    responses(
+        (status = 200, description = "Data imported (card_states derived from imported review_history)", body = ImportDataResponse),
+        (status = 400, description = "Unsupported export version or malformed request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "user"
+)]
 pub async fn import_data(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
