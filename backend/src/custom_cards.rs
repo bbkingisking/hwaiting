@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
 
 #[derive(Deserialize)]
@@ -69,7 +69,7 @@ pub struct DeleteCustomCardResponse {
 pub async fn create_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Json(payload): Json<CreateCustomCardRequest>,
+    AppJson(payload): AppJson<CreateCustomCardRequest>,
 ) -> Result<(StatusCode, [(header::HeaderName, String); 1], Json<CreateCustomCardResponse>), AppError> {
     let user_id = auth.0;
     info!("Creating custom card for user_id: {}", user_id);
@@ -423,7 +423,7 @@ pub async fn update_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
     Path(card_id): Path<i64>,
-    Json(payload): Json<UpdateCustomCardRequest>,
+    AppJson(payload): AppJson<UpdateCustomCardRequest>,
 ) -> Result<Json<UpdateCustomCardResponse>, AppError> {
     let user_id = auth.0;
     info!("Updating custom card {} for user_id: {}", card_id, user_id);

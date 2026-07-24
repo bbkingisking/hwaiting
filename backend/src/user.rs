@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
 
 #[derive(Serialize)]
@@ -129,7 +129,7 @@ pub async fn get_settings(
 pub async fn update_settings(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Json(payload): Json<UpdateSettingsRequest>,
+    AppJson(payload): AppJson<UpdateSettingsRequest>,
 ) -> Result<Json<UpdateSettingsResponse>, AppError> {
     let user_id = auth.0;
     info!("Updating settings for user_id: {}", user_id);

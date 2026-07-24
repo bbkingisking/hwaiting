@@ -1,8 +1,10 @@
 use axum::{
+    extract::{FromRequest, Request},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
+use serde::de::DeserializeOwned;
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
@@ -77,5 +79,28 @@ impl IntoResponse for AppError {
         };
 
         (status, Json(json!({ "error": message }))).into_response()
+    }
+}
+
+/// Drop-in replacement for `axum::Json` as a request extractor. Identical on
+/// success; on failure (malformed JSON, missing/mistyped fields) it converts
+/// axum's default `JsonRejection` into `AppError::BadRequest`, so every error
+/// this API returns - including body-parsing failures - shares the same
+/// `{"error": "..."}` envelope and status-code convention, instead of a
+/// plain-text 422 that bypasses `AppError` entirely.
+pub struct AppJson<T>(pub T);
+
+impl<S, T> FromRequest<S> for AppJson<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(AppJson(value)),
+            Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
+        }
     }
 }

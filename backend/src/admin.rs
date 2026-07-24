@@ -11,7 +11,7 @@ use tracing::{debug, info};
 
 
 use crate::auth::AdminUser;
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 
 /// Extract a nullable string field from JSON, distinguishing absent from null.
 /// Returns `Some(None)` for explicit null, `Some(Some(s))` for a string, `None` for absent.
@@ -62,7 +62,7 @@ pub struct ListInvitesResponse {
 pub async fn generate_invites(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
-    Json(payload): Json<GenerateInvitesRequest>,
+    AppJson(payload): AppJson<GenerateInvitesRequest>,
 ) -> Result<(StatusCode, Json<GenerateInvitesResponse>), AppError> {
     let count = payload.count.min(100); // Cap at 100 codes per request
     
@@ -256,7 +256,7 @@ pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     Path(card_id): Path<i64>,
-    Json(payload): Json<Value>,
+    AppJson(payload): AppJson<Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     info!("Admin editing card {}", card_id);
 

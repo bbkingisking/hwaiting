@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
 
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
 
 // Export/Import data structures
@@ -302,7 +302,7 @@ pub async fn export_data(
 pub async fn import_data(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Json(payload): Json<ImportDataRequest>,
+    AppJson(payload): AppJson<ImportDataRequest>,
 ) -> Result<Json<ImportDataResponse>, AppError> {
     let user_id = auth.0;
     info!("Importing data for user_id: {} (overwrite: {})", user_id, payload.overwrite);

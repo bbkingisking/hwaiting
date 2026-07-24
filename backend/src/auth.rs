@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
 use tracing::{debug, info, warn};
 
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -36,7 +36,7 @@ pub struct AuthResponse {
 
 pub async fn login(
     State(pool): State<SqlitePool>,
-    Json(payload): Json<LoginRequest>,
+    AppJson(payload): AppJson<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     let username = payload.username.trim();
     let password = payload.password.trim();
@@ -91,7 +91,7 @@ pub async fn login(
 
 pub async fn signup(
     State(pool): State<SqlitePool>,
-    Json(payload): Json<SignupRequest>,
+    AppJson(payload): AppJson<SignupRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
     let username = payload.username.trim();
     let password = payload.password.trim();

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
 
-use crate::error::AppError;
+use crate::error::{AppError, AppJson};
 
 #[derive(Deserialize)]
 pub struct ReviewRequest {
@@ -556,7 +556,7 @@ pub async fn submit_review(
     State(pool): State<SqlitePool>,
     Path(card_id): Path<i64>,
     auth: crate::auth::AuthUser,
-    Json(payload): Json<ReviewRequest>,
+    AppJson(payload): AppJson<ReviewRequest>,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
     info!(
