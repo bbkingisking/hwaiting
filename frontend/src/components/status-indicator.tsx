@@ -37,8 +37,8 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
     try {
       const stats = await getStats()
       setDueCount(stats.due_count)
-      setPercentage(stats.percentage)
-      setNextDueAt(stats.next_due_at)
+      setPercentage(stats.percentage ?? null)
+      setNextDueAt(stats.next_due_at ?? null)
       setNewTodayCount(stats.new_today_count)
     } catch (err) {
       console.error('Failed to fetch stats:', err)

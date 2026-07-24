@@ -103,7 +103,7 @@ function AppContent() {
       } else {
         setCard(null)
         setNoCards(true)
-        setNextDueAt(envelope.next_due_at)
+        setNextDueAt(envelope.next_due_at ?? null)
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -149,7 +149,7 @@ function AppContent() {
       } else {
         setCard(null)
         setNoCards(true)
-        setNextDueAt(envelope.next_due_at)
+        setNextDueAt(envelope.next_due_at ?? null)
       }
     } catch (err) {
       if (err instanceof ApiError) {
