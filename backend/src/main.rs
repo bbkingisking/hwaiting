@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/cards/optimize-fsrs", delete(cards::reset_fsrs_parameters))
         .route("/user/me", get(user::get_profile))
         .route("/user/settings", get(user::get_settings))
-        .route("/user/settings", post(user::update_settings))
+        .route("/user/settings", patch(user::update_settings))
         .route("/user/export", get(export_import::export_data))
         .route("/user/import", post(export_import::import_data))
         .route("/admin/invites", get(admin::list_invites))

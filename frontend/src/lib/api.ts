@@ -333,7 +333,7 @@ export async function getUserSettings(): Promise<UserSettings> {
 export async function updateUserSettings(settings: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
   const url = `${window.location.origin}/api/user/settings`
   return fetchWithAuth(url, {
-    method: 'POST',
+    method: 'PATCH',
     body: JSON.stringify(settings),
   })
 }
