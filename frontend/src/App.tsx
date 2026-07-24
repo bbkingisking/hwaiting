@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
+import { CardThemeProvider, useCardTheme } from '@/components/card-theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
 import { EnumLookupsProvider } from '@/components/enum-lookups-provider'
 
@@ -31,6 +32,7 @@ function AppContent() {
   const [statsKey, setStatsKey] = useState(0)
 
   const { isAuthenticated } = useAuth()
+  const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
 
@@ -194,7 +196,7 @@ function AppContent() {
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
       <AppHeader />
-      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div data-card-theme={cardThemeId} className="ct-page min-h-screen flex flex-col items-center justify-center p-6">
         {!isAuthenticated ? (
           <div className="text-center text-muted-foreground">
             <p>Please log in to continue</p>
@@ -254,13 +256,15 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <SettingsProvider>
-          <EnumLookupsProvider>
-            <AppContent />
-          </EnumLookupsProvider>
-        </SettingsProvider>
-      </AuthProvider>
+      <CardThemeProvider>
+        <AuthProvider>
+          <SettingsProvider>
+            <EnumLookupsProvider>
+              <AppContent />
+            </EnumLookupsProvider>
+          </SettingsProvider>
+        </AuthProvider>
+      </CardThemeProvider>
     </ThemeProvider>
   )
 }

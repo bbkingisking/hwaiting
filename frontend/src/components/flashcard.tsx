@@ -17,6 +17,8 @@ import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useCardTheme } from '@/components/card-theme-provider'
+import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/components/card-theme-decorations'
 
 interface FlashcardProps {
   card: Card
@@ -107,7 +109,7 @@ function GrammarPatternPill({
       <TooltipTrigger
         delay={300}
         closeOnClick
-        render={<span />}
+        render={<span data-slot="badge" />}
         className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground cursor-help"
       >
         {label}
@@ -131,6 +133,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   const inputRef = useRef<HTMLInputElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
+  const { theme: cardTheme } = useCardTheme()
   const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useEnumLookups()
   const hasAutoProgressedRef = useRef(false)
 
@@ -239,29 +242,31 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   }
 
   return (
-    <UICard className="w-full max-w-xl">
+    <div data-card-theme={cardTheme.id} className="ct-card relative w-full max-w-xl">
+      <CardThemeDecorationBefore themeId={cardTheme.id} />
+      <UICard className="w-full">
       <CardHeader>
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5">
           {card.guess_count === 0 && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
-              New
+            <span data-slot="new-badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+              {cardTheme.newLabel}
             </span>
           )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
           {card.pos && posLookup[card.pos] && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {posLookup[card.pos].label}
             </span>
           )}
           {card.speech_level && speechLevelLookup[card.speech_level] && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {speechLevelLookup[card.speech_level].label}
             </span>
           )}
           {card.tense && tenseLookup[card.tense] && (
-            <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {tenseLookup[card.tense].label}
             </span>
           )}
@@ -280,7 +285,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-muted-foreground hover:text-card-foreground"
                   disabled={suppressing}
                 >
                   <MoreVertical className="h-4 w-4" />
@@ -354,7 +359,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 }}
                 style={{ width: `${Math.max(input.length, 2)}em` }}
                 className={cn(
-                  'flex-none bg-transparent border-0 border-b-2 border-foreground/30',
+                  'flex-none bg-transparent border-0 border-b-2 border-card-foreground/30',
                   'text-center text-2xl md:text-3xl font-semibold',
                   'outline-none pb-0.5',
                   'focus:border-primary',
@@ -391,7 +396,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
       <CardFooter className={cn("flex-col gap-3", isAutoProgressing && "invisible")}>
         {!answered && !isAutoProgressing ? (
           <Button type="submit" onClick={handleSubmit} className="w-full">
-            Check
+            {cardTheme.checkLabel}
           </Button>
         ) : (
           <>
@@ -404,6 +409,8 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
           </>
         )}
       </CardFooter>
-    </UICard>
+      </UICard>
+      <CardThemeDecorationAfter themeId={cardTheme.id} />
+    </div>
   )
 }

@@ -1,0 +1,587 @@
+/*
+  Flashcard skins. Each theme overrides the same semantic tokens the rest of
+  the app already uses (--card, --primary, --border, --font-sans, ...) scoped
+  under [data-card-theme="id"], which is set on the wrapper div in
+  flashcard.tsx. Because Card/Button/badges are built on those tokens rather
+  than hardcoded colors, most of a theme is just this file — flashcard.tsx
+  only grows a couple of optional decoration slots (see
+  card-theme-decorations.tsx) for the handful of things that aren't just a
+  color/font swap (tape corner, marquee lights, scroll rods, nails...).
+*/
+
+[data-card-theme] {
+  position: relative;
+}
+
+/* ---------- Postcard ---------- */
+
+[data-card-theme="postcard"] {
+  --background: #fbf7ec;
+  --foreground: #3d3226;
+  --card: #fbf7ec;
+  --card-foreground: #3d3226;
+  --primary: #b23b2e;
+  --primary-foreground: #fbf7ec;
+  --secondary: #ffffff;
+  --secondary-foreground: #6b5d42;
+  --accent: #f1e6cf;
+  --accent-foreground: #3d3226;
+  --muted: #f1e6cf;
+  --muted-foreground: #8a7a5c;
+  --border: #cabf9f;
+  --input: #cabf9f;
+  --ring: #b23b2e;
+  --destructive: #b23b2e;
+  --radius: 0.375rem;
+  --font-sans: 'Courier Prime', monospace;
+}
+
+[data-card-theme="postcard"] [data-slot="card"] {
+  border: 2px dashed var(--border);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14);
+}
+
+[data-card-theme="postcard"] [data-slot="new-badge"] {
+  border: 1.5px dashed #b8ac86;
+  background: transparent;
+  color: #8a7a52;
+  font-family: 'Special Elite', monospace;
+  transform: rotate(-3deg);
+}
+
+[data-card-theme="postcard"] [data-slot="button"] {
+  font-family: 'Special Elite', monospace;
+  letter-spacing: 0.04em;
+  border-radius: 0.2rem;
+}
+
+.ct-postcard-tape {
+  position: absolute;
+  top: -1px;
+  right: -45px;
+  width: 116px;
+  height: 32px;
+  background-image: url(/flag-kr.svg);
+  background-repeat: repeat-x;
+  background-size: 30px 20px;
+  background-position: center;
+  opacity: 0.88;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+  transform: rotate(45deg);
+  transform-origin: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ct-postcard-tape::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.1) 40%, rgba(255, 255, 255, 0.35));
+}
+
+/* ---------- Arcade marquee ---------- */
+
+[data-card-theme="arcade"] {
+  --background: #150c24;
+  --foreground: #f5eaff;
+  --card: #150c24;
+  --card-foreground: #f5eaff;
+  --primary: #fde047;
+  --primary-foreground: #150c24;
+  --secondary: rgba(34, 211, 238, 0.12);
+  --secondary-foreground: #22d3ee;
+  --accent: rgba(255, 45, 149, 0.15);
+  --accent-foreground: #ff2d95;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #d9b8f0;
+  --border: #ff2d95;
+  --input: rgba(255, 45, 149, 0.3);
+  --ring: #ff2d95;
+  --destructive: #ff4d4d;
+  --radius: 0.6rem;
+  --font-sans: 'Rubik', sans-serif;
+}
+
+[data-card-theme="arcade"] [data-slot="card"] {
+  border: 3px solid var(--border);
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow: 0 0 0 2px #0c0716, 0 0 24px rgba(255, 45, 149, 0.45), 0 0 60px rgba(255, 45, 149, 0.15);
+}
+
+[data-card-theme="arcade"] [data-slot="new-badge"] {
+  background: transparent;
+  border: 1px solid #fde047;
+  color: #fde047;
+}
+
+[data-card-theme="arcade"] [data-slot="button"] {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+.ct-arcade-marquee {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, #ff2d95, #7c3aed, #22d3ee, #ff2d95);
+  background-size: 300% 100%;
+  animation: ct-arcade-chase 5s linear infinite;
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes ct-arcade-chase {
+  to {
+    background-position: 300% 0;
+  }
+}
+
+.ct-arcade-title {
+  font-family: 'Press Start 2P', monospace;
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.ct-arcade-bulbs {
+  display: flex;
+  gap: 6px;
+}
+
+.ct-arcade-bulbs span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff7b0;
+  box-shadow: 0 0 6px #fff7b0;
+  display: block;
+}
+
+/* ---------- Neumorphic ---------- */
+
+[data-card-theme="neumorphic"] {
+  --background: #e8ebf0;
+  --foreground: #4b5563;
+  --card: #e8ebf0;
+  --card-foreground: #4b5563;
+  --primary: #e8ebf0;
+  --primary-foreground: #57606f;
+  --secondary: #e8ebf0;
+  --secondary-foreground: #78829a;
+  --accent: #e8ebf0;
+  --accent-foreground: #57606f;
+  --muted: #e8ebf0;
+  --muted-foreground: #94a1b8;
+  --border: transparent;
+  --input: #c5c9d1;
+  --ring: #9aa5b8;
+  --radius: 1.25rem;
+  --font-sans: 'Geist', sans-serif;
+}
+
+[data-card-theme="neumorphic"] [data-slot="card"] {
+  box-shadow: 8px 8px 18px #c5c9d1, -8px -8px 18px #ffffff;
+  border: none;
+}
+
+[data-card-theme="neumorphic"] [data-slot="badge"],
+[data-card-theme="neumorphic"] [data-slot="new-badge"] {
+  box-shadow: inset 3px 3px 6px #c5c9d1, inset -3px -3px 6px #ffffff;
+  border: none;
+  background: var(--card);
+}
+
+[data-card-theme="neumorphic"] [data-slot="button"] {
+  box-shadow: 4px 4px 10px #c5c9d1, -4px -4px 10px #ffffff;
+  border: none;
+}
+
+[data-card-theme="neumorphic"] [data-slot="button"]:active {
+  box-shadow: inset 3px 3px 6px #c5c9d1, inset -3px -3px 6px #ffffff;
+}
+
+[data-card-theme="neumorphic"] [data-slot="card-footer"] {
+  background: transparent;
+  border-top: none;
+}
+
+/* ---------- Pixel / Game Boy ---------- */
+
+[data-card-theme="gameboy"].ct-card {
+  background: #d6d2c4;
+  border-radius: 18px 18px 46px 18px;
+  box-shadow: 0 14px 0 rgba(0, 0, 0, 0.25), inset 0 0 0 4px #b8b4a4;
+  padding: 22px;
+}
+
+[data-card-theme="gameboy"] {
+  --background: #9bbc0f;
+  --foreground: #0f380f;
+  --card: #9bbc0f;
+  --card-foreground: #0f380f;
+  --primary: #8bac0f;
+  --primary-foreground: #0f380f;
+  --secondary: #9bbc0f;
+  --secondary-foreground: #0f380f;
+  --accent: #8bac0f;
+  --accent-foreground: #0f380f;
+  --muted: #9bbc0f;
+  --muted-foreground: #306230;
+  --border: #0f380f;
+  --input: #0f380f;
+  --ring: #306230;
+  --radius: 0px;
+  --font-sans: 'DotGothic16', monospace;
+}
+
+[data-card-theme="gameboy"] [data-slot="card"] {
+  border: 6px solid #0f380f;
+  box-shadow: inset 0 0 0 3px #306230;
+}
+
+[data-card-theme="gameboy"] [data-slot="badge"],
+[data-card-theme="gameboy"] [data-slot="new-badge"] {
+  border: 3px solid #0f380f;
+  border-radius: 0;
+  background: transparent;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+}
+
+[data-card-theme="gameboy"] [data-slot="button"] {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  border: 3px solid #0f380f;
+  border-radius: 0;
+}
+
+[data-card-theme="gameboy"] [data-slot="card-footer"] {
+  background: transparent;
+  border-top: none;
+}
+
+.ct-gameboy-label-strip {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 0 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #8a8a78;
+}
+
+/* ---------- Chalkboard ---------- */
+
+[data-card-theme="chalkboard"] {
+  --background: #2f3e35;
+  --foreground: #eef0ea;
+  --card: #2f3e35;
+  --card-foreground: #eef0ea;
+  --primary: #2f3e35;
+  --primary-foreground: #eef0ea;
+  --secondary: transparent;
+  --secondary-foreground: #c9d1c4;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #eef0ea;
+  --muted: transparent;
+  --muted-foreground: #c9d1c4;
+  --border: rgba(238, 240, 234, 0.3);
+  --input: rgba(238, 240, 234, 0.3);
+  --ring: #eef0ea;
+  --radius: 0.25rem;
+  --font-sans: 'Kalam', cursive;
+}
+
+[data-card-theme="chalkboard"] [data-slot="card"] {
+  border: 14px solid #6b4a30;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 0 60px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+[data-card-theme="chalkboard"] [data-slot="card"]::before,
+[data-card-theme="chalkboard"] [data-slot="card"]::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 50%;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+[data-card-theme="chalkboard"] [data-slot="card"]::before {
+  width: 120px;
+  height: 50px;
+  top: 14px;
+  left: 20px;
+}
+
+[data-card-theme="chalkboard"] [data-slot="card"]::after {
+  width: 90px;
+  height: 40px;
+  bottom: 20px;
+  right: 30px;
+}
+
+[data-card-theme="chalkboard"] [data-slot="badge"],
+[data-card-theme="chalkboard"] [data-slot="new-badge"] {
+  background: transparent;
+  border: none;
+}
+
+[data-card-theme="chalkboard"] input {
+  border-bottom-style: dashed !important;
+}
+
+[data-card-theme="chalkboard"] [data-slot="button"] {
+  border: 2px dashed rgba(238, 240, 234, 0.6);
+  background: transparent;
+}
+
+[data-card-theme="chalkboard"] [data-slot="card-footer"] {
+  background: transparent;
+  border-top: none;
+}
+
+/* ---------- Wild West ---------- */
+
+[data-card-theme="wildwest"] {
+  --background: #e8d5ab;
+  --foreground: #2c1c10;
+  --card: #e8d5ab;
+  --card-foreground: #2c1c10;
+  --primary: #3a2a1c;
+  --primary-foreground: #e8d5ab;
+  --secondary: transparent;
+  --secondary-foreground: #6b4a2b;
+  --accent: rgba(107, 74, 43, 0.15);
+  --accent-foreground: #3a2a1c;
+  --muted: transparent;
+  --muted-foreground: #6b4a2b;
+  --border: #6b4a2b;
+  --input: #6b4a2b;
+  --ring: #6b4a2b;
+  --radius: 0px;
+  --font-sans: 'Special Elite', monospace;
+}
+
+[data-card-theme="wildwest"] [data-slot="card"] {
+  border: 10px solid #5c3d20;
+  clip-path: polygon(0 1%, 2% 0, 98% 0.5%, 100% 2%, 99.5% 98%, 98% 100%, 2% 99.3%, 0 97%);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.5);
+  position: relative;
+  transform: rotate(-0.6deg);
+}
+
+[data-card-theme="wildwest"] [data-slot="badge"] {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 0;
+}
+
+[data-card-theme="wildwest"] [data-slot="new-badge"] {
+  display: none;
+}
+
+[data-card-theme="wildwest"] [data-slot="button"] {
+  font-family: 'Rye', serif;
+  font-size: 1.1rem;
+  letter-spacing: 0.03em;
+  border-radius: 0;
+  border: 2px solid var(--card-foreground);
+}
+
+[data-card-theme="wildwest"] [data-slot="card-footer"] {
+  background: transparent;
+  border-top: none;
+}
+
+.ct-wildwest-nail {
+  position: absolute;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #d9c48a, #6b4a20 70%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+
+.ct-wildwest-nail-left {
+  left: 14px;
+}
+
+.ct-wildwest-nail-right {
+  right: 14px;
+}
+
+.ct-wildwest-star {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  background: #5c3d20;
+  color: #e8d5ab;
+  font-family: 'Rye', serif;
+  font-size: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+/* ---------- Ancient China ---------- */
+
+[data-card-theme="ancientchina"] {
+  --background: #f3e3c0;
+  --foreground: #3d2814;
+  --card: #f3e3c0;
+  --card-foreground: #3d2814;
+  --primary: #a3231a;
+  --primary-foreground: #f3e3c0;
+  --secondary: transparent;
+  --secondary-foreground: #7a5626;
+  --accent: rgba(179, 130, 63, 0.15);
+  --accent-foreground: #3d2814;
+  --muted: transparent;
+  --muted-foreground: #9a815f;
+  --border: #b3823f;
+  --input: #b3823f;
+  --ring: #a3231a;
+  --radius: 0px;
+  --font-sans: 'Cormorant Garamond', serif;
+}
+
+[data-card-theme="ancientchina"] [data-slot="card"] {
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  position: relative;
+}
+
+[data-card-theme="ancientchina"] [data-slot="card"]::before {
+  content: '福';
+  position: absolute;
+  top: 14px;
+  right: 20px;
+  width: 34px;
+  height: 34px;
+  background: #a3231a;
+  color: #f3e3c0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 16px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  transform: rotate(2deg);
+  z-index: 2;
+}
+
+[data-card-theme="ancientchina"] [data-slot="badge"],
+[data-card-theme="ancientchina"] [data-slot="new-badge"] {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 0;
+  color: #7a5626;
+}
+
+[data-card-theme="ancientchina"] [data-slot="button"] {
+  font-family: 'Ma Shan Zheng', cursive;
+  letter-spacing: 0.15em;
+  border-radius: 2px;
+}
+
+[data-card-theme="ancientchina"] [data-slot="card-footer"] {
+  background: transparent;
+  border-top: none;
+}
+
+.ct-scroll-rod {
+  height: 18px;
+  background: radial-gradient(ellipse at center, #b3823f 0%, #7a5626 70%, #4a3316 100%);
+  border-radius: 4px;
+  position: relative;
+  margin: 10px 11px;
+}
+
+.ct-scroll-finial {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #e9d3a0, #7a5626 75%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ct-scroll-finial-left {
+  left: -11px;
+}
+
+.ct-scroll-finial-right {
+  right: -11px;
+}
+
+/*
+  ---------- Page background ----------
+  The card itself gets its colors from the token overrides above, scoped to
+  the .ct-card wrapper in flashcard.tsx. But the page area *behind* the card
+  (rendered in App.tsx, an ancestor of the card, not a descendant) needs its
+  own rule per theme — token inheritance only flows downward, so it can't
+  pick up .ct-card's palette on its own. Kept as plain `background`/`color`
+  here rather than reusing --background, since that token is also what the
+  card's own outline "Next" button resolves against and the two don't want
+  the same value (page backdrop vs. a button that should blend into the card).
+*/
+
+[data-card-theme="postcard"].ct-page {
+  background-color: #eae3d3;
+  background-image: radial-gradient(#00000010 1px, transparent 1px);
+  background-size: 18px 18px;
+  color: #3d3226;
+}
+
+[data-card-theme="arcade"].ct-page {
+  background: radial-gradient(circle at 50% 0%, #241436 0%, #0c0716 70%);
+  color: #f5eaff;
+}
+
+[data-card-theme="neumorphic"].ct-page {
+  background: #e8ebf0;
+  color: #4b5563;
+}
+
+[data-card-theme="gameboy"].ct-page {
+  background: #7a7a94;
+  color: #23233a;
+}
+
+[data-card-theme="chalkboard"].ct-page {
+  background: #5a4632;
+  color: #eef0ea;
+}
+
+[data-card-theme="wildwest"].ct-page {
+  background: #3a2a1c;
+  color: #e8d5ab;
+}
+
+[data-card-theme="ancientchina"].ct-page {
+  background: radial-gradient(circle at 30% 20%, #4a2018, transparent 60%), #3d1815;
+  color: #f3e3c0;
+}

@@ -8,6 +8,7 @@ export const KEYS = {
 export const STORAGE_KEYS = {
   SETTINGS: 'annyeong-settings',
   THEME: 'theme',
+  CARD_THEME: 'annyeong-card-theme',
 } as const
 
 // Default settings values

@@ -19,8 +19,11 @@ import {
 } from '@/components/ui/accordion'
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
+import { useCardTheme } from '@/components/card-theme-provider'
+import { CARD_THEMES } from '@/lib/card-themes'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
 import { exportUserData, importUserData, optimizeFsrs, resetFsrsParameters, type ImportResponse } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 interface InviteCode {
   code: string
@@ -37,6 +40,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
   const { token, isAdmin } = useAuth()
+  const { cardThemeId, setCardThemeId } = useCardTheme()
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
   const [isLoadingInvites, setIsLoadingInvites] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -329,6 +333,40 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
                 </>
               )}
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* Themes */}
+          <AccordionItem value="themes">
+            <AccordionTrigger>Themes</AccordionTrigger>
+            <AccordionContent>
+              <div className="grid grid-cols-2 gap-2">
+                {CARD_THEMES.map((cardTheme) => (
+                  <button
+                    key={cardTheme.id}
+                    type="button"
+                    onClick={() => setCardThemeId(cardTheme.id)}
+                    className={cn(
+                      'flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent',
+                      cardThemeId === cardTheme.id
+                        ? 'border-primary ring-1 ring-primary'
+                        : 'border-border',
+                    )}
+                  >
+                    <span
+                      className="h-6 w-6 shrink-0 rounded-full border border-black/10"
+                      style={{
+                        background: cardTheme.swatch.bg,
+                        boxShadow: `inset 0 0 0 2px ${cardTheme.swatch.accent}`,
+                      }}
+                    />
+                    <span className="truncate">{cardTheme.name}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Changes how the review card looks. Saved to this browser only.
+              </p>
             </AccordionContent>
           </AccordionItem>
 
