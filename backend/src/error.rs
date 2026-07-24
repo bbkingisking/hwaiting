@@ -1,6 +1,6 @@
 use axum::{
-    extract::{FromRequest, Request},
-    http::StatusCode,
+    extract::{FromRequest, FromRequestParts, Path, Query, Request},
+    http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -100,6 +100,46 @@ where
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         match Json::<T>::from_request(req, state).await {
             Ok(Json(value)) => Ok(AppJson(value)),
+            Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
+        }
+    }
+}
+
+/// Drop-in replacement for `axum::Path` as a request extractor. Same
+/// conversion as `AppJson`, for URL path-segment parsing failures (e.g. a
+/// non-numeric `{card_id}`).
+pub struct AppPath<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for AppPath<T>
+where
+    T: DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match Path::<T>::from_request_parts(parts, state).await {
+            Ok(Path(value)) => Ok(AppPath(value)),
+            Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
+        }
+    }
+}
+
+/// Drop-in replacement for `axum::Query` as a request extractor. Same
+/// conversion as `AppJson`, for query-string parsing failures (e.g. a
+/// non-numeric `?exclude=`, or a missing required param).
+pub struct AppQuery<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for AppQuery<T>
+where
+    T: DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match Query::<T>::from_request_parts(parts, state).await {
+            Ok(Query(value)) => Ok(AppQuery(value)),
             Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
         }
     }

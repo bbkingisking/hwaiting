@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::{header, StatusCode},
     Json,
 };
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 
-use crate::error::{AppError, AppJson};
+use crate::error::{AppError, AppJson, AppPath};
 use crate::auth::AuthUser;
 
 #[derive(Deserialize)]
@@ -58,11 +58,6 @@ pub struct CustomCard {
 #[derive(Serialize)]
 pub struct ListCustomCardsResponse {
     pub cards: Vec<CustomCard>,
-}
-
-#[derive(Serialize)]
-pub struct DeleteCustomCardResponse {
-    pub success: bool,
 }
 
 // Create a new custom card
@@ -294,8 +289,8 @@ pub async fn list_custom_cards(
 pub async fn delete_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Path(card_id): Path<i64>,
-) -> Result<Json<DeleteCustomCardResponse>, AppError> {
+    AppPath(card_id): AppPath<i64>,
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     info!("Deleting custom card {} for user_id: {}", card_id, user_id);
 
@@ -322,14 +317,14 @@ pub async fn delete_custom_card(
 
     info!("Custom card deleted successfully");
 
-    Ok(Json(DeleteCustomCardResponse { success: true }))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // Get a single custom card by ID
 pub async fn get_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
 ) -> Result<Json<CustomCard>, AppError> {
     let user_id = auth.0;
     info!("Getting custom card {} for user_id: {}", card_id, user_id);
@@ -422,7 +417,7 @@ pub struct UpdateCustomCardResponse {
 pub async fn update_custom_card(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
     AppJson(payload): AppJson<UpdateCustomCardRequest>,
 ) -> Result<Json<UpdateCustomCardResponse>, AppError> {
     let user_id = auth.0;

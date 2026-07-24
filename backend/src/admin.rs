@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::State,
     http::StatusCode,
     Json,
 };
@@ -11,7 +11,7 @@ use tracing::{debug, info};
 
 
 use crate::auth::AdminUser;
-use crate::error::{AppError, AppJson};
+use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 /// Extract a nullable string field from JSON, distinguishing absent from null.
 /// Returns `Some(None)` for explicit null, `Some(Some(s))` for a string, `None` for absent.
@@ -120,22 +120,22 @@ pub async fn list_invites(
 pub async fn delete_invite(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
-    Path(code): Path<String>,
-) -> Result<Json<serde_json::Value>, AppError> {
+    AppPath(code): AppPath<String>,
+) -> Result<StatusCode, AppError> {
     info!("Deleting invite code: {}", code);
-    
+
     let result = sqlx::query("DELETE FROM invite_codes WHERE code = ?")
         .bind(&code)
         .execute(&pool)
         .await?;
-    
+
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    
+
     info!("Invite code deleted: {}", code);
-    
-    Ok(Json(serde_json::json!({ "success": true })))
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -172,7 +172,7 @@ pub struct SearchCardsResponse {
 pub async fn search_cards(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
-    Query(params): Query<SearchCardsQuery>,
+    AppQuery(params): AppQuery<SearchCardsQuery>,
 ) -> Result<Json<SearchCardsResponse>, AppError> {
     let q = params.q.trim();
     if q.is_empty() {
@@ -255,7 +255,7 @@ pub async fn search_cards(
 pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
-    Path(card_id): Path<i64>,
+    AppPath(card_id): AppPath<i64>,
     AppJson(payload): AppJson<Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     info!("Admin editing card {}", card_id);

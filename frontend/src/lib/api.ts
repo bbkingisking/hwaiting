@@ -99,6 +99,10 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     throw new ApiError(response.status, error.error || `HTTP ${response.status}`)
   }
 
+  if (response.status === 204) {
+    return { success: true }
+  }
+
   return response.json()
 }
 
@@ -186,7 +190,7 @@ export async function getUserProfile(): Promise<UserProfile> {
 }
 
 interface ImportStats {
-  card_states_imported: number
+  card_states_derived: number
   reviews_imported: number
   suspended_cards_imported: number
   custom_cards_imported: number
