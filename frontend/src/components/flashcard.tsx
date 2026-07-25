@@ -131,6 +131,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const submitButtonRef = useRef<HTMLButtonElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
   const { theme: cardTheme } = useCardTheme()
@@ -157,6 +158,9 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     setMenuOpen(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
+    // Keyboard stays open across cards on mobile (see below), so the check
+    // button can end up hidden behind it once the new card's content settles.
+    submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
   }, [card])
 
   useEffect(() => {
@@ -357,6 +361,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 onChange={(e) => {
                   if (!answered && !isAutoProgressing) setInput(e.target.value)
                 }}
+                onFocus={() => submitButtonRef.current?.scrollIntoView({ block: 'nearest' })}
                 style={{ width: `${Math.max(input.length, 2)}em` }}
                 className={cn(
                   'flex-none bg-transparent border-0 border-b-2 border-card-foreground/30',
@@ -395,7 +400,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
 
       <CardFooter className={cn("flex-col gap-3", isAutoProgressing && "invisible")}>
         {!answered && !isAutoProgressing ? (
-          <Button type="submit" onClick={handleSubmit} className="w-full">
+          <Button ref={submitButtonRef} type="submit" onClick={handleSubmit} className="w-full">
             {cardTheme.checkLabel}
           </Button>
         ) : (
