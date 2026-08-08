@@ -138,6 +138,10 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
+          <Field label="Card ID">
+            <Input value={card.card_id} readOnly className="text-muted-foreground font-mono" />
+          </Field>
+
           <Field label="Word (Korean)">
             <Input value={form.word} onChange={handleChange('word')} />
           </Field>
