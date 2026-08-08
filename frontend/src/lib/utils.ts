@@ -32,6 +32,16 @@ export function splitSentence(sentence: string, target: string): { before: strin
   }
 }
 
+// Build a link to a word's entry in KRDICT, the dictionary the starter cards
+// were derived from. `krdict_id` is KRDICT's own `ParaWordNo`, so the entry
+// resolves directly with no search step. Returns null for cards with no
+// KRDICT origin (user-created custom cards), so callers can skip the link.
+// The language segment (/eng/) is required - the path without one 404s.
+export function krdictUrl(krdictId: number | null | undefined): string | null {
+  if (krdictId == null) return null
+  return `https://krdict.korean.go.kr/eng/dicSearch/SearchView?ParaWordNo=${krdictId}`
+}
+
 // Format time until a due date in a human-readable format
 export function formatTimeUntil(isoTimestamp: string): string | null {
   // Zone-less SQLite datetimes ("YYYY-MM-DD HH:MM:SS") are UTC; without the

@@ -34,6 +34,9 @@ pub struct HanjaHint {
 #[derive(Serialize, ToSchema)]
 pub struct Card {
     pub card_id: i64,
+    /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
+    /// for user-created custom cards, which have no upstream dictionary entry.
+    pub krdict_id: Option<i64>,
     pub word: String,
     pub definition: Option<String>,
     pub pos: Option<String>,
@@ -379,7 +382,7 @@ pub async fn get_next_card(
     let query = format!(
         r#"
         SELECT
-            c.id, c.word, c.definition, c.hanja, c.hanja_eum,
+            c.id, c.krdict_id, c.word, c.definition, c.hanja, c.hanja_eum,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
@@ -461,6 +464,7 @@ pub async fn get_next_card(
     };
 
     let card_id: i64 = row.get("id");
+    let krdict_id: Option<i64> = row.get("krdict_id");
     let word: String = row.get("word");
     let definition: Option<String> = row.get("definition");
     let pos: Option<String> = row.get("pos");
@@ -565,6 +569,7 @@ pub async fn get_next_card(
         card: Some(NextCardResponse {
             card: Card {
                 card_id,
+                krdict_id,
                 word,
                 definition,
                 pos,

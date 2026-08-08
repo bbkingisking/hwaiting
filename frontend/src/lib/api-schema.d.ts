@@ -431,6 +431,12 @@ export interface components {
             grammar_pattern?: string | null;
             hanja?: string | null;
             hanja_eum?: string | null;
+            /**
+             * Format: int64
+             * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
+             *     for user-created custom cards, which have no upstream dictionary entry.
+             */
+            krdict_id?: number | null;
             origin_type?: string | null;
             pos?: string | null;
             sentence: string;
