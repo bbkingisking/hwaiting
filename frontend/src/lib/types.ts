@@ -44,6 +44,7 @@ export type Card = components['schemas']['NextCardResponse']
 export type EditableCard = Pick<
   Card,
   | 'card_id'
+  | 'krdict_id'
   | 'word'
   | 'definition'
   | 'pos'

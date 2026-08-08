@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Card, HanjaHint } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { cn, krdictUrl } from '@/lib/utils'
 import { KEYS } from '@/lib/constants'
 import { useSettings } from '@/components/settings-provider'
 import {
@@ -193,6 +193,8 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     after = ''
   }
 
+  const krdictLink = krdictUrl(card.krdict_id)
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (answered) return
@@ -300,6 +302,13 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
               {isAdmin && (
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   Edit card
+                </DropdownMenuItem>
+              )}
+              {krdictLink && (
+                <DropdownMenuItem
+                  render={<a href={krdictLink} target="_blank" rel="noreferrer" />}
+                >
+                  Look up in KRDICT
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={handleCopyJson}>

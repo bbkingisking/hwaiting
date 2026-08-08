@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { EditableCard } from '@/lib/types'
 import { editCard } from '@/lib/api'
+import { krdictUrl } from '@/lib/utils'
 import { useEnumLookups } from '@/components/enum-lookups-provider'
 import { EnumSelect } from '@/components/enum-select'
 import {
@@ -117,11 +118,23 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     }
   }
 
+  const krdictLink = krdictUrl(card.krdict_id)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit card</DialogTitle>
+          {krdictLink && (
+            <a
+              href={krdictLink}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+            >
+              Look up in KRDICT
+            </a>
+          )}
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">

@@ -219,7 +219,7 @@ pub async fn search_cards(
     let rows = sqlx::query(
         r#"
         SELECT
-            c.id, c.word, c.definition, c.hanja, c.hanja_eum,
+            c.id, c.krdict_id, c.word, c.definition, c.hanja, c.hanja_eum,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
@@ -258,6 +258,7 @@ pub async fn search_cards(
 
         cards.push(Card {
             card_id: row.get("id"),
+            krdict_id: row.get("krdict_id"),
             word: row.get("word"),
             definition: row.get("definition"),
             pos: row.get("pos"),
