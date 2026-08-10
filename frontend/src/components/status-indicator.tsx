@@ -67,6 +67,7 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
         </span>
       )}
       <span className={cn(percentage !== null && getPercentageColor(percentage, settings))}>
+        <span className="sr-only">Overall accuracy: </span>
         {percentage !== null ? `${percentage}%` : '—'}
       </span>
     </div>

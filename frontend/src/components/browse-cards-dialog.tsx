@@ -100,6 +100,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
             <Input
               value={query}
               onChange={e => setQuery(e.target.value)}
+              aria-label="Search cards by target"
               placeholder="Search by target…"
               autoFocus
             />

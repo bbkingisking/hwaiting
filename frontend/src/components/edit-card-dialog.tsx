@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import type { EditableCard } from '@/lib/types'
 import { editCard } from '@/lib/api'
 import { krdictUrl } from '@/lib/utils'
@@ -139,101 +139,116 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
 
         <div className="flex flex-col gap-3 py-1">
           <Field label="Card ID">
-            <Input value={card.card_id} readOnly className="text-muted-foreground font-mono" />
+            {id => <Input id={id} value={card.card_id} readOnly className="text-muted-foreground font-mono" />}
           </Field>
 
           <Field label="Word (Korean)">
-            <Input value={form.word} onChange={handleChange('word')} />
+            {id => <Input id={id} value={form.word} onChange={handleChange('word')} />}
           </Field>
 
           <Field label="Definition (Korean)">
-            <textarea
-              value={form.definition}
-              onChange={handleChange('definition')}
-              rows={2}
-              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-            />
+            {id => (
+              <textarea
+                id={id}
+                value={form.definition}
+                onChange={handleChange('definition')}
+                rows={2}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+              />
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Part of speech">
-              <EnumSelect options={pos} value={form.pos} onChange={handleChange('pos')} />
+              {id => <EnumSelect id={id} options={pos} value={form.pos} onChange={handleChange('pos')} />}
             </Field>
             <Field label="Grade">
-              <EnumSelect options={grade} value={form.grade} onChange={handleChange('grade')} />
+              {id => <EnumSelect id={id} options={grade} value={form.grade} onChange={handleChange('grade')} />}
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Hanja">
-              <Input value={form.hanja} onChange={handleChange('hanja')} />
+              {id => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
             </Field>
             <Field label="Hanja reading">
-              <Input value={form.hanja_eum} onChange={handleChange('hanja_eum')} />
+              {id => <Input id={id} value={form.hanja_eum} onChange={handleChange('hanja_eum')} />}
             </Field>
           </div>
 
           <Field label="Origin type">
-            <EnumSelect options={originType} value={form.origin_type} onChange={handleChange('origin_type')} />
+            {id => <EnumSelect id={id} options={originType} value={form.origin_type} onChange={handleChange('origin_type')} />}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Politeness level">
-              <EnumSelect options={speechLevel} value={form.speech_level} onChange={handleChange('speech_level')} />
+              {id => <EnumSelect id={id} options={speechLevel} value={form.speech_level} onChange={handleChange('speech_level')} />}
             </Field>
             <Field label="Tense">
-              <EnumSelect options={tense} value={form.tense} onChange={handleChange('tense')} />
+              {id => <EnumSelect id={id} options={tense} value={form.tense} onChange={handleChange('tense')} />}
             </Field>
           </div>
 
           <Field label="Grammar pattern">
-            <EnumSelect options={grammarPattern} value={form.grammar_pattern} onChange={handleChange('grammar_pattern')} />
+            {id => <EnumSelect id={id} options={grammarPattern} value={form.grammar_pattern} onChange={handleChange('grammar_pattern')} />}
           </Field>
 
           <div className="border-t pt-3 flex flex-col gap-3">
             <Field label="Translation word (English)">
-              <Input value={form.trans_word} onChange={handleChange('trans_word')} />
+              {id => <Input id={id} value={form.trans_word} onChange={handleChange('trans_word')} />}
             </Field>
 
             <Field label="Translation definition (English)">
-              <textarea
-                value={form.trans_dfn}
-                onChange={handleChange('trans_dfn')}
-                rows={2}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-              />
+              {id => (
+                <textarea
+                  id={id}
+                  value={form.trans_dfn}
+                  onChange={handleChange('trans_dfn')}
+                  rows={2}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                />
+              )}
             </Field>
           </div>
 
           <div className="border-t pt-3 flex flex-col gap-3">
             <Field label="Sentence (Korean)">
-              <textarea
-                value={form.sentence}
-                onChange={handleChange('sentence')}
-                rows={2}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-              />
+              {id => (
+                <textarea
+                  id={id}
+                  value={form.sentence}
+                  onChange={handleChange('sentence')}
+                  rows={2}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                />
+              )}
             </Field>
 
             <Field label="Target (conjugated form in sentence)">
-              <Input value={form.target} onChange={handleChange('target')} />
+              {id => <Input id={id} value={form.target} onChange={handleChange('target')} />}
             </Field>
 
             <Field label="Accepted alternatives (comma-separated)">
-              <Input
-                value={form.alternatives}
-                onChange={handleChange('alternatives')}
-                placeholder="e.g. alt1, alt2"
-              />
+              {id => (
+                <Input
+                  id={id}
+                  value={form.alternatives}
+                  onChange={handleChange('alternatives')}
+                  placeholder="e.g. alt1, alt2"
+                />
+              )}
             </Field>
 
             <Field label="Sentence translation (English)">
-              <textarea
-                value={form.sentence_translation}
-                onChange={handleChange('sentence_translation')}
-                rows={2}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-              />
+              {id => (
+                <textarea
+                  id={id}
+                  value={form.sentence_translation}
+                  onChange={handleChange('sentence_translation')}
+                  rows={2}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                />
+              )}
             </Field>
           </div>
 
@@ -252,11 +267,15 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// `children` is a render prop so every control gets an id the <label> can point
+// at — a bare <label> with no htmlFor leaves the control nameless to assistive
+// tech and to anything driving the page off the accessibility tree.
+function Field({ label, children }: { label: string; children: (id: string) => React.ReactNode }) {
+  const id = useId()
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      {children}
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      {children(id)}
     </div>
   )
 }
