@@ -257,7 +257,11 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   }
 
   return (
-    <div data-card-theme={cardTheme.id} className="ct-card relative w-full max-w-xl">
+    <article
+      data-card-theme={cardTheme.id}
+      aria-label={`Review card: ${card.trans_word}`}
+      className="ct-card relative w-full max-w-xl"
+    >
       <CardThemeDecorationBefore themeId={cardTheme.id} />
       <UICard className="w-full">
       <CardHeader>
@@ -336,7 +340,8 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         </div>
 
         <form onSubmit={handleSubmit}>
-          <p className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
+          {/* The document is lang="en"; this subtree and the answer field are Korean. */}
+          <p lang="ko" className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
             {before}
             <span className="inline-flex flex-col items-center relative pt-5">
               {card.hanja && (
@@ -376,6 +381,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
               <input
                 ref={inputRef}
                 type="text"
+                lang="ko"
                 aria-label="Answer"
                 value={input}
                 onChange={(e) => {
@@ -445,6 +451,6 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
       </CardFooter>
       </UICard>
       <CardThemeDecorationAfter themeId={cardTheme.id} />
-    </div>
+    </article>
   )
 }

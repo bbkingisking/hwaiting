@@ -53,7 +53,7 @@ export function AppHeader() {
 
   return (
     <>
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+      <header className="fixed top-4 right-4 z-50 flex items-center gap-3">
         <DropdownMenu>
           <DropdownMenuTrigger aria-label={`User menu for ${username}`} className="px-3 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <span className="text-sm font-medium">{username}</span>
@@ -103,7 +103,7 @@ export function AppHeader() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </header>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />

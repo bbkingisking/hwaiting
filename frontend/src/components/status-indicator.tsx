@@ -46,7 +46,10 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
   }
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 text-sm text-muted-foreground">
+    <footer
+      aria-label="Review stats"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 text-sm text-muted-foreground"
+    >
       {dueCount !== null && (
         <span>
           Due: {dueCount}
@@ -70,6 +73,6 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
         <span className="sr-only">Overall accuracy: </span>
         {percentage !== null ? `${percentage}%` : '—'}
       </span>
-    </div>
+    </footer>
   )
 }
