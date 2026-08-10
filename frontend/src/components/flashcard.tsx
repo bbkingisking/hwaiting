@@ -291,6 +291,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label="Card options"
                   className="h-8 w-8 text-muted-foreground hover:text-card-foreground"
                   disabled={suppressing}
                 >
@@ -366,6 +367,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
               <input
                 ref={inputRef}
                 type="text"
+                aria-label="Answer"
                 value={input}
                 onChange={(e) => {
                   if (!answered && !isAutoProgressing) setInput(e.target.value)
@@ -414,7 +416,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
           </Button>
         ) : (
           <>
-            <p className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
+            <p role="status" className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
               {correct ? "Correct!" : `The answer was: ${card.target}`}
             </p>
             <Button onClick={handleAdvance} variant="outline" className="w-full">

@@ -192,6 +192,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                       <Button
                         size="icon"
                         variant="ghost"
+                        aria-label={`Delete custom card ${card.word}`}
                         onClick={() => handleDeleteCard(card.id)}
                         className="text-destructive hover:text-destructive"
                       >

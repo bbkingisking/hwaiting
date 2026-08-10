@@ -340,11 +340,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <AccordionItem value="themes">
             <AccordionTrigger>Themes</AccordionTrigger>
             <AccordionContent>
-              <div className="grid grid-cols-2 gap-2">
+              <div role="group" aria-label="Card theme" className="grid grid-cols-2 gap-2">
                 {CARD_THEMES.map((cardTheme) => (
                   <button
                     key={cardTheme.id}
                     type="button"
+                    aria-pressed={cardThemeId === cardTheme.id}
                     onClick={() => setCardThemeId(cardTheme.id)}
                     className={cn(
                       'flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent',
@@ -587,6 +588,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           <Button
                             size="icon"
                             variant="ghost"
+                            aria-label={`Copy invite code ${invite.code}`}
                             onClick={() => copyToClipboard(invite.code)}
                           >
                             <Copy className="h-4 w-4" />
@@ -594,6 +596,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           <Button
                             size="icon"
                             variant="ghost"
+                            aria-label={`Delete invite code ${invite.code}`}
                             onClick={() => deleteInvite(invite.code)}
                           >
                             <Trash2 className="h-4 w-4" />

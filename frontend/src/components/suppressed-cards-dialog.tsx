@@ -113,6 +113,7 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
                   <Button
                     size="icon"
                     variant="ghost"
+                    aria-label={`Restore ${card.word} to the review queue`}
                     onClick={() => handleUnsuppressCard(card.card_id)}
                     className="text-destructive hover:text-destructive"
                   >

@@ -55,7 +55,7 @@ export function AppHeader() {
     <>
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
         <DropdownMenu>
-          <DropdownMenuTrigger className="px-3 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <DropdownMenuTrigger aria-label={`User menu for ${username}`} className="px-3 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <span className="text-sm font-medium">{username}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
