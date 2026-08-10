@@ -47,9 +47,11 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
       return
     }
 
-    setIsLoading(true)
+    // Set inside the timer, not before it: flagging "loading" during the
+    // debounce window advertises a request that hasn't been made yet.
     const controller = new AbortController()
     const timer = setTimeout(() => {
+      setIsLoading(true)
       searchCardsByTarget(trimmed, controller.signal)
         .then(response => {
           setCards(response.cards)
@@ -112,8 +114,9 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
             )}
 
             {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div role="status" className="flex items-center justify-center py-8">
+                <Loader2 aria-hidden className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="sr-only">Searching cards…</span>
               </div>
             ) : cards.length === 0 ? (
               hasSearched && (

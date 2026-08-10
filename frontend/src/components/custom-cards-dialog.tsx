@@ -152,8 +152,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
               </Button>
 
               {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <div role="status" className="flex items-center justify-center py-8">
+                  <Loader2 aria-hidden className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="sr-only">Loading custom cards…</span>
                 </div>
               ) : cards.length === 0 ? (
                 <div className="text-sm text-muted-foreground text-center py-8">

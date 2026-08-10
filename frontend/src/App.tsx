@@ -31,6 +31,11 @@ function AppContent() {
   // moments earlier in the same batch.
   const [error, setError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // A card-to-card transition deliberately shows no loading state — the
+  // outgoing card stays put so there's no flash. That leaves the DOM
+  // identical while the review posts, so the transition is published as
+  // aria-busy instead of as a visible change.
+  const [reviewing, setReviewing] = useState(false)
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
@@ -171,6 +176,7 @@ function AppContent() {
 
     setStatsKey((prev) => prev + 1)
     setSubmitError(null)
+    setReviewing(true)
 
     try {
       await submitReview(card.card_id, rating)
@@ -183,7 +189,11 @@ function AppContent() {
       console.error('Error submitting review:', err)
     }
 
-    await advanceToNextCard()
+    try {
+      await advanceToNextCard()
+    } finally {
+      setReviewing(false)
+    }
   }
 
   const handleSuppress = async () => {
@@ -202,19 +212,23 @@ function AppContent() {
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
       <AppHeader />
-      <main data-card-theme={cardThemeId} className="ct-page min-h-screen flex flex-col items-center justify-center p-6">
+      <main
+        data-card-theme={cardThemeId}
+        aria-busy={loading || reviewing}
+        className="ct-page min-h-screen flex flex-col items-center justify-center p-6"
+      >
         <h1 className="sr-only">Hwaiting — Korean review</h1>
         {!isAuthenticated ? (
-          <div className="text-center text-muted-foreground">
+          <div role="status" className="text-center text-muted-foreground">
             <p>Please log in to continue</p>
           </div>
         ) : loading ? (
-          <div className="text-center text-muted-foreground">
+          <div role="status" className="text-center text-muted-foreground">
             <p>Loading card...</p>
           </div>
         ) : noCards && !card ? (
-          <div className="text-center text-muted-foreground">
-            <div className="w-64 mx-auto mb-4">
+          <div role="status" className="text-center text-muted-foreground">
+            <div aria-hidden className="w-64 mx-auto mb-4">
               <DotLottieReact
                 src="/Taegeukgi.json"
                 loop
@@ -229,7 +243,7 @@ function AppContent() {
           </div>
         ) : error && !card ? (
           <div className="text-center">
-            <p className="text-destructive mb-4">{error}</p>
+            <p role="alert" className="text-destructive mb-4">{error}</p>
             <button
               onClick={() => loadCardCold()}
               className="text-sm text-primary hover:underline"
@@ -240,8 +254,15 @@ function AppContent() {
         ) : card ? (
           <>
             {(error || submitError) && (
-              <p className="text-destructive text-sm mb-4">{error ?? submitError}</p>
+              <p role="alert" className="text-destructive text-sm mb-4">{error ?? submitError}</p>
             )}
+            {/*
+              Deliberately NOT keyed by card_id. Keying would remount the
+              subtree on every card, which unmounts the answer input — and
+              that field is kept mounted on purpose so the mobile keyboard
+              survives the transition (see flashcard.tsx). The card's
+              identity is published as data-card-id instead.
+            */}
             <Flashcard
               card={card}
               onReview={handleReview}
@@ -250,7 +271,7 @@ function AppContent() {
             />
           </>
         ) : (
-          <div className="text-center text-muted-foreground">
+          <div role="status" className="text-center text-muted-foreground">
             <p>No cards available</p>
           </div>
         )}
