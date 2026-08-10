@@ -259,6 +259,11 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   return (
     <article
       data-card-theme={cardTheme.id}
+      // The one stable token that changes when the card does. Nothing else
+      // in the markup reliably differs between two consecutive cards, and
+      // this subtree is not remounted (see App.tsx).
+      data-card-id={card.card_id}
+      data-answered={answered || isAutoProgressing}
       aria-label={`Review card: ${card.trans_word}`}
       className="ct-card relative w-full max-w-xl"
     >
