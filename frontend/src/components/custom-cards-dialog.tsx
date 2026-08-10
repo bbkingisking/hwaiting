@@ -44,6 +44,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [isLoading, setIsLoading] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A native confirm() blocks the page for any automation driving it, so
+  // deletion is confirmed with a real dialog instead.
+  const [pendingDelete, setPendingDelete] = useState<CustomCard | null>(null)
   const { pos: posLookup, originType: originTypeLookup, speechLevel: speechLevelLookup, tense: tenseLookup } = useEnumLookups()
 
   const resetForm = () => {
@@ -104,11 +107,11 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
     }
   }
 
-  const handleDeleteCard = async (cardId: number) => {
-    if (!confirm('Are you sure you want to delete this card?')) {
-      return
-    }
-    
+  const handleDeleteCard = async () => {
+    if (!pendingDelete) return
+    const cardId = pendingDelete.id
+    setPendingDelete(null)
+
     try {
       await deleteCustomCard(cardId)
       await loadCards()
@@ -193,7 +196,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                         size="icon"
                         variant="ghost"
                         aria-label={`Delete custom card ${card.word}`}
-                        onClick={() => handleDeleteCard(card.id)}
+                        onClick={() => setPendingDelete(card)}
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -371,6 +374,27 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
           )}
         </div>
       </DialogContent>
+
+      <Dialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <DialogContent className="sm:max-w-96">
+          <DialogHeader>
+            <DialogTitle>Delete this card?</DialogTitle>
+            <DialogDescription>
+              {pendingDelete
+                ? `"${pendingDelete.word}" will be removed permanently. This cannot be undone.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteCard}>
+              Delete card
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

@@ -22,7 +22,7 @@ import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/component
 
 interface FlashcardProps {
   card: Card
-  onReview: (rating: number) => void
+  onReview: (rating: number) => void | Promise<void>
   onSuppress?: () => void
   onCardUpdated?: (updates: Partial<Card>) => void
 }
@@ -130,6 +130,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [advancing, setAdvancing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const submitButtonRef = useRef<HTMLButtonElement>(null)
   const { settings } = useSettings()
@@ -140,13 +141,20 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
 
-  const handleAdvance = useCallback(() => {
-    if (answered) {
+  // `advancing` guards against a second submission for the same card. Nothing
+  // visible changes while the review is in flight (the outgoing card stays put
+  // by design), so without this a click that looks like it did nothing invites
+  // a retry that posts the review twice.
+  const handleAdvance = useCallback(async () => {
+    if (!answered || advancing) return
+    setAdvancing(true)
+    try {
       // Submit review: 1 = Again (wrong), 3 = Good (correct)
-      const rating = correct ? 3 : 1
-      onReview(rating)
+      await onReview(correct ? 3 : 1)
+    } finally {
+      setAdvancing(false)
     }
-  }, [answered, correct, onReview])
+  }, [answered, advancing, correct, onReview])
 
   useEffect(() => {
     setInput('')
@@ -156,6 +164,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     setIsAutoProgressing(false)
     setEditOpen(false)
     setMenuOpen(false)
+    setAdvancing(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
     // Keyboard stays open across cards on mobile (see below), so the check
@@ -409,7 +418,16 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         />
       )}
 
-      <CardFooter className={cn("flex-col gap-3", isAutoProgressing && "invisible")}>
+      {/*
+        During auto-progress the footer keeps its box so the card doesn't
+        collapse, but `inert` takes it out of the accessibility tree and off
+        the hit-testing path — otherwise it advertises a "Next" button that
+        cannot be clicked.
+      */}
+      <CardFooter
+        className={cn("flex-col gap-3", isAutoProgressing && "invisible")}
+        inert={isAutoProgressing}
+      >
         {!answered && !isAutoProgressing ? (
           <Button ref={submitButtonRef} type="submit" onClick={handleSubmit} className="w-full">
             {cardTheme.checkLabel}
@@ -419,8 +437,8 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
             <p role="status" className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
               {correct ? "Correct!" : `The answer was: ${card.target}`}
             </p>
-            <Button onClick={handleAdvance} variant="outline" className="w-full">
-              Next
+            <Button onClick={handleAdvance} disabled={advancing} variant="outline" className="w-full">
+              {advancing ? 'Loading next card…' : 'Next'}
             </Button>
           </>
         )}

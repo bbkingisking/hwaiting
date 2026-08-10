@@ -10,11 +10,15 @@ function Slider({
   max = 100,
   ...props
 }: SliderPrimitive.Root.Props) {
-  const _values = Array.isArray(value)
-    ? value
-    : Array.isArray(defaultValue)
-      ? defaultValue
-      : [min, max]
+  // One thumb per value. Every call site here passes a scalar, so the
+  // array branches are the range case; falling back to [min, max] would
+  // render two thumbs for a single-value slider.
+  const _values =
+    Array.isArray(value) ? value
+    : Array.isArray(defaultValue) ? defaultValue
+    : typeof value === 'number' ? [value]
+    : typeof defaultValue === 'number' ? [defaultValue]
+    : [min]
 
   return (
     <SliderPrimitive.Root
