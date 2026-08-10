@@ -8,6 +8,8 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   ...props
 }: SliderPrimitive.Root.Props) {
   // One thumb per value. Every call site here passes a scalar, so the
@@ -41,10 +43,17 @@ function Slider({
             className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
           />
         </SliderPrimitive.Track>
+        {/*
+          The name has to land on the Thumb: Root renders a <div role="group">,
+          and a <label for> pointing at a div is inert. The real control is the
+          range input inside the thumb.
+        */}
         {Array.from({ length: _values.length }, (_, index) => (
           <SliderPrimitive.Thumb
             data-slot="slider-thumb"
             key={index}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
           />
         ))}
