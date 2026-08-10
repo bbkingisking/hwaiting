@@ -78,6 +78,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 <Input
                   id="login-who"
                   type="text"
+                  aria-label="Username (who?)"
+                  aria-invalid={loginError !== ''}
                   value={loginWho}
                   onChange={(e) => setLoginWho(e.target.value)}
                   placeholder="username"
@@ -90,6 +92,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 <Input
                   id="login-really"
                   type="password"
+                  aria-label="Password (really?)"
+                  aria-invalid={loginError !== ''}
                   value={loginReally}
                   onChange={(e) => setLoginReally(e.target.value)}
                   placeholder="password"
@@ -98,7 +102,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 />
               </div>
               {loginError && (
-                <p className="text-sm text-destructive">{loginError}</p>
+                <p role="alert" className="text-sm text-destructive">{loginError}</p>
               )}
               <Button type="submit" className="w-full" disabled={isLoginLoading || !loginWho || !loginReally}>
                 {isLoginLoading ? 'Authenticating...' : 'Enter'}
@@ -112,6 +116,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 <Input
                   id="signup-who"
                   type="text"
+                  aria-label="Username (who?)"
+                  aria-invalid={signupError !== ''}
                   value={signupWho}
                   onChange={(e) => setSignupWho(e.target.value)}
                   placeholder="username"
@@ -124,6 +130,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 <Input
                   id="signup-really"
                   type="password"
+                  aria-label="Password (really?)"
+                  aria-invalid={signupError !== ''}
                   value={signupReally}
                   onChange={(e) => setSignupReally(e.target.value)}
                   placeholder="password"
@@ -136,6 +144,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 <Input
                   id="invite-code"
                   type="text"
+                  aria-label="Invite code"
+                  aria-invalid={signupError !== ''}
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   placeholder="your invite code"
@@ -144,7 +154,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                 />
               </div>
               {signupError && (
-                <p className="text-sm text-destructive">{signupError}</p>
+                <p role="alert" className="text-sm text-destructive">{signupError}</p>
               )}
               <Button type="submit" className="w-full" disabled={isSignupLoading || !signupWho || !signupReally || !inviteCode}>
                 {isSignupLoading ? 'Creating account...' : 'Sign Up'}

@@ -70,15 +70,25 @@ function HanjaHintText({
     )
   }
 
+  const visible = `${hanja}${showEum && hanjaEum ? ` (${hanjaEum})` : ''}`
+  // base-ui tooltips emit no role and no aria-describedby by design, and the
+  // content is unmounted until hover — so the gloss exists nowhere in the
+  // accessibility tree unless the trigger carries it as its own name.
+  const glossed = hints
+    .map(h => `${h.hanja}${showTarget && h.trans_word ? ` (${h.trans_word})` : ''}`)
+    .join(', ')
+
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
         delay={300}
         closeOnClick
+        tabIndex={0}
+        aria-label={`${visible} — hanja: ${glossed}`}
         className="cursor-help border-b border-dotted border-current"
         render={<span />}
       >
-        {hanja}{showEum && hanjaEum && ` (${hanjaEum})`}
+        {visible}
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={6}>
         <div className="flex flex-col gap-1">
@@ -104,18 +114,22 @@ function GrammarPatternPill({
 }) {
   const [open, setOpen] = useState(false)
 
+  const explanation = `${tooltip}${showEndings && endings ? ` (${endings})` : ''}`
+
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
         delay={300}
         closeOnClick
+        tabIndex={0}
+        aria-label={`Grammar pattern: ${label} — ${explanation}`}
         render={<span data-slot="badge" />}
         className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground cursor-help"
       >
         {label}
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={6}>
-        {tooltip}{showEndings && endings && ` (${endings})`}
+        {explanation}
       </TooltipContent>
     </Tooltip>
   )
@@ -279,18 +293,26 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
           )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-1.5 flex-1">
+          {/*
+            Visually these badges are distinguished by position and context;
+            as bare text they'd be three unlabelled values in a row, so each
+            names the dimension it reports.
+          */}
           {card.pos && posLookup[card.pos] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Part of speech: </span>
               {posLookup[card.pos].label}
             </span>
           )}
           {card.speech_level && speechLevelLookup[card.speech_level] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Speech level: </span>
               {speechLevelLookup[card.speech_level].label}
             </span>
           )}
           {card.tense && tenseLookup[card.tense] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Tense: </span>
               {tenseLookup[card.tense].label}
             </span>
           )}
@@ -367,9 +389,15 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 correct ? (
                   <span className="text-green-600">{submittedAnswer}</span>
                 ) : (
+                  // Per-character correctness is otherwise carried only by the
+                  // text colour; data-correct states it outright.
                   <span className="inline-flex flex-wrap items-baseline gap-0">
                     {submittedAnswer.split('').map((char, i) => (
-                      <span key={i} className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}>
+                      <span
+                        key={i}
+                        data-correct={char === card.target[i]}
+                        className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}
+                      >
                         {char}
                       </span>
                     ))}
@@ -413,9 +441,13 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         </form>
 
         <p className="text-sm text-muted-foreground text-center mt-2" title={card.trans_dfn ?? undefined}>
+          <span className="sr-only">Word meaning: </span>
           {card.trans_word}
+          {/* Otherwise reachable only as a title attribute, i.e. only on hover. */}
+          {card.trans_dfn && <span className="sr-only"> — {card.trans_dfn}</span>}
         </p>
         <p className="text-xs text-muted-foreground/70 text-center italic">
+          <span className="sr-only">Sentence translation: </span>
           {card.sentence_translation}
         </p>
       </CardHeader>
@@ -446,7 +478,9 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         ) : (
           <>
             <p role="status" className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
-              {correct ? "Correct!" : `The answer was: ${card.target}`}
+              {correct
+                ? `Correct! The answer was ${card.target}.`
+                : `Incorrect. You typed ${submittedAnswer || '(nothing)'}; the answer was ${card.target}.`}
             </p>
             <Button onClick={handleAdvance} disabled={advancing} variant="outline" className="w-full">
               {advancing ? 'Loading next card…' : 'Next'}

@@ -256,13 +256,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               {settings.autoProgressOnCorrect && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="auto-progress-delay">Auto-progress delay</Label>
+                    <Label id="auto-progress-delay-label">Auto-progress delay</Label>
                     <span className="text-sm text-muted-foreground">
                       {settings.autoProgressDelay === 0 ? 'Instant' : `${(settings.autoProgressDelay / 1000).toFixed(1)}s`}
                     </span>
                   </div>
                   <Slider
-                    id="auto-progress-delay"
+                    aria-labelledby="auto-progress-delay-label"
                     min={AUTO_PROGRESS_DELAY_CONSTRAINTS.MIN}
                     max={AUTO_PROGRESS_DELAY_CONSTRAINTS.MAX}
                     step={AUTO_PROGRESS_DELAY_CONSTRAINTS.STEP}
@@ -296,11 +296,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <>
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="red-threshold">Red threshold (below)</Label>
+                      <Label id="red-threshold-label">Red threshold (below)</Label>
                       <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
                     </div>
                     <Slider
-                      id="red-threshold"
+                      aria-labelledby="red-threshold-label"
                       min={THRESHOLD_CONSTRAINTS.MIN}
                       max={THRESHOLD_CONSTRAINTS.MAX}
                       step={THRESHOLD_CONSTRAINTS.STEP}
@@ -315,11 +315,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="yellow-threshold">Yellow threshold (below)</Label>
+                      <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
                       <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
                     </div>
                     <Slider
-                      id="yellow-threshold"
+                      aria-labelledby="yellow-threshold-label"
                       min={THRESHOLD_CONSTRAINTS.MIN}
                       max={THRESHOLD_CONSTRAINTS.MAX}
                       step={THRESHOLD_CONSTRAINTS.STEP}
@@ -403,13 +403,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               {settings.dailyNewCardLimit > 0 && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="daily-new-card-limit">Daily new card limit</Label>
+                    <Label id="daily-new-card-limit-label">Daily new card limit</Label>
                     <span className="text-sm text-muted-foreground">
                       {settings.dailyNewCardLimit}
                     </span>
                   </div>
                   <Slider
-                    id="daily-new-card-limit"
+                    aria-labelledby="daily-new-card-limit-label"
                     min={1}
                     max={100}
                     step={1}
@@ -428,13 +428,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="day-boundary">Day ends at</Label>
+                  <Label id="day-boundary-label">Day ends at</Label>
                   <span className="text-sm text-muted-foreground">
                     {settings.dayBoundaryHour.toString().padStart(2, '0')}:00
                   </span>
                 </div>
                 <Slider
-                  id="day-boundary"
+                  aria-labelledby="day-boundary-label"
                   min={0}
                   max={23}
                   step={1}
@@ -448,13 +448,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="desired-retention">Desired retention</Label>
+                  <Label id="desired-retention-label">Desired retention</Label>
                   <span className="text-sm text-muted-foreground">
                     {Math.round(settings.desiredRetention * 100)}%
                   </span>
                 </div>
                 <Slider
-                  id="desired-retention"
+                  aria-labelledby="desired-retention-label"
                   min={DESIRED_RETENTION_CONSTRAINTS.MIN * 100}
                   max={DESIRED_RETENTION_CONSTRAINTS.MAX * 100}
                   step={DESIRED_RETENTION_CONSTRAINTS.STEP * 100}
