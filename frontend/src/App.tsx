@@ -202,7 +202,8 @@ function AppContent() {
     <>
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
       <AppHeader />
-      <div data-card-theme={cardThemeId} className="ct-page min-h-screen flex flex-col items-center justify-center p-6">
+      <main data-card-theme={cardThemeId} className="ct-page min-h-screen flex flex-col items-center justify-center p-6">
+        <h1 className="sr-only">Hwaiting — Korean review</h1>
         {!isAuthenticated ? (
           <div className="text-center text-muted-foreground">
             <p>Please log in to continue</p>
@@ -253,7 +254,7 @@ function AppContent() {
             <p>No cards available</p>
           </div>
         )}
-      </div>
+      </main>
       {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
     </>
   )
