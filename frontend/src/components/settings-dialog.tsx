@@ -306,7 +306,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       step={THRESHOLD_CONSTRAINTS.STEP}
                       value={settings.redThreshold}
                       onValueChange={(value) => updateSettings({ redThreshold: value as number })}
-                      className="**:[[role=slider]]:bg-destructive"
+                      className="**:[[data-slot=slider-thumb]]:bg-destructive"
                     />
                     <p className="text-xs text-muted-foreground">
                       Cards below this percentage will be red
@@ -325,7 +325,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       step={THRESHOLD_CONSTRAINTS.STEP}
                       value={settings.yellowThreshold}
                       onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
-                      className="**:[[role=slider]]:bg-yellow-600"
+                      className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
                     />
                     <p className="text-xs text-muted-foreground">
                       Cards below this percentage will be yellow

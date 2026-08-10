@@ -25,7 +25,12 @@ type PrefetchSlot = {
 function AppContent() {
   const [card, setCard] = useState<Card | null>(null)
   const [loading, setLoading] = useState(false)
+  // Fetch failures and review-submission failures are different concerns with
+  // different lifetimes: advanceToNextCard clears the fetch error as it starts
+  // a new fetch, which would otherwise destroy a submission error raised
+  // moments earlier in the same batch.
   const [error, setError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
@@ -165,14 +170,15 @@ function AppContent() {
     if (!card) return
 
     setStatsKey((prev) => prev + 1)
+    setSubmitError(null)
 
     try {
       await submitReview(card.card_id, rating)
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(`Failed to submit review: ${err.message}`)
+        setSubmitError(`Failed to submit review: ${err.message}`)
       } else {
-        setError('Failed to submit review')
+        setSubmitError('Failed to submit review')
       }
       console.error('Error submitting review:', err)
     }
@@ -232,8 +238,8 @@ function AppContent() {
           </div>
         ) : card ? (
           <>
-            {error && (
-              <p className="text-destructive text-sm mb-4">{error}</p>
+            {(error || submitError) && (
+              <p className="text-destructive text-sm mb-4">{error ?? submitError}</p>
             )}
             <Flashcard
               card={card}
