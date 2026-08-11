@@ -544,6 +544,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <AccordionItem value="admin">
               <AccordionTrigger>Admin stuff</AccordionTrigger>
               <AccordionContent className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="debug-status-bar" className="flex-1">
+                      Debug status bar
+                    </Label>
+                    <Switch
+                      id="debug-status-bar"
+                      checked={settings.debugStatusBar}
+                      onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Show the last answer-check round-trip time, bottom left. Saved to this browser only.
+                  </p>
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     onClick={generateInvites}

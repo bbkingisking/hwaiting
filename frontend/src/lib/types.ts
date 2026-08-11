@@ -14,6 +14,8 @@ export interface Settings {
   historyColoredDots: boolean
   historyThresholdLines: boolean
   hasFsrsParameters: boolean
+  // Device-local only - see DEFAULT_SETTINGS.DEBUG_STATUS_BAR.
+  debugStatusBar: boolean
 }
 
 // Word types

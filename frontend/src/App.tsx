@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
+import { DebugStatusBar } from '@/components/debug-status-bar'
 import { getNextCard, checkAnswer, ApiError } from '@/lib/api'
 import type { NextCardEnvelope, AdminCard } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
@@ -43,6 +44,7 @@ function AppContent() {
   // flight (Flashcard disables the Check button itself), and this publishes
   // that as aria-busy rather than as a visible loading state.
   const [checking, setChecking] = useState(false)
+  const [lastCheckMs, setLastCheckMs] = useState<number | null>(null)
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
@@ -199,9 +201,11 @@ function AppContent() {
     setChecking(true)
 
     try {
+      const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, answer)
+      setLastCheckMs(performance.now() - startedAt)
       return { correct, reveal }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -305,6 +309,7 @@ function AppContent() {
         )}
       </main>
       {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
+      {isAuthenticated && <DebugStatusBar lastCheckMs={lastCheckMs} />}
     </>
   )
 }
