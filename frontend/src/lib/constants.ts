@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   SETTINGS: 'annyeong-settings',
   THEME: 'theme',
   CARD_THEME: 'annyeong-card-theme',
+  DEBUG_STATUS_BAR: 'annyeong-debug-status-bar',
 } as const
 
 // Default settings values
@@ -25,6 +26,12 @@ export const DEFAULT_SETTINGS = {
   HISTORY_COLORIZED_AREA: false,
   HISTORY_COLORED_DOTS: false,
   HISTORY_THRESHOLD_LINES: false,
+  // Unlike the rest of Settings, this is never sent to the backend - it's a
+  // device-local debug preference, same as card theme (see
+  // card-theme-provider.tsx). Kept in settings-provider.tsx anyway so it
+  // shows up through the same useSettings()/updateSettings() surface
+  // everything else in the settings dialog already uses.
+  DEBUG_STATUS_BAR: false,
 } as const
 
 // Desired retention constraints
