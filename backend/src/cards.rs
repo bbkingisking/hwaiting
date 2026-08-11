@@ -90,6 +90,16 @@ pub struct CheckResponse {
     pub reveal: CardReveal,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct CommentRequest {
+    pub body: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CommentResponse {
+    pub id: i64,
+}
+
 /// The canonical full-card shape: a `cards` row joined with its English
 /// translation and primary example sentence. Shared verbatim by admin
 /// search (`admin::search_cards`) and edit (`admin::edit_card`) - previously
@@ -1122,6 +1132,57 @@ pub async fn get_stats(
         next_due_at,
         new_today_count,
     }))
+}
+
+// Record a content-review note against a card - e.g. "tense looks wrong",
+// "좀 should be an accepted alternative here". Purely a backlog for admin
+// triage; doesn't affect scheduling or what the review UI shows.
+#[utoipa::path(
+    post,
+    path = "/api/cards/{card_id}/comment",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    request_body = CommentRequest,
+    responses(
+        (status = 200, description = "Comment recorded", body = CommentResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
+pub async fn comment_on_card(
+    State(pool): State<SqlitePool>,
+    AppPath(card_id): AppPath<i64>,
+    auth: crate::auth::AuthUser,
+    AppJson(payload): AppJson<CommentRequest>,
+) -> Result<Json<CommentResponse>, AppError> {
+    let user_id = auth.0;
+
+    // foreign_keys isn't turned on for this connection (see db.rs), so the
+    // FK in the migration is documentation, not enforcement - check by hand
+    // so a bad card_id 404s instead of silently inserting an orphaned row.
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM cards WHERE id = ?")
+        .bind(card_id)
+        .fetch_optional(&pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+
+    let id = sqlx::query("INSERT INTO card_comments (card_id, user_id, body) VALUES (?, ?, ?)")
+        .bind(card_id)
+        .bind(user_id)
+        .bind(&payload.body)
+        .execute(&pool)
+        .await?
+        .last_insert_rowid();
+
+    info!(
+        "Comment added for card_id: {}, user_id: {}, comment_id: {}",
+        card_id, user_id, id
+    );
+
+    Ok(Json(CommentResponse { id }))
 }
 
 #[utoipa::path(
