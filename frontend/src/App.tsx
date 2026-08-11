@@ -10,9 +10,9 @@ import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
-import { getNextCard, submitReview, ApiError } from '@/lib/api'
-import type { NextCardEnvelope } from '@/lib/api'
-import type { Card } from '@/lib/types'
+import { getNextCard, checkAnswer, ApiError } from '@/lib/api'
+import type { NextCardEnvelope, AdminCard } from '@/lib/api'
+import type { CardPrompt, CardReveal } from '@/lib/types'
 import { formatTimeUntil } from '@/lib/utils'
 
 // Tracks a background fetch for the next card.
@@ -22,20 +22,27 @@ type PrefetchSlot = {
   result: NextCardEnvelope | null
 }
 
+// The subset of AdminCard's editable fields that CardPrompt actually has -
+// see handleCardUpdated below.
+const CARD_PROMPT_FIELDS = new Set([
+  'pos', 'origin_type', 'grade', 'hanja', 'trans_word', 'trans_dfn',
+  'sentence_translation', 'speech_level', 'tense', 'grammar_pattern',
+])
+
 function AppContent() {
-  const [card, setCard] = useState<Card | null>(null)
+  const [card, setCard] = useState<CardPrompt | null>(null)
   const [loading, setLoading] = useState(false)
-  // Fetch failures and review-submission failures are different concerns with
+  // Fetch failures and answer-check failures are different concerns with
   // different lifetimes: advanceToNextCard clears the fetch error as it starts
   // a new fetch, which would otherwise destroy a submission error raised
   // moments earlier in the same batch.
   const [error, setError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  // A card-to-card transition deliberately shows no loading state — the
-  // outgoing card stays put so there's no flash. That leaves the DOM
-  // identical while the review posts, so the transition is published as
-  // aria-busy instead of as a visible change.
-  const [reviewing, setReviewing] = useState(false)
+  // Checking an answer is the one network call left in the review loop that
+  // can't be hidden behind a prefetch - the DOM stays put while it's in
+  // flight (Flashcard disables the Check button itself), and this publishes
+  // that as aria-busy rather than as a visible loading state.
+  const [checking, setChecking] = useState(false)
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
@@ -171,28 +178,41 @@ function AppContent() {
     }
   }
 
-  const handleReview = async (rating: number) => {
-    if (!card) return
+  // Grades `answer` against the current card server-side and records the
+  // FSRS review in the same call - see backend/src/cards.rs's check_answer.
+  // Resolves with the reveal rather than stashing it in `card` state here:
+  // `card` only ever holds the prompt (see its type above), and handing the
+  // reveal back as a plain return value lets Flashcard set it as its own
+  // local state in the same synchronous continuation as `answered`/
+  // `correct`, instead of racing a second, independently-timed update to
+  // this component's state against Flashcard's re-render (see CardReveal's
+  // doc comment in lib/types.ts for the bug that came from doing that).
+  // Throws on failure so Flashcard's handleSubmit can leave the card
+  // unanswered and let the user retry, rather than showing a reveal that
+  // never arrived.
+  const handleCheck = async (answer: string): Promise<{ correct: boolean; reveal: CardReveal }> => {
+    if (!card) throw new Error('No card to check')
+    const cardId = card.card_id
 
     setStatsKey((prev) => prev + 1)
     setSubmitError(null)
-    setReviewing(true)
+    setChecking(true)
 
     try {
-      await submitReview(card.card_id, rating)
+      // CheckResponse is CardReveal flattened with `correct` (see
+      // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
+      const { correct, ...reveal } = await checkAnswer(cardId, answer)
+      return { correct, reveal }
     } catch (err) {
       if (err instanceof ApiError) {
-        setSubmitError(`Failed to submit review: ${err.message}`)
+        setSubmitError(`Failed to check answer: ${err.message}`)
       } else {
-        setSubmitError('Failed to submit review')
+        setSubmitError('Failed to check answer')
       }
-      console.error('Error submitting review:', err)
-    }
-
-    try {
-      await advanceToNextCard()
+      console.error('Error checking answer:', err)
+      throw err
     } finally {
-      setReviewing(false)
+      setChecking(false)
     }
   }
 
@@ -201,10 +221,17 @@ function AppContent() {
     setStatsKey((prev) => prev + 1)
   }
 
-  const handleCardUpdated = (updates: Partial<Card>) => {
+  // EditCardDialog edits the backend's canonical full-card shape (see its
+  // doc comment in lib/api.ts), most of which - word, definition, sentence,
+  // target, alternatives, hanja_eum - isn't part of `card` (CardPrompt) at
+  // all; that half lives only in Flashcard's local `reveal` state, which
+  // patches itself directly from the same `updates` (see flashcard.tsx's own
+  // onSaved wrapper). Only the fields CardPrompt actually has are relevant
+  // here.
+  const handleCardUpdated = (updates: Partial<AdminCard>) => {
     const filtered = Object.fromEntries(
-      Object.entries(updates).filter(([, v]) => v !== undefined)
-    ) as Partial<Card>
+      Object.entries(updates).filter(([key, v]) => CARD_PROMPT_FIELDS.has(key) && v !== undefined)
+    ) as Partial<CardPrompt>
     setCard(prev => prev ? { ...prev, ...filtered } : prev)
   }
 
@@ -214,7 +241,7 @@ function AppContent() {
       <AppHeader />
       <main
         data-card-theme={cardThemeId}
-        aria-busy={loading || reviewing}
+        aria-busy={loading || checking}
         className="ct-page min-h-screen flex flex-col items-center justify-center p-6"
       >
         <h1 className="sr-only">Hwaiting — Korean review</h1>
@@ -265,7 +292,8 @@ function AppContent() {
             */}
             <Flashcard
               card={card}
-              onReview={handleReview}
+              onCheck={handleCheck}
+              onAdvance={advanceToNextCard}
               onSuppress={handleSuppress}
               onCardUpdated={handleCardUpdated}
             />
