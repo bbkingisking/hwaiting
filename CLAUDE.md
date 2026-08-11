@@ -8,6 +8,8 @@ Build the frontend with `npm run build` in `frontend/` — that runs `tsc` first
 
 The UI is deliberately shaped so an agent can work from the accessibility tree instead of from screenshots and pixel coordinates. What follows is the contract that makes that possible; it is worth reading before automating anything, because two parts of the review loop are counter-intuitive.
 
+A plain text read of the page captures nearly the whole card in one call — the badges, the sentence with its blank, both translations, and the grading verdict as prose rather than as colour. Use it as the primary read, and the accessibility tree for the things you intend to click or type into. The blank's pixel position shifts substantially between cards, so target the "Answer" textbox by reference and never by coordinate.
+
 ### Landmarks
 
 `main` is the review area and the only place cards appear. `header` holds the user menu (absent when logged out). `footer` is the stats bar, named "Review stats". The document is `lang="en"`; Korean runs are marked `lang="ko"`.
@@ -35,7 +37,9 @@ So: read `data-card-id`, click, then wait for `aria-busy="false"` **and** a chan
 - **Auto-progress.** If the user has enabled it, a correct answer advances on a timer with no click at all. Check whether the footer is `inert` before deciding a Next button is missing.
 - **Collapsed accordion sections are not in the DOM.** Settings has six; expand a section before looking for its contents.
 - **Dialogs are modal and `aria-hidden` everything else,** including a parent dialog when a confirmation opens on top of it. Re-read the tree after any open or close.
-- **Hanja and grammar-pattern hints are focusable spans, not buttons.** Their content is carried in `aria-label` because base-ui tooltips expose no role and unmount their content until hover. They appear under `read_page` with filter `all`, not `interactive`.
+- **The hanja hint is a `note`, named "Hanja hint: …".** It sits in a span positioned absolutely above the blank; before it had a role it was an anonymous text run that merged into the sentence, so it appeared in a raw text dump but not in the tree at all.
+- **The grammar-pattern pill is a focusable span, not a button.** Its explanation is carried in `aria-label`, because base-ui tooltips expose no role and unmount their content until hover. It shows under `read_page` with filter `all`, not `interactive`.
+- **The hanja reading and gloss are withheld until the card is graded**, matching what is on screen — reading them early would give away the answer.
 - **The check button's label is theme-dependent** — "Check", "★ Insert Answer ★", "Draw! (Check)" and others, depending on the selected card theme. Do not match on its text; it is the only button in the card footer before grading.
 
 ### Naming conventions
