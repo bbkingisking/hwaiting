@@ -47,19 +47,37 @@ function HintRow({ hint, sharedChars, showTarget }: { hint: HanjaHint; sharedCha
   )
 }
 
+type HanjaHintParams = {
+  hanja: string
+  hints: HanjaHint[]
+  showEum: boolean
+  hanjaEum?: string | null
+  showTarget: boolean
+}
+
+// What the hint says, as a single string. The visible hint is a positioned
+// span with no role, so its characters merge into the surrounding sentence as
+// an anonymous text run — present in a raw text dump, absent from the
+// accessibility tree. This is the name that gives it a node of its own.
+//
+// Respects showEum/showTarget for the same reason the visible hint does: the
+// reading and the gloss give the answer away before the card is graded.
+function hanjaHintLabel({ hanja, hints, showEum, hanjaEum, showTarget }: HanjaHintParams): string {
+  const base = `${hanja}${showEum && hanjaEum ? ` (${hanjaEum})` : ''}`
+  if (hints.length === 0) return `Hanja hint: ${base}`
+  const glossed = hints
+    .map(h => `${h.hanja}${showTarget && h.trans_word ? ` (${h.trans_word})` : ''}`)
+    .join(', ')
+  return `Hanja hint: ${base} — ${glossed}`
+}
+
 function HanjaHintText({
   hanja,
   hints,
   showEum,
   hanjaEum,
   showTarget,
-}: {
-  hanja: string
-  hints: HanjaHint[]
-  showEum: boolean
-  hanjaEum?: string | null
-  showTarget: boolean
-}) {
+}: HanjaHintParams) {
   const [open, setOpen] = useState(false)
 
   if (hints.length === 0) {
@@ -71,20 +89,19 @@ function HanjaHintText({
   }
 
   const visible = `${hanja}${showEum && hanjaEum ? ` (${hanjaEum})` : ''}`
-  // base-ui tooltips emit no role and no aria-describedby by design, and the
-  // content is unmounted until hover — so the gloss exists nowhere in the
-  // accessibility tree unless the trigger carries it as its own name.
-  const glossed = hints
-    .map(h => `${h.hanja}${showTarget && h.trans_word ? ` (${h.trans_word})` : ''}`)
-    .join(', ')
 
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
+      {/*
+        No aria-label here: the wrapping role="note" already carries the full
+        gloss, and naming the trigger too would say the same thing twice.
+        tabIndex stays so the visual tooltip is reachable without a mouse —
+        base-ui tooltips expose no role and unmount their content until hover.
+      */}
       <TooltipTrigger
         delay={300}
         closeOnClick
         tabIndex={0}
-        aria-label={`${visible} — hanja: ${glossed}`}
         className="cursor-help border-b border-dotted border-current"
         render={<span />}
       >
@@ -372,7 +389,20 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
             {before}
             <span className="inline-flex flex-col items-center relative pt-5">
               {card.hanja && (
-                <span className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none">
+                // role + aria-label only — the classes here are what keep the
+                // hint centred above the blank as the blank moves around the
+                // sentence, so they are deliberately left alone.
+                <span
+                  role="note"
+                  aria-label={hanjaHintLabel({
+                    hanja: card.hanja,
+                    hints: card.hanja_hints ?? [],
+                    showEum: answered || isAutoProgressing,
+                    hanjaEum: card.hanja_eum,
+                    showTarget: answered || isAutoProgressing,
+                  })}
+                  className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none"
+                >
                   <HanjaHintText
                     hanja={card.hanja}
                     hints={card.hanja_hints ?? []}
