@@ -440,6 +440,14 @@ export interface components {
             origin_type?: string | null;
             pos?: string | null;
             sentence: string;
+            /** @description The text after the blank. See `sentence_before`. */
+            sentence_after: string;
+            /**
+             * @description `sentence`, sliced at `target`'s position: the text before the blank.
+             *     Derived once here rather than by every renderer re-searching
+             *     `sentence` for `target` - see `split_sentence`.
+             */
+            sentence_before: string;
             sentence_translation: string;
             speech_level?: string | null;
             target: string;

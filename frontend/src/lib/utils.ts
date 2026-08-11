@@ -20,18 +20,6 @@ export function getDifficultyColor(difficulty: number): string {
   return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
 }
 
-// Split sentence into before/target/after parts
-export function splitSentence(sentence: string, target: string): { before: string; after: string } {
-  const idx = sentence.indexOf(target)
-  if (idx < 0) {
-    return { before: sentence, after: '' }
-  }
-  return {
-    before: sentence.slice(0, idx),
-    after: sentence.slice(idx + target.length),
-  }
-}
-
 // Build a link to a word's entry in KRDICT, the dictionary the starter cards
 // were derived from. `krdict_id` is KRDICT's own `ParaWordNo`, so the entry
 // resolves directly with no search step. Returns null for cards with no
