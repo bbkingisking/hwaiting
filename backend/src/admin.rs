@@ -256,6 +256,10 @@ pub async fn search_cards(
         .fetch_all(&pool)
         .await?;
 
+        let sentence: String = row.get("sentence");
+        let target: String = row.get("target");
+        let (sentence_before, sentence_after) = crate::cards::split_sentence(&sentence, &target);
+
         cards.push(Card {
             card_id: row.get("id"),
             krdict_id: row.get("krdict_id"),
@@ -268,11 +272,13 @@ pub async fn search_cards(
             grade: row.get("grade"),
             trans_word: row.get("trans_word"),
             trans_dfn: row.get("trans_dfn"),
-            sentence: row.get("sentence"),
+            sentence,
+            sentence_before,
+            sentence_after,
             sentence_translation: row
                 .get::<Option<String>, _>("sentence_translation")
                 .unwrap_or_default(),
-            target: row.get("target"),
+            target,
             alternatives,
             speech_level: row.get("speech_level"),
             tense: row.get("tense"),
@@ -427,6 +433,29 @@ pub async fn edit_card(
                 .await?;
 
         if let Some(sid) = sentence_id {
+            // Validate that target still appears in the sentence once both
+            // sides of this edit are applied - same invariant
+            // custom_cards::update_custom_card enforces, missing here because
+            // this handler grew as a freeform partial update and never
+            // re-checked it. Without this, a typo in either field produces a
+            // card that silently renders with no blank (see
+            // cards::split_sentence's fallback).
+            if sentence.is_some() || target.is_some() {
+                let current = sqlx::query("SELECT text, target FROM sentences WHERE id = ?")
+                    .bind(sid)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                let current_text: String = current.get("text");
+                let current_target: String = current.get("target");
+                let effective_sentence = sentence.as_deref().unwrap_or(&current_text);
+                let effective_target = target.as_deref().unwrap_or(&current_target);
+                if !effective_sentence.contains(effective_target) {
+                    return Err(AppError::BadRequest(
+                        "Target word must appear in the sentence".to_string(),
+                    ));
+                }
+            }
+
             let mut sets: Vec<&str> = Vec::new();
             if sentence.is_some() { sets.push("text = ?") }
             if target.is_some()   { sets.push("target = ?") }

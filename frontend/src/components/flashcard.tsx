@@ -216,22 +216,11 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [answered, handleAdvance, editOpen, menuOpen])
 
-  // Split sentence at target word position
-  // Note: card.target is the conjugated form, but sentence might contain base form
-  // We use the 'target' field from the sentence which indicates the exact match position
-  const targetStart = card.sentence.indexOf(card.target)
-  let before = ''
-  let after = ''
-
-  if (targetStart >= 0) {
-    before = card.sentence.substring(0, targetStart)
-    after = card.sentence.substring(targetStart + card.target.length)
-  } else {
-    // Fallback: if exact match not found, just show the full sentence
-    console.warn('Target word not found in sentence:', { target: card.target, sentence: card.sentence })
-    before = card.sentence
-    after = ''
-  }
+  // The backend splits `sentence` around `target` for us (see
+  // cards::split_sentence) - it owns both strings and is the only place that
+  // needs to search one for the other.
+  const before = card.sentence_before
+  const after = card.sentence_after
 
   const krdictLink = krdictUrl(card.krdict_id)
 

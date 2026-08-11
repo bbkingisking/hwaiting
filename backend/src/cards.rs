@@ -47,12 +47,39 @@ pub struct Card {
     pub trans_word: String,
     pub trans_dfn: Option<String>,
     pub sentence: String,
+    /// `sentence`, sliced at `target`'s position: the text before the blank.
+    /// Derived once here rather than by every renderer re-searching
+    /// `sentence` for `target` - see `split_sentence`.
+    pub sentence_before: String,
+    /// The text after the blank. See `sentence_before`.
+    pub sentence_after: String,
     pub sentence_translation: String,
     pub target: String,
     pub alternatives: Vec<String>,
     pub speech_level: Option<String>,
     pub tense: Option<String>,
     pub grammar_pattern: Option<String>,
+}
+
+/// Split `sentence` into the text before and after `target`, so callers can
+/// render the sentence with `target` blanked out without needing to know
+/// where it sits. This is the one place that does that search: every render
+/// site used to redo `sentence.indexOf(target)` itself (and disagreed, in
+/// one case silently, about what to do when `target` isn't found).
+///
+/// `target` is expected to be a literal substring of `sentence` - both
+/// `custom_cards::create_custom_card`/`update_custom_card` and
+/// `admin::edit_card` enforce that on write. If it somehow isn't (e.g. a
+/// pre-validation row), fall back to the whole sentence with no blank rather
+/// than panicking or hiding the sentence.
+pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
+    match sentence.find(target) {
+        Some(idx) => (
+            sentence[..idx].to_string(),
+            sentence[idx + target.len()..].to_string(),
+        ),
+        None => (sentence.to_string(), String::new()),
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -565,6 +592,8 @@ pub async fn get_next_card(
         vec![]
     };
 
+    let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
+
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
             card: Card {
@@ -580,6 +609,8 @@ pub async fn get_next_card(
                 trans_word,
                 trans_dfn,
                 sentence,
+                sentence_before,
+                sentence_after,
                 sentence_translation,
                 target,
                 alternatives,
