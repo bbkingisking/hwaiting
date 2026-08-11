@@ -196,7 +196,6 @@ function AppContent() {
     if (!card) throw new Error('No card to check')
     const cardId = card.card_id
 
-    setStatsKey((prev) => prev + 1)
     setSubmitError(null)
     setChecking(true)
 
@@ -206,6 +205,14 @@ function AppContent() {
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, answer)
       setLastCheckMs(performance.now() - startedAt)
+      // Bumped only now, not before the request: StatusIndicator remounts
+      // on this key change and fetches stats on mount, and check_answer is
+      // what actually records the review server-side - firing this before
+      // the request even started meant the stats fetch usually won the race
+      // against its own write and rendered the accuracy from before this
+      // card, correcting itself only on the next unrelated fetch (a manual
+      // refresh, or the 30s poll).
+      setStatsKey((prev) => prev + 1)
       return { correct, reveal }
     } catch (err) {
       if (err instanceof ApiError) {
