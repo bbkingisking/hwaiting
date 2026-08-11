@@ -451,26 +451,8 @@ pub async fn get_next_card(
         .and_then(|r| r.get::<Option<i64>, _>("day_boundary_hour"))
         .unwrap_or(4);
 
-    // Calculate the start of "today" based on day_boundary_hour (in local time)
-    let now_local = Local::now();
-    let current_hour = now_local.hour() as i64;
-    let today_start_naive = if current_hour >= day_boundary_hour {
-        // Today after boundary hour
-        now_local.date_naive().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
-    } else {
-        // Before boundary hour, so "today" started yesterday
-        (now_local.date_naive() - chrono::Days::new(1)).and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
-    };
-    
-    // Convert to UTC for database comparison
-    let today_start_utc = Local
-        .from_local_datetime(&today_start_naive)
-        .single()
-        .unwrap()
-        .with_timezone(&Utc);
-    
-    // Format as SQLite datetime string (YYYY-MM-DD HH:MM:SS)
-    let today_start_str = today_start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+    // Start of "today" per day_boundary_hour - same helper get_stats uses.
+    let today_start_str = sqlite_datetime(logical_today_start(day_boundary_hour));
 
     // Count how many NEW cards the user has reviewed today
     // A "new" card is one where it's the user's first review (no prior review_history)
@@ -586,8 +568,21 @@ pub async fn get_next_card(
         .await?;
 
     let Some(row) = row else {
-        // No card available — find when the next one becomes due
-        let next_due_at: Option<String> = sqlx::query_scalar(
+        // No card available. Two independent things can be blocking, and
+        // whichever unblocks first is the honest answer:
+        //
+        // 1. Every card the user has already reviewed at least once is
+        //    scheduled for later - the query below finds the earliest such
+        //    due date.
+        // 2. The daily new-card cap is reached (new_card_limit_reached),
+        //    *and* there's at least one never-reviewed card waiting behind
+        //    it - in which case the cap resetting at the next day boundary
+        //    is also a candidate. Previously this case fell through to
+        //    `next_due_at: None` with no indication of when to come back,
+        //    which is the common case for a session that reviews until
+        //    there's nothing left to do for the day, rather than one that
+        //    stops because everything's genuinely scheduled for later.
+        let scheduled_next: Option<String> = sqlx::query_scalar(
             r#"
             SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
             FROM cards c
@@ -604,6 +599,42 @@ pub async fn get_next_card(
         .bind(user_id)
         .fetch_one(&pool)
         .await?;
+
+        let new_card_reset = if new_card_limit_reached {
+            let new_cards_waiting: i64 = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1 FROM cards c
+                    LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+                    LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
+                    LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+                    WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+                    AND cs.last_review IS NULL
+                    AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+                )
+                "#,
+            )
+            .bind(user_id)
+            .bind(user_id)
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await?;
+
+            (new_cards_waiting > 0).then(|| logical_today_start(day_boundary_hour) + chrono::Duration::days(1))
+        } else {
+            None
+        };
+
+        let scheduled_next_dt = scheduled_next
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let next_due_at = [scheduled_next_dt, new_card_reset]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
         return Ok(Json(NextCardEnvelope {
             card: None,
