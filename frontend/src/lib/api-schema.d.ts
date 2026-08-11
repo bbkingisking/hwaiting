@@ -236,7 +236,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/cards/{card_id}/review": {
+    "/api/cards/{card_id}/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -245,7 +245,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["submit_review"];
+        post: operations["check_answer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -415,12 +415,14 @@ export interface components {
             reviews: number;
         };
         /**
-         * @description The canonical card shape: a `cards` row joined with its English
-         *     translation and primary example sentence. Shared verbatim by the review
-         *     flow (`NextCardResponse`, below) and admin search (`admin::search_cards`)
-         *     - previously two independently hand-declared structs that happened to
-         *     agree on 14 of their fields, which is exactly the kind of duplication
-         *     that drifts silently over time.
+         * @description The canonical full-card shape: a `cards` row joined with its English
+         *     translation and primary example sentence. Shared verbatim by admin
+         *     search (`admin::search_cards`) and edit (`admin::edit_card`) - previously
+         *     two independently hand-declared structs that happened to agree on 14 of
+         *     their fields, which is exactly the kind of duplication that drifts
+         *     silently over time. Not used by the review flow, which only ever needs
+         *     the `CardPrompt`/`CardReveal` split above - admin editing isn't gated by
+         *     the same secrecy concerns, so it gets the whole row upfront.
          */
         Card: {
             alternatives: string[];
@@ -456,10 +458,85 @@ export interface components {
             trans_word: string;
             word: string;
         };
+        /**
+         * @description Everything the client may see before it has attempted an answer: enough
+         *     to render the sentence-with-blank, badges, and both translations, but
+         *     nothing `target` could be inferred from. Served by `GET /api/cards/next`.
+         *
+         *     `definition` and the unsliced `sentence` are withheld too, even though
+         *     neither is rendered by the review UI at all pre- or post-answer - they're
+         *     authoring fields, not review-flow fields. `CardReveal` (below) carries
+         *     them anyway, purely so an admin editing a card mid-review has a correct,
+         *     non-blank baseline to save over.
+         */
+        CardPrompt: {
+            /** Format: int64 */
+            card_id: number;
+            grade?: string | null;
+            grammar_pattern?: string | null;
+            /**
+             * @description Hanja characters for the pre-answer hint span. The reading and each
+             *     hint's gloss give the answer away - see `CardReveal::hanja_eum` and
+             *     `HanjaHint::trans_word`.
+             */
+            hanja?: string | null;
+            hanja_hint_words: string[];
+            /**
+             * Format: int64
+             * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
+             *     for user-created custom cards, which have no upstream dictionary entry.
+             */
+            krdict_id?: number | null;
+            origin_type?: string | null;
+            pos?: string | null;
+            /** @description The text after the blank. See `sentence_before`. */
+            sentence_after: string;
+            /**
+             * @description `sentence`, sliced at `target`'s position: the text before the blank.
+             *     Derived once here rather than by every renderer re-searching
+             *     `sentence` for `target` - see `split_sentence`. The unsliced
+             *     `sentence` and `target` itself are withheld; see `CardReveal`.
+             */
+            sentence_before: string;
+            sentence_translation: string;
+            speech_level?: string | null;
+            tense?: string | null;
+            trans_dfn?: string | null;
+            trans_word: string;
+        };
+        /**
+         * @description Disclosed only once `POST /api/cards/{id}/check` has graded an attempt.
+         *     Every field here would give the answer away if it shipped any earlier.
+         */
+        CardReveal: {
+            alternatives: string[];
+            definition?: string | null;
+            /**
+             * @description The grammar pattern's possible conjugation endings - a property of
+             *     the referenced `grammar_patterns` row, not of this card, but exactly
+             *     as spoiling as `target` for any card that uses the pattern, so it
+             *     travels with the reveal rather than in the pattern's public
+             *     label/tooltip (see `list_enum_lookups`, which admin/authoring
+             *     surfaces still fetch endings from - that's a legitimately public use,
+             *     picking a pattern rather than guessing one card's answer).
+             */
+            grammar_pattern_endings?: string | null;
+            hanja_eum?: string | null;
+            hanja_hints: components["schemas"]["HanjaHint"][];
+            sentence: string;
+            target: string;
+            word: string;
+        };
         CardTranslationExport: {
             language_tag: string;
             trans_dfn?: string | null;
             trans_word: string;
+        };
+        CheckRequest: {
+            answer: string;
+        };
+        CheckResponse: components["schemas"]["CardReveal"] & {
+            correct: boolean;
         };
         CreateCustomCardRequest: {
             alternatives?: string[] | null;
@@ -636,12 +713,11 @@ export interface components {
             card?: null | components["schemas"]["NextCardResponse"];
             next_due_at?: string | null;
         };
-        NextCardResponse: components["schemas"]["Card"] & {
+        NextCardResponse: components["schemas"]["CardPrompt"] & {
             /** Format: double */
             difficulty?: number | null;
             /** Format: int64 */
             guess_count: number;
-            hanja_hints: components["schemas"]["HanjaHint"][];
             /** Format: int64 */
             wrong_guess_count: number;
         };
@@ -667,13 +743,6 @@ export interface components {
         };
         ReviewHistoryResponse: {
             days: components["schemas"]["DayHistory"][];
-        };
-        ReviewRequest: {
-            /**
-             * Format: int32
-             * @description FSRS rating: 1 = Again, 2 = Hard, 3 = Good, 4 = Easy (UI only sends 1 or 3)
-             */
-            rating: number;
         };
         ReviewResponse: {
             success: boolean;
@@ -1417,7 +1486,7 @@ export interface operations {
             };
         };
     };
-    submit_review: {
+    check_answer: {
         parameters: {
             query?: never;
             header?: never;
@@ -1429,21 +1498,21 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviewRequest"];
+                "application/json": components["schemas"]["CheckRequest"];
             };
         };
         responses: {
-            /** @description Review recorded, FSRS state updated */
+            /** @description Answer graded, FSRS state updated, secret fields revealed */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewResponse"];
+                    "application/json": components["schemas"]["CheckResponse"];
                 };
             };
-            /** @description Invalid rating or malformed request */
-            400: {
+            /** @description Missing/invalid JWT */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1451,8 +1520,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing/invalid JWT */
-            401: {
+            /** @description Card doesn't exist */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

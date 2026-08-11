@@ -37,31 +37,33 @@ export interface Word {
 // drift apart.
 export type HanjaHint = components['schemas']['HanjaHint']
 
-// Card type from backend (includes stats and card_id)
-export type Card = components['schemas']['NextCardResponse']
+// What's known about the card being reviewed before an answer is checked -
+// everything needed to render the sentence-with-blank, badges, and both
+// translations, but nothing `target` could be inferred from.
+export type CardPrompt = components['schemas']['NextCardResponse']
 
-// Subset of Card that the edit dialog needs (also matches admin card search results)
-export type EditableCard = Pick<
-  Card,
-  | 'card_id'
-  | 'krdict_id'
-  | 'word'
-  | 'definition'
-  | 'pos'
-  | 'origin_type'
-  | 'hanja'
-  | 'hanja_eum'
-  | 'grade'
-  | 'trans_word'
-  | 'trans_dfn'
-  | 'sentence'
-  | 'sentence_translation'
-  | 'target'
-  | 'alternatives'
-  | 'speech_level'
-  | 'tense'
-  | 'grammar_pattern'
->
+// Disclosed by POST /api/cards/{id}/check once an attempt has been graded:
+// the answer, the word's citation form, the hanja reading/gloss, and the
+// grammar pattern's conjugation endings - everything CardPrompt withheld.
+//
+// Deliberately NOT merged into a single `CardPrompt & Partial<CardReveal>`
+// type held in App.tsx's `card` state, as an earlier version of this file
+// did: that merge happened via a second, independently-timed setState call
+// (App.tsx's, following the network response) racing against the setState
+// that flips Flashcard's own `answered` to true (Flashcard's, following the
+// same response) - nothing guarantees the parent's update is visible in the
+// child's props by the time the child re-renders on `answered`, and in
+// production it wasn't always, i.e. `card.target` could still be `undefined`
+// the moment the per-character diff tried to index into it. Flashcard now
+// holds its own `reveal: CardReveal | null` state, set in the same
+// synchronous continuation as `answered`/`correct` - no cross-component
+// timing involved. See flashcard.tsx.
+export type CardReveal = components['schemas']['CardReveal']
+
+// EditCardDialog edits the backend's canonical full-card shape
+// (api.ts's AdminCard) directly - see its doc comment for why the review
+// flow needs an adapter (toAdminCard in flashcard.tsx) rather than passing
+// CardPrompt/CardReveal straight through.
 
 // Theme types
 export type Theme = 'light' | 'dark' | 'system'

@@ -12,12 +12,6 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
-#[derive(Deserialize, ToSchema)]
-pub struct ReviewRequest {
-    /// FSRS rating: 1 = Again, 2 = Hard, 3 = Good, 4 = Easy (UI only sends 1 or 3)
-    rating: u8,
-}
-
 #[derive(Serialize, Clone, ToSchema)]
 pub struct HanjaHint {
     pub hanja: String,
@@ -25,12 +19,85 @@ pub struct HanjaHint {
     pub trans_word: Option<String>,
 }
 
-/// The canonical card shape: a `cards` row joined with its English
-/// translation and primary example sentence. Shared verbatim by the review
-/// flow (`NextCardResponse`, below) and admin search (`admin::search_cards`)
-/// - previously two independently hand-declared structs that happened to
-/// agree on 14 of their fields, which is exactly the kind of duplication
-/// that drifts silently over time.
+/// Everything the client may see before it has attempted an answer: enough
+/// to render the sentence-with-blank, badges, and both translations, but
+/// nothing `target` could be inferred from. Served by `GET /api/cards/next`.
+///
+/// `definition` and the unsliced `sentence` are withheld too, even though
+/// neither is rendered by the review UI at all pre- or post-answer - they're
+/// authoring fields, not review-flow fields. `CardReveal` (below) carries
+/// them anyway, purely so an admin editing a card mid-review has a correct,
+/// non-blank baseline to save over.
+#[derive(Serialize, ToSchema)]
+pub struct CardPrompt {
+    pub card_id: i64,
+    /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
+    /// for user-created custom cards, which have no upstream dictionary entry.
+    pub krdict_id: Option<i64>,
+    pub pos: Option<String>,
+    pub origin_type: Option<String>,
+    pub grade: Option<String>,
+    pub trans_word: String,
+    pub trans_dfn: Option<String>,
+    /// `sentence`, sliced at `target`'s position: the text before the blank.
+    /// Derived once here rather than by every renderer re-searching
+    /// `sentence` for `target` - see `split_sentence`. The unsliced
+    /// `sentence` and `target` itself are withheld; see `CardReveal`.
+    pub sentence_before: String,
+    /// The text after the blank. See `sentence_before`.
+    pub sentence_after: String,
+    pub sentence_translation: String,
+    pub speech_level: Option<String>,
+    pub tense: Option<String>,
+    pub grammar_pattern: Option<String>,
+    /// Hanja characters for the pre-answer hint span. The reading and each
+    /// hint's gloss give the answer away - see `CardReveal::hanja_eum` and
+    /// `HanjaHint::trans_word`.
+    pub hanja: Option<String>,
+    pub hanja_hint_words: Vec<String>,
+}
+
+/// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt.
+/// Every field here would give the answer away if it shipped any earlier.
+#[derive(Serialize, ToSchema)]
+pub struct CardReveal {
+    pub word: String,
+    pub definition: Option<String>,
+    pub sentence: String,
+    pub target: String,
+    pub alternatives: Vec<String>,
+    pub hanja_eum: Option<String>,
+    pub hanja_hints: Vec<HanjaHint>,
+    /// The grammar pattern's possible conjugation endings - a property of
+    /// the referenced `grammar_patterns` row, not of this card, but exactly
+    /// as spoiling as `target` for any card that uses the pattern, so it
+    /// travels with the reveal rather than in the pattern's public
+    /// label/tooltip (see `list_enum_lookups`, which admin/authoring
+    /// surfaces still fetch endings from - that's a legitimately public use,
+    /// picking a pattern rather than guessing one card's answer).
+    pub grammar_pattern_endings: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CheckRequest {
+    pub answer: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CheckResponse {
+    pub correct: bool,
+    #[serde(flatten)]
+    pub reveal: CardReveal,
+}
+
+/// The canonical full-card shape: a `cards` row joined with its English
+/// translation and primary example sentence. Shared verbatim by admin
+/// search (`admin::search_cards`) and edit (`admin::edit_card`) - previously
+/// two independently hand-declared structs that happened to agree on 14 of
+/// their fields, which is exactly the kind of duplication that drifts
+/// silently over time. Not used by the review flow, which only ever needs
+/// the `CardPrompt`/`CardReveal` split above - admin editing isn't gated by
+/// the same secrecy concerns, so it gets the whole row upfront.
 #[derive(Serialize, ToSchema)]
 pub struct Card {
     pub card_id: i64,
@@ -82,14 +149,68 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
     }
 }
 
+/// Hanja hints for `card_id`: hanja from other cards the user has already
+/// reviewed that share at least one character with `hanja`. Shared by
+/// `get_next_card` (which only needs the characters - see
+/// `CardPrompt::hanja_hint_words`) and `check_answer` (which needs the full
+/// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
+async fn hanja_hints_for(
+    pool: &SqlitePool,
+    user_id: i64,
+    card_id: i64,
+    hanja: &Option<String>,
+) -> Result<Vec<HanjaHint>, AppError> {
+    let Some(current_hanja) = hanja else { return Ok(vec![]) };
+    if current_hanja.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let other_hanja_rows = sqlx::query(
+        r#"
+        SELECT DISTINCT c.hanja, c.hanja_eum, ct.trans_word
+        FROM card_states cs
+        INNER JOIN cards c ON c.id = cs.card_id
+        INNER JOIN card_translations ct ON ct.card_id = c.id AND ct.language_tag = 'en'
+        WHERE cs.user_id = ?
+          AND cs.card_id != ?
+          AND c.hanja IS NOT NULL
+          AND c.hanja != ''
+        "#
+    )
+    .bind(user_id)
+    .bind(card_id)
+    .fetch_all(pool)
+    .await?;
+
+    let current_chars: std::collections::HashSet<char> =
+        current_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
+
+    Ok(other_hanja_rows
+        .iter()
+        .filter_map(|row| {
+            let other_hanja: String = row.get("hanja");
+            let other_chars: std::collections::HashSet<char> =
+                other_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
+            if !current_chars.is_empty() && !other_chars.is_empty() && current_chars.intersection(&other_chars).next().is_some() {
+                Some(HanjaHint {
+                    hanja: other_hanja,
+                    hanja_eum: row.get("hanja_eum"),
+                    trans_word: row.get("trans_word"),
+                })
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct NextCardResponse {
     #[serde(flatten)]
-    card: Card,
+    prompt: CardPrompt,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
-    hanja_hints: Vec<HanjaHint>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -493,11 +614,9 @@ pub async fn get_next_card(
     let card_id: i64 = row.get("id");
     let krdict_id: Option<i64> = row.get("krdict_id");
     let word: String = row.get("word");
-    let definition: Option<String> = row.get("definition");
     let pos: Option<String> = row.get("pos");
     let origin_type: Option<String> = row.get("origin_type");
     let hanja: Option<String> = row.get("hanja");
-    let hanja_eum: Option<String> = row.get("hanja_eum");
     let grade: Option<String> = row.get("grade");
     let trans_word: String = row.get("trans_word");
     let trans_dfn: Option<String> = row.get("trans_dfn");
@@ -507,17 +626,8 @@ pub async fn get_next_card(
     let speech_level: Option<String> = row.get("speech_level");
     let tense: Option<String> = row.get("tense");
     let grammar_pattern: Option<String> = row.get("grammar_pattern");
-    let sentence_id: i64 = row.get("sentence_id");
 
     debug!("Selected card_id: {} ({})", card_id, word);
-
-    // Fetch accepted alternative targets for this sentence
-    let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
-    )
-    .bind(sentence_id)
-    .fetch_all(&pool)
-    .await?;
 
     // Get correct/wrong stats for this card
     let stats_row = sqlx::query(
@@ -545,123 +655,116 @@ pub async fn get_next_card(
         None
     };
 
-    // Fetch hanja hints: hanja from other reviewed cards that share characters with this card
-    let hanja_hints: Vec<HanjaHint> = if let Some(ref current_hanja) = hanja {
-        if !current_hanja.is_empty() {
-            let other_hanja_rows = sqlx::query(
-                r#"
-                SELECT DISTINCT c.hanja, c.hanja_eum, ct.trans_word
-                FROM card_states cs
-                INNER JOIN cards c ON c.id = cs.card_id
-                INNER JOIN card_translations ct ON ct.card_id = c.id AND ct.language_tag = 'en'
-                WHERE cs.user_id = ?
-                  AND cs.card_id != ?
-                  AND c.hanja IS NOT NULL
-                  AND c.hanja != ''
-                "#
-            )
-            .bind(user_id)
-            .bind(card_id)
-            .fetch_all(&pool)
-            .await?;
-
-            let current_chars: std::collections::HashSet<char> =
-                current_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
-
-            other_hanja_rows
-                .iter()
-                .filter_map(|row| {
-                    let other_hanja: String = row.get("hanja");
-                    let other_chars: std::collections::HashSet<char> =
-                        other_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
-                    if !current_chars.is_empty() && !other_chars.is_empty() && current_chars.intersection(&other_chars).next().is_some() {
-                        Some(HanjaHint {
-                            hanja: other_hanja,
-                            hanja_eum: row.get("hanja_eum"),
-                            trans_word: row.get("trans_word"),
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            vec![]
-        }
-    } else {
-        vec![]
-    };
+    // Pre-answer, only the hanja characters themselves are shown (see
+    // CardPrompt::hanja_hint_words) - the reading/gloss on each hint is
+    // withheld the same as the card's own `target`, so `check_answer` below
+    // recomputes the full hints once the card is graded rather than us
+    // shipping them now.
+    let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
+    let hanja_hint_words: Vec<String> = hanja_hints.into_iter().map(|h| h.hanja).collect();
 
     let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
 
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
-            card: Card {
+            prompt: CardPrompt {
                 card_id,
                 krdict_id,
-                word,
-                definition,
                 pos,
                 origin_type,
-                hanja,
-                hanja_eum,
                 grade,
                 trans_word,
                 trans_dfn,
-                sentence,
                 sentence_before,
                 sentence_after,
                 sentence_translation,
-                target,
-                alternatives,
                 speech_level,
                 tense,
                 grammar_pattern,
+                hanja,
+                hanja_hint_words,
             },
             difficulty,
             guess_count,
             wrong_guess_count,
-            hanja_hints,
         }),
         next_due_at: None,
     }))
 }
 
-// Submit a review for a card
+// Check an answer against a card: grade it, record the FSRS review, and
+// reveal the card's secret half.
 #[utoipa::path(
     post,
-    path = "/api/cards/{card_id}/review",
+    path = "/api/cards/{card_id}/check",
     params(("card_id" = i64, Path, description = "Card ID")),
-    request_body = ReviewRequest,
+    request_body = CheckRequest,
     responses(
-        (status = 200, description = "Review recorded, FSRS state updated", body = ReviewResponse),
-        (status = 400, description = "Invalid rating or malformed request", body = crate::error::ErrorResponse),
+        (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
     tag = "cards"
 )]
-pub async fn submit_review(
+pub async fn check_answer(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
-    AppJson(payload): AppJson<ReviewRequest>,
-) -> Result<Json<ReviewResponse>, AppError> {
+    AppJson(payload): AppJson<CheckRequest>,
+) -> Result<Json<CheckResponse>, AppError> {
     let user_id = auth.0;
+
+    // Fetch the secret half of the card fresh, by id - this handler is the
+    // only place allowed to know `target` before the client does.
+    let row = sqlx::query(
+        r#"
+        SELECT c.word, c.definition, c.hanja, c.hanja_eum,
+               s.id as sentence_id, s.text as sentence, s.target,
+               gp.endings as grammar_pattern_endings
+        FROM cards c
+        INNER JOIN sentences s ON c.id = s.card_id
+        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
+        WHERE c.id = ?
+        "#,
+    )
+    .bind(card_id)
+    .fetch_optional(&pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let word: String = row.get("word");
+    let definition: Option<String> = row.get("definition");
+    let hanja: Option<String> = row.get("hanja");
+    let hanja_eum: Option<String> = row.get("hanja_eum");
+    let sentence_id: i64 = row.get("sentence_id");
+    let sentence: String = row.get("sentence");
+    let target: String = row.get("target");
+    let grammar_pattern_endings: Option<String> = row.get("grammar_pattern_endings");
+
+    let alternatives: Vec<String> = sqlx::query_scalar(
+        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
+    )
+    .bind(sentence_id)
+    .fetch_all(&pool)
+    .await?;
+
+    let trimmed = payload.answer.trim();
+    let correct = trimmed == target || alternatives.iter().any(|alt| alt == trimmed);
+
+    let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
+
     info!(
-        "Submitting review for user_id: {}, card_id: {}, rating: {}",
-        user_id, card_id, payload.rating
+        "Checking answer for user_id: {}, card_id: {}, correct: {}",
+        user_id, card_id, correct
     );
 
-    // Map rating to FSRS scale and string representation
-    // We only use 1 (Again) and 3 (Good) in the UI
-    let (rating, rating_str) = match payload.rating {
-        1 => (1, "again"),
-        2 => (2, "hard"),
-        3 => (3, "good"),
-        4 => (4, "easy"),
-        _ => return Err(AppError::BadRequest("Invalid rating: must be 1, 2, 3, or 4".to_string())),
-    };
+    // Rating is derived from correctness, not client-supplied - the UI only
+    // ever produces 1 (Again) or 3 (Good), same as the `ReviewRequest` this
+    // folds in used to receive directly (trusted, since the client alone
+    // knew whether the answer was right - no longer true now that grading
+    // happens here).
+    let (rating, rating_str): (u8, &str) = if correct { (3, "good") } else { (1, "again") };
 
     // Get existing card state if any
     let card_state_row = sqlx::query(
@@ -800,9 +903,19 @@ pub async fn submit_review(
     .execute(&pool)
     .await?;
 
-    info!("Review submitted successfully");
-
-    Ok(Json(ReviewResponse { success: true }))
+    Ok(Json(CheckResponse {
+        correct,
+        reveal: CardReveal {
+            word,
+            definition,
+            sentence,
+            target,
+            alternatives,
+            hanja_eum,
+            hanja_hints,
+            grammar_pattern_endings,
+        },
+    }))
 }
 
 // Get statistics

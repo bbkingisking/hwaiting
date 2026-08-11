@@ -1,6 +1,5 @@
 import { useState, useEffect, useId } from 'react'
-import type { EditableCard } from '@/lib/types'
-import { editCard } from '@/lib/api'
+import { editCard, type AdminCard } from '@/lib/api'
 import { krdictUrl } from '@/lib/utils'
 import { useEnumLookups } from '@/components/enum-lookups-provider'
 import { EnumSelect } from '@/components/enum-select'
@@ -18,8 +17,8 @@ import { Label } from '@/components/ui/label'
 interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  card: EditableCard
-  onSaved?: (updates: Partial<EditableCard>) => void
+  card: AdminCard
+  onSaved?: (updates: Partial<AdminCard>) => void
 }
 
 interface FormState {
@@ -41,7 +40,7 @@ interface FormState {
   grammar_pattern: string
 }
 
-function toFormState(card: EditableCard): FormState {
+function toFormState(card: AdminCard): FormState {
   return {
     word: card.word ?? '',
     definition: card.definition ?? '',

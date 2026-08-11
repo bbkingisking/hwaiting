@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Card, HanjaHint } from '@/lib/types'
+import type { CardPrompt, CardReveal, HanjaHint } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
 import { cn, krdictUrl } from '@/lib/utils'
@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical } from 'lucide-react'
-import { suppressCard } from '@/lib/api'
+import { suppressCard, type AdminCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -21,10 +21,59 @@ import { useCardTheme } from '@/components/card-theme-provider'
 import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/components/card-theme-decorations'
 
 interface FlashcardProps {
-  card: Card
-  onReview: (rating: number) => void | Promise<void>
+  card: CardPrompt
+  // Grades `answer` server-side and records the FSRS review; resolves with
+  // whether it was correct and the card's secret half. Callers hold the
+  // reveal themselves (see the `reveal` state below) rather than expecting
+  // it to show up in `card` - see CardReveal's doc comment in lib/types.ts.
+  onCheck: (answer: string) => Promise<{ correct: boolean; reveal: CardReveal }>
+  // Moves to the next card. Never itself talks to the network on the warm
+  // path - see startPrefetch in App.tsx.
+  onAdvance: () => void | Promise<void>
   onSuppress?: () => void
-  onCardUpdated?: (updates: Partial<Card>) => void
+  onCardUpdated?: (updates: Partial<AdminCard>) => void
+}
+
+// The subset of AdminCard's editable fields that CardReveal actually has -
+// see the onSaved wrapper in Flashcard below.
+const CARD_REVEAL_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives', 'hanja_eum'])
+
+// Pre-answer, only the hanja *characters* of each hint are known (see
+// CardPrompt::hanja_hint_words) - the reading/gloss give the answer away, so
+// they're absent until `reveal` arrives. Stand in with gloss-free hints
+// until then; `showTarget` already keeps callers from reading `.trans_word`
+// before that point.
+function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHint[] {
+  if (reveal) return reveal.hanja_hints
+  return (card.hanja_hint_words ?? []).map((hanja) => ({ hanja, hanja_eum: null, trans_word: null }))
+}
+
+// EditCardDialog edits the backend's canonical full-card shape (see its doc
+// comment in lib/api.ts), not the review card's CardPrompt/CardReveal split.
+// Only called once `reveal` is set (see the "Edit card" menu item below).
+function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
+  return {
+    card_id: card.card_id,
+    krdict_id: card.krdict_id,
+    word: reveal.word,
+    definition: reveal.definition,
+    pos: card.pos,
+    origin_type: card.origin_type,
+    hanja: card.hanja,
+    hanja_eum: reveal.hanja_eum,
+    grade: card.grade,
+    trans_word: card.trans_word,
+    trans_dfn: card.trans_dfn,
+    sentence: reveal.sentence,
+    sentence_before: card.sentence_before,
+    sentence_after: card.sentence_after,
+    sentence_translation: card.sentence_translation,
+    target: reveal.target,
+    alternatives: reveal.alternatives,
+    speech_level: card.speech_level,
+    tense: card.tense,
+    grammar_pattern: card.grammar_pattern,
+  }
 }
 
 function isHanja(char: string): boolean {
@@ -122,16 +171,17 @@ function GrammarPatternPill({
   label,
   tooltip,
   endings,
-  showEndings,
 }: {
   label: string
   tooltip: string
+  // The pattern's conjugation endings - as spoiling as `target` for any card
+  // that uses this pattern, so it only arrives with the reveal (see
+  // CardReveal::grammar_pattern_endings); its mere presence is the gate.
   endings?: string | null
-  showEndings: boolean
 }) {
   const [open, setOpen] = useState(false)
 
-  const explanation = `${tooltip}${showEndings && endings ? ` (${endings})` : ''}`
+  const explanation = `${tooltip}${endings ? ` (${endings})` : ''}`
 
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
@@ -152,10 +202,15 @@ function GrammarPatternPill({
   )
 }
 
-export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: FlashcardProps) {
+export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
   const [input, setInput] = useState('')
+  const [checking, setChecking] = useState(false)
   const [answered, setAnswered] = useState(false)
   const [correct, setCorrect] = useState(false)
+  // The card's secret half, set in the same synchronous continuation as
+  // `answered`/`correct` (see handleSubmit) - never sourced from `card`
+  // itself. See CardReveal's doc comment in lib/types.ts for why.
+  const [reveal, setReveal] = useState<CardReveal | null>(null)
   const [submittedAnswer, setSubmittedAnswer] = useState('')
   const [suppressing, setSuppressing] = useState(false)
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
@@ -172,25 +227,27 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
 
-  // `advancing` guards against a second submission for the same card. Nothing
-  // visible changes while the review is in flight (the outgoing card stays put
-  // by design), so without this a click that looks like it did nothing invites
-  // a retry that posts the review twice.
+  // `advancing` guards against a second click while a cold-path fetch for the
+  // next card is in flight (the warm path, served from the prefetch buffer,
+  // resolves synchronously). Nothing visible changes meanwhile (the outgoing
+  // card stays put by design), so without this a click that looks like it
+  // did nothing invites a retry.
   const handleAdvance = useCallback(async () => {
     if (!answered || advancing) return
     setAdvancing(true)
     try {
-      // Submit review: 1 = Again (wrong), 3 = Good (correct)
-      await onReview(correct ? 3 : 1)
+      await onAdvance()
     } finally {
       setAdvancing(false)
     }
-  }, [answered, advancing, correct, onReview])
+  }, [answered, advancing, onAdvance])
 
   useEffect(() => {
     setInput('')
+    setChecking(false)
     setAnswered(false)
     setCorrect(false)
+    setReveal(null)
     setSubmittedAnswer('')
     setIsAutoProgressing(false)
     setEditOpen(false)
@@ -201,7 +258,11 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
     // Keyboard stays open across cards on mobile (see below), so the check
     // button can end up hidden behind it once the new card's content settles.
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [card])
+    // Keyed on card_id, not `card` itself: an admin edit saved mid-review
+    // (see onCardUpdated below) also produces a new `card` object for the
+    // *same* card, which must not look like a new card arriving and wipe
+    // out the answer/reveal being displayed.
+  }, [card.card_id])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -224,30 +285,41 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
 
   const krdictLink = krdictUrl(card.krdict_id)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (answered) return
+    if (answered || checking) return
     const trimmed = input.trim()
-    const isCorrect = trimmed === card.target || (card.alternatives ?? []).includes(trimmed)
-    setCorrect(isCorrect)
     setSubmittedAnswer(trimmed)
+    setChecking(true)
+    try {
+      const { correct: isCorrect, reveal: revealData } = await onCheck(trimmed)
+      setCorrect(isCorrect)
+      setReveal(revealData)
 
-    // Auto-progress if correct and setting is enabled
-    if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
-      hasAutoProgressedRef.current = true
-      setIsAutoProgressing(true)
-      // Use configurable delay before progressing
-      setTimeout(() => {
-        onReview(3) // 3 = Good (correct)
-      }, settings.autoProgressDelay)
-    } else {
-      // Only set answered state if not auto-progressing
-      setAnswered(true)
+      // Auto-progress if correct and setting is enabled
+      if (isCorrect && settings.autoProgressOnCorrect && !hasAutoProgressedRef.current) {
+        hasAutoProgressedRef.current = true
+        setIsAutoProgressing(true)
+        // Use configurable delay before progressing
+        setTimeout(() => {
+          onAdvance()
+        }, settings.autoProgressDelay)
+      } else {
+        // Only set answered state if not auto-progressing
+        setAnswered(true)
+      }
+    } catch (err) {
+      // Checking failed (network, etc.) - leave the card unanswered so the
+      // user can retry, rather than showing a reveal that never arrived.
+      console.error('Error checking answer:', err)
+      setSubmittedAnswer('')
+    } finally {
+      setChecking(false)
     }
   }
 
   const handleCopyJson = () => {
-    const text = JSON.stringify(card, null, 2)
+    const text = JSON.stringify(reveal ? { ...card, ...reveal } : card, null, 2)
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).catch((err) => {
         console.error('Error copying card JSON:', err)
@@ -326,8 +398,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
             <GrammarPatternPill
               label={grammarPatterns[card.grammar_pattern].label}
               tooltip={grammarPatterns[card.grammar_pattern].tooltip ?? ''}
-              endings={grammarPatterns[card.grammar_pattern].endings}
-              showEndings={answered || isAutoProgressing}
+              endings={reveal?.grammar_pattern_endings}
             />
           )}
           </div>
@@ -346,7 +417,12 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
               }
             />
             <DropdownMenuContent align="end" className="min-w-50">
-              {isAdmin && (
+              {/*
+                Gated on `reveal`, not just `isAdmin`: CardReveal's fields
+                only exist once the card is graded (see lib/types.ts) -
+                editing it earlier would open the dialog on a blank record.
+              */}
+              {isAdmin && reveal && (
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   Edit card
                 </DropdownMenuItem>
@@ -385,18 +461,18 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                   role="note"
                   aria-label={hanjaHintLabel({
                     hanja: card.hanja,
-                    hints: card.hanja_hints ?? [],
+                    hints: displayHanjaHints(card, reveal),
                     showEum: answered || isAutoProgressing,
-                    hanjaEum: card.hanja_eum,
+                    hanjaEum: reveal?.hanja_eum,
                     showTarget: answered || isAutoProgressing,
                   })}
                   className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none"
                 >
                   <HanjaHintText
                     hanja={card.hanja}
-                    hints={card.hanja_hints ?? []}
+                    hints={displayHanjaHints(card, reveal)}
                     showEum={answered || isAutoProgressing}
-                    hanjaEum={card.hanja_eum}
+                    hanjaEum={reveal?.hanja_eum}
                     showTarget={answered || isAutoProgressing}
                   />
                 </span>
@@ -409,18 +485,21 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                   <span className="text-green-600">{submittedAnswer}</span>
                 ) : (
                   // Per-character correctness is otherwise carried only by the
-                  // text colour; data-correct states it outright.
+                  // text colour; data-correct states it outright. `reveal!` is
+                  // safe throughout this branch - it only renders once
+                  // `answered`, which handleSubmit only ever sets alongside
+                  // `reveal` itself, in the same synchronous continuation.
                   <span className="inline-flex flex-wrap items-baseline gap-0">
                     {submittedAnswer.split('').map((char, i) => (
                       <span
                         key={i}
-                        data-correct={char === card.target[i]}
-                        className={char === card.target[i] ? 'text-green-600' : 'text-destructive'}
+                        data-correct={char === reveal!.target[i]}
+                        className={char === reveal!.target[i] ? 'text-green-600' : 'text-destructive'}
                       >
                         {char}
                       </span>
                     ))}
-                    <span className="text-muted-foreground/50 ml-1 select-none">({card.target})</span>
+                    <span className="text-muted-foreground/50 ml-1 select-none">({reveal!.target})</span>
                   </span>
                 )
               ) : null}
@@ -452,7 +531,7 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
                 autoFocus
               />
               {(answered || isAutoProgressing) && showInfinitive && (
-                <span className="text-xs text-muted-foreground/60 mt-1 select-none">({card.word})</span>
+                <span className="text-xs text-muted-foreground/60 mt-1 select-none">({reveal?.word})</span>
               )}
             </span>
             {after}
@@ -471,12 +550,23 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         </p>
       </CardHeader>
 
-      {isAdmin && (
+      {/* Mounting is gated the same as the menu item that opens it (above) -
+          `reveal` is guaranteed non-null here. */}
+      {isAdmin && reveal && (
         <EditCardDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          card={card}
-          onSaved={onCardUpdated}
+          card={toAdminCard(card, reveal)}
+          onSaved={(updates) => {
+            // `card` (App.tsx state) only holds CardPrompt's fields; patch
+            // the CardReveal-shaped rest directly into our own local state
+            // rather than routing it through a prop round-trip.
+            const revealUpdates = Object.fromEntries(
+              Object.entries(updates).filter(([key, v]) => CARD_REVEAL_FIELDS.has(key) && v !== undefined)
+            ) as Partial<CardReveal>
+            setReveal((prev) => (prev ? { ...prev, ...revealUpdates } : prev))
+            onCardUpdated?.(updates)
+          }}
         />
       )}
 
@@ -491,15 +581,15 @@ export function Flashcard({ card, onReview, onSuppress, onCardUpdated }: Flashca
         inert={isAutoProgressing}
       >
         {!answered && !isAutoProgressing ? (
-          <Button ref={submitButtonRef} type="submit" onClick={handleSubmit} className="w-full">
-            {cardTheme.checkLabel}
+          <Button ref={submitButtonRef} type="submit" onClick={handleSubmit} disabled={checking} className="w-full">
+            {checking ? 'Checking…' : cardTheme.checkLabel}
           </Button>
         ) : (
           <>
             <p role="status" className={cn("text-sm font-medium", correct ? "text-green-600" : "text-destructive")}>
               {correct
-                ? `Correct! The answer was ${card.target}.`
-                : `Incorrect. You typed ${submittedAnswer || '(nothing)'}; the answer was ${card.target}.`}
+                ? `Correct! The answer was ${reveal?.target}.`
+                : `Incorrect. You typed ${submittedAnswer || '(nothing)'}; the answer was ${reveal?.target}.`}
             </p>
             <Button onClick={handleAdvance} disabled={advancing} variant="outline" className="w-full">
               {advancing ? 'Loading next card…' : 'Next'}

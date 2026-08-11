@@ -38,7 +38,8 @@ interface EditCardResponse {
 
 type CardResponse = Schemas['NextCardResponse']
 type NextCardEnvelope = Schemas['NextCardEnvelope']
-type ReviewRequest = Schemas['ReviewRequest']
+type CheckRequest = Schemas['CheckRequest']
+type CheckResponse = Schemas['CheckResponse']
 type ReviewResponse = Schemas['ReviewResponse']
 type UserProfile = Schemas['UserProfile']
 
@@ -101,11 +102,15 @@ export async function getEnumLookups(): Promise<EnumLookups> {
   return fetchWithAuth(url)
 }
 
-export async function submitReview(cardId: number, rating: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${cardId}/review`
+// Grades `answer` against `cardId` server-side, records the FSRS review,
+// and returns the card's secret half (target, word, hanja reading/gloss,
+// grammar pattern endings) - none of which the client had before this call.
+export async function checkAnswer(cardId: number, answer: string): Promise<CheckResponse> {
+  const url = `${window.location.origin}/api/cards/${cardId}/check`
+  const body: CheckRequest = { answer }
   return fetchWithAuth(url, {
     method: 'POST',
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify(body),
   })
 }
 
@@ -256,6 +261,12 @@ export async function updateCustomCard(cardId: number, updates: UpdateCustomCard
 // Backend's admin::AdminCard and cards::NextCardResponse used to be two
 // independently hand-declared structs that happened to agree on most
 // fields - now unified into one schema, cards::Card, reused by both.
+//
+// `Card` is also the shape EditCardDialog edits, review flow included: the
+// review card only ever holds the CardPrompt/CardReveal split (see
+// lib/types.ts), which withholds `target` et al. pre-answer on purpose, so
+// opening the editor there requires an adapter (toAdminCard in
+// flashcard.tsx) rather than passing the review card straight through.
 type AdminCard = Schemas['Card']
 type SearchCardsResponse = Schemas['SearchCardsResponse']
 
@@ -303,7 +314,8 @@ export type {
   EditCardResponse,
   CardResponse,
   NextCardEnvelope,
-  ReviewRequest,
+  CheckRequest,
+  CheckResponse,
   ReviewResponse,
   UserProfile,
   ImportResponse,
