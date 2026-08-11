@@ -1,14 +1,27 @@
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 use std::env;
+use std::time::Duration;
 use tracing::{debug, info};
 
 pub async fn init() -> anyhow::Result<SqlitePool> {
     let database_url = env::var("DATABASE_URL")
         .expect("DATABASE_URL environment variable must be set");
 
+    // WAL lets readers (GET /cards/next's "pick a due card" query, in
+    // particular - it's the slowest read in the app) run concurrently with a
+    // writer instead of blocking it. Without this, the pool's 5 connections
+    // mean a slow read and a concurrent write (e.g. POST /cards/{id}/check,
+    // which now runs earlier in a card's lifecycle than the old
+    // POST /review did, right when the answer is submitted rather than at
+    // Next - see cards::check_answer) contend for the same file lock, and
+    // once busy_timeout (5s, sqlx's default - set explicitly below so it's
+    // not just an assumption) is exhausted, every connection in the pool
+    // starts failing with "database is locked", not just the two involved.
     let options = SqliteConnectOptions::from_str(&database_url)?
-        .create_if_missing(true);
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(5));
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
