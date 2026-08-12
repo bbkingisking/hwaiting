@@ -1,0 +1,11 @@
+[package]
+name = "hwaiting-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+krdict = "0.1.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+ureq = { version = "3.4.0", features = ["json"] }
