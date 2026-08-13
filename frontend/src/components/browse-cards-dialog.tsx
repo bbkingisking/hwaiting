@@ -94,7 +94,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
           <DialogHeader>
             <DialogTitle>Browse Cards</DialogTitle>
             <DialogDescription>
-              Search cards by their target and click one to edit it
+              Search cards by their target or card id and click one to edit it
             </DialogDescription>
           </DialogHeader>
 
@@ -102,8 +102,8 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
             <Input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              aria-label="Search cards by target"
-              placeholder="Search by target…"
+              aria-label="Search cards by target or card id"
+              placeholder="Search by target or card id…"
               autoFocus
             />
 
@@ -136,7 +136,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
                     <div className="space-y-1">
                       <div className="font-medium">{card.target}</div>
                       <div className="text-sm text-muted-foreground">
-                        {card.word} · {card.trans_word}
+                        {card.word} · {card.trans_word} · #{card.card_id}
                       </div>
                       <div className="text-xs text-muted-foreground/70">
                         {card.sentence}

@@ -191,7 +191,7 @@ pub struct SearchCardsResponse {
     path = "/api/admin/cards/search",
     params(SearchCardsQuery),
     responses(
-        (status = 200, description = "Cards matching a substring search over sentence targets (capped at 50)", body = SearchCardsResponse),
+        (status = 200, description = "Cards matching a substring search over sentence targets, or an exact card id match (capped at 50)", body = SearchCardsResponse),
         (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
@@ -209,12 +209,13 @@ pub async fn search_cards(
         return Ok(Json(SearchCardsResponse { cards: Vec::new() }));
     }
 
-    info!("Admin searching cards by target: {}", q);
+    info!("Admin searching cards by target or card id: {}", q);
 
     let pattern = format!(
         "%{}%",
         q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
     );
+    let card_id: Option<i64> = q.parse().ok();
 
     let rows = sqlx::query(
         r#"
@@ -237,12 +238,13 @@ pub async fn search_cards(
         LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
         LEFT JOIN tenses tn ON tn.id = sih.tense_id
         LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
-        WHERE s.target LIKE ? ESCAPE '\'
+        WHERE s.target LIKE ? ESCAPE '\' OR c.id = ?
         ORDER BY length(s.target) ASC, s.target ASC
         LIMIT 50
         "#,
     )
     .bind(&pattern)
+    .bind(card_id)
     .fetch_all(&pool)
     .await?;
 
