@@ -12,8 +12,8 @@ use utoipa::ToSchema;
 use crate::error::AppError;
 
 use super::time::{
-    accuracy_percentage, logical_day_shift, logical_today_start, sqlite_datetime,
-    CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL,
+    accuracy_percentage, logical_day_shift, logical_today_start, parse_flexible_datetime,
+    sqlite_datetime, CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL,
 };
 
 #[derive(Serialize, ToSchema)]
@@ -374,9 +374,7 @@ pub async fn get_history_summary(
     // Format first_review_date as YYYY-MM-DD
     let first_review_raw: Option<String> = stats_row.get("first_review_date");
     let first_review_date = first_review_raw.and_then(|s| {
-        chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S"))
+        parse_flexible_datetime(&s)
             .ok()
             .map(|dt| dt.format("%Y-%m-%d").to_string())
     });
