@@ -46,3 +46,29 @@ pub(super) fn logical_day_shift(day_boundary_hour: i64) -> String {
 pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
     (total > 0).then(|| correct * 100 / total)
 }
+
+/// Parses a timestamp that may be in either format this app has ever
+/// written to a `TEXT` "datetime" column: RFC3339 (`DateTime::to_rfc3339()`,
+/// what `check::check_answer` writes to `card_states.last_review`), or
+/// SQLite's own `datetime('now')` format - what every column relying on a
+/// schema `DEFAULT` instead of an explicit bind gets (e.g.
+/// `review_history.reviewed_at`), and what `card_states.last_review` itself
+/// falls back to after a backup restore that recreated the row via raw SQL
+/// rather than through this application.
+///
+/// Three call sites (`check::check_answer`, `fsrs_admin::optimize_fsrs`,
+/// `stats::get_history_summary`) used to each hand-roll their own subset of
+/// this fallback chain, in a different order and without the initial
+/// `parse_from_rfc3339` attempt this function leads with - so which formats
+/// a given caller actually tolerated (and whether an RFC3339 timestamp with
+/// a non-UTC offset would even survive it) wasn't answerable by reading any
+/// one of them in isolation.
+pub(super) fn parse_flexible_datetime(s: &str) -> Result<chrono::DateTime<Utc>, chrono::ParseError> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .map(|ndt| chrono::DateTime::from_naive_utc_and_offset(ndt, Utc))
+}

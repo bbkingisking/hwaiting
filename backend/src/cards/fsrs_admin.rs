@@ -15,6 +15,8 @@ use utoipa::ToSchema;
 
 use crate::error::AppError;
 
+use super::time::parse_flexible_datetime;
+
 #[derive(Serialize, ToSchema)]
 pub struct OptimizeFsrsResponse {
     success: bool,
@@ -77,10 +79,7 @@ pub async fn optimize_fsrs(
             _ => continue,
         };
 
-        let reviewed_at = chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%dT%H:%M:%S%.f")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%d %H:%M:%S%.f"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(&reviewed_at_str, "%Y-%m-%d %H:%M:%S"))
-            .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, Utc))
+        let reviewed_at = parse_flexible_datetime(&reviewed_at_str)
             .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?;
 
         if current_card_id != Some(card_id) {
