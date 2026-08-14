@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical } from 'lucide-react'
-import { suppressCard, type AdminCard } from '@/lib/api'
+import { suppressCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -34,9 +34,8 @@ interface FlashcardProps {
   onCardUpdated?: (updates: Partial<AdminCard>) => void
 }
 
-// The subset of AdminCard's editable fields that CardReveal actually has -
-// see the onSaved wrapper in Flashcard below.
-const CARD_REVEAL_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives', 'hanja_eum'])
+// CARD_BACK_FIELDS (lib/api.ts) is the subset of AdminCard's editable
+// fields that CardReveal actually has - see the onSaved wrapper below.
 
 // Pre-answer, only the hanja *characters* of each hint are known (see
 // CardPrompt::hanja_hint_words) - the reading/gloss give the answer away, so
@@ -562,7 +561,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
             // the CardReveal-shaped rest directly into our own local state
             // rather than routing it through a prop round-trip.
             const revealUpdates = Object.fromEntries(
-              Object.entries(updates).filter(([key, v]) => CARD_REVEAL_FIELDS.has(key) && v !== undefined)
+              Object.entries(updates).filter(([key, v]) => CARD_BACK_FIELDS.has(key) && v !== undefined)
             ) as Partial<CardReveal>
             setReveal((prev) => (prev ? { ...prev, ...revealUpdates } : prev))
             onCardUpdated?.(updates)

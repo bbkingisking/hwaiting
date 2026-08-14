@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from 'react'
-import { editCard, type AdminCard } from '@/lib/api'
+import { editCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { krdictUrl } from '@/lib/utils'
 import { useEnumLookups } from '@/components/enum-lookups-provider'
 import { EnumSelect } from '@/components/enum-select'
@@ -65,11 +65,49 @@ function nullIfEmpty(val: string): string | null {
   return val.trim() === '' ? null : val.trim()
 }
 
+// The "front"/"back" of a physical flashcard, reconstructed from AdminCard
+// rather than fetched: CardPrompt (the front - what a reviewer sees before
+// answering) and CardReveal (the back - what grading discloses) are only
+// ever produced mid-review, by GET /api/cards/next and POST
+// /api/cards/{id}/check respectively (see toAdminCard in flashcard.tsx,
+// which merges the two the other direction). EditCardDialog can be opened
+// on any searched card with no review in flight (browse-cards-dialog.tsx),
+// so there's no live request that would return either shape here - the
+// split has to be computed from the AdminCard already in hand, using the
+// same CARD_BACK_FIELDS partition toAdminCard itself was built from.
+function splitCard(card: AdminCard): { front: Record<string, unknown>; back: Record<string, unknown> } {
+  const front: Record<string, unknown> = {}
+  const back: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(card)) {
+    const bucket = CARD_BACK_FIELDS.has(key) ? back : front
+    bucket[key] = value
+  }
+  return { front, back }
+}
+
+async function copyText(text: string) {
+  // navigator.clipboard requires a secure context (https or localhost); this
+  // app is also served over plain http on the LAN, so fall back to the
+  // legacy execCommand copy path when the async API isn't available.
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text)
+  } else {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+}
+
 export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDialogProps) {
   const [form, setForm] = useState<FormState>(toFormState(card))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'full' | 'front' | 'back' | null>(null)
   const { pos, originType, grade, speechLevel, tense, grammarPattern } = useEnumLookups()
 
   // Reset form whenever the dialog opens with a (potentially new) card
@@ -77,7 +115,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     if (open) {
       setForm(toFormState(card))
       setError(null)
-      setCopied(false)
+      setCopied(null)
     }
   }, [open, card])
 
@@ -119,24 +157,12 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     }
   }
 
-  async function handleCopyJson() {
-    const text = JSON.stringify(card, null, 2)
-    // navigator.clipboard requires a secure context (https or localhost); this
-    // app is also served over plain http on the LAN, so fall back to the
-    // legacy execCommand copy path when the async API isn't available.
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.style.position = 'fixed'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
-    }
-    setCopied(true)
+  const { front: cardFront, back: cardBack } = splitCard(card)
+
+  async function handleCopy(which: 'full' | 'front' | 'back') {
+    const value = which === 'full' ? card : which === 'front' ? cardFront : cardBack
+    await copyText(JSON.stringify(value, null, 2))
+    setCopied(which)
   }
 
   const krdictLink = krdictUrl(card.krdict_id)
@@ -156,13 +182,21 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
               Look up in KRDICT
             </a>
           )}
-          <button
-            type="button"
-            onClick={handleCopyJson}
-            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-          >
-            {copied ? 'Copied!' : 'Copy card as JSON'}
-          </button>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <CopyLink label="Copy card as JSON" copied={copied === 'full'} onClick={() => handleCopy('full')} />
+            <CopyLink
+              label="Copy card_front as JSON"
+              title="The hint half: what a reviewer sees before answering (CardPrompt)."
+              copied={copied === 'front'}
+              onClick={() => handleCopy('front')}
+            />
+            <CopyLink
+              label="Copy card_back as JSON"
+              title="The secret half: what grading discloses (CardReveal)."
+              copied={copied === 'back'}
+              onClick={() => handleCopy('back')}
+            />
+          </div>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
@@ -292,6 +326,19 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function CopyLink({ label, title, copied, onClick }: { label: string; title?: string; copied: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+    >
+      {copied ? 'Copied!' : label}
+    </button>
   )
 }
 
