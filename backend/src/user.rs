@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 use tracing::info;
 use utoipa::ToSchema;
 
@@ -15,8 +15,21 @@ pub struct UserProfile {
     pub username: String,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct UserSettings {
+/// The `user_settings` row proper - every field shared verbatim between the
+/// live API response (`UserSettings`, below) and data export/import
+/// (`export_import::UserSettingsExport`). Split out so both flatten this
+/// struct instead of hand-declaring the same 11 fields a second time: the
+/// export path used to be its own independently-declared struct that merely
+/// happened to agree with `UserSettings`, the same silent-drift risk
+/// `cards::Card` used to carry before it was unified from
+/// `CardFront`/`CardBack` (see its doc comment in cards/mod.rs) - a settings
+/// field added to the DB and to one of these two but not the other would
+/// silently vanish from export, or from the live API, with no compiler
+/// error either way. `sqlx::FromRow` lets both `get_settings` (below) and
+/// `export_import::get_user_settings` read a row straight into this shape
+/// too, rather than each hand-repeating the same 11 `row.get(...)` calls.
+#[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct UserSettingsCore {
     pub show_percentage: bool,
     pub red_threshold: i64,
     pub yellow_threshold: i64,
@@ -28,6 +41,17 @@ pub struct UserSettings {
     pub history_colorized_area: bool,
     pub history_colored_dots: bool,
     pub history_threshold_lines: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UserSettings {
+    #[serde(flatten)]
+    pub core: UserSettingsCore,
+    /// Whether the user has FSRS parameters fitted from their own review
+    /// history, as opposed to library defaults - a presence flag, not the
+    /// parameters themselves. See `UserSettingsExport::fsrs_parameters` for
+    /// the portable form export/import actually needs; the two aren't the
+    /// same field under different names, so this doesn't join `core`.
     pub has_fsrs_parameters: bool,
 }
 
@@ -111,7 +135,7 @@ pub async fn get_settings(
     .execute(&pool)
     .await?;
 
-    let row = sqlx::query(
+    let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
         SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
         FROM user_settings
@@ -130,20 +154,7 @@ pub async fn get_settings(
     .fetch_one(&pool)
     .await?;
 
-    Ok(Json(UserSettings {
-        show_percentage: row.get("show_percentage"),
-        red_threshold: row.get("red_threshold"),
-        yellow_threshold: row.get("yellow_threshold"),
-        day_boundary_hour: row.get("day_boundary_hour"),
-        auto_progress_on_correct: row.get("auto_progress_on_correct"),
-        auto_progress_delay: row.get("auto_progress_delay"),
-        desired_retention: row.get("desired_retention"),
-        daily_new_card_limit: row.get("daily_new_card_limit"),
-        history_colorized_area: row.get("history_colorized_area"),
-        history_colored_dots: row.get("history_colored_dots"),
-        history_threshold_lines: row.get("history_threshold_lines"),
-        has_fsrs_parameters,
-    }))
+    Ok(Json(UserSettings { core, has_fsrs_parameters }))
 }
 
 // Update user settings
