@@ -69,6 +69,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   const [form, setForm] = useState<FormState>(toFormState(card))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const { pos, originType, grade, speechLevel, tense, grammarPattern } = useEnumLookups()
 
   // Reset form whenever the dialog opens with a (potentially new) card
@@ -76,6 +77,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     if (open) {
       setForm(toFormState(card))
       setError(null)
+      setCopied(false)
     }
   }, [open, card])
 
@@ -117,6 +119,26 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     }
   }
 
+  async function handleCopyJson() {
+    const text = JSON.stringify(card, null, 2)
+    // navigator.clipboard requires a secure context (https or localhost); this
+    // app is also served over plain http on the LAN, so fall back to the
+    // legacy execCommand copy path when the async API isn't available.
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    setCopied(true)
+  }
+
   const krdictLink = krdictUrl(card.krdict_id)
 
   return (
@@ -134,6 +156,13 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
               Look up in KRDICT
             </a>
           )}
+          <button
+            type="button"
+            onClick={handleCopyJson}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+          >
+            {copied ? 'Copied!' : 'Copy card as JSON'}
+          </button>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
