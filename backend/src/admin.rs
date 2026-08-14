@@ -11,7 +11,7 @@ use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::auth::AdminUser;
-use crate::cards::Card;
+use crate::cards::{Card, CardBack, CardFront};
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 /// Extract a nullable string field from JSON, distinguishing absent from null.
@@ -263,28 +263,32 @@ pub async fn search_cards(
         let (sentence_before, sentence_after) = crate::cards::split_sentence(&sentence, &target);
 
         cards.push(Card {
-            card_id: row.get("id"),
-            krdict_id: row.get("krdict_id"),
-            word: row.get("word"),
-            definition: row.get("definition"),
-            pos: row.get("pos"),
-            origin_type: row.get("origin_type"),
-            hanja: row.get("hanja"),
-            hanja_eum: row.get("hanja_eum"),
-            grade: row.get("grade"),
-            trans_word: row.get("trans_word"),
-            trans_dfn: row.get("trans_dfn"),
-            sentence,
-            sentence_before,
-            sentence_after,
-            sentence_translation: row
-                .get::<Option<String>, _>("sentence_translation")
-                .unwrap_or_default(),
-            target,
-            alternatives,
-            speech_level: row.get("speech_level"),
-            tense: row.get("tense"),
-            grammar_pattern: row.get("grammar_pattern"),
+            front: CardFront {
+                card_id: row.get("id"),
+                krdict_id: row.get("krdict_id"),
+                pos: row.get("pos"),
+                origin_type: row.get("origin_type"),
+                hanja: row.get("hanja"),
+                grade: row.get("grade"),
+                trans_word: row.get("trans_word"),
+                trans_dfn: row.get("trans_dfn"),
+                sentence_before,
+                sentence_after,
+                sentence_translation: row
+                    .get::<Option<String>, _>("sentence_translation")
+                    .unwrap_or_default(),
+                speech_level: row.get("speech_level"),
+                tense: row.get("tense"),
+                grammar_pattern: row.get("grammar_pattern"),
+            },
+            back: CardBack {
+                word: row.get("word"),
+                definition: row.get("definition"),
+                hanja_eum: row.get("hanja_eum"),
+                sentence,
+                target,
+                alternatives,
+            },
         });
     }
 

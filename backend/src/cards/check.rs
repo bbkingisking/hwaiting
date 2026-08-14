@@ -19,16 +19,33 @@ pub struct CheckRequest {
     pub answer: String,
 }
 
-/// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt.
-/// Every field here would give the answer away if it shipped any earlier.
+/// The card fields disclosed once an answer is graded, shared with the
+/// admin-editing shape - see `cards::Card`'s doc comment - and with
+/// `CardFront` (next.rs) for the withheld-until-graded relationship between
+/// the two. Split out from `CardReveal` (below) for the same reason
+/// `CardFront` was: so `Card` can flatten this struct instead of
+/// hand-declaring the same 6 fields a third time. Every field here would
+/// give the answer away if it shipped any earlier than `CardReveal` ships it.
 #[derive(Serialize, ToSchema)]
-pub struct CardReveal {
+pub struct CardBack {
     pub word: String,
     pub definition: Option<String>,
     pub sentence: String,
     pub target: String,
     pub alternatives: Vec<String>,
     pub hanja_eum: Option<String>,
+}
+
+/// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
+/// `CardBack` plus the two fields that are genuinely review-flow-specific
+/// rather than properties of the card itself - `hanja_hints` depends on the
+/// requesting user's review history (see `hanja_hints_for`), and
+/// `grammar_pattern_endings` belongs to the referenced `grammar_patterns`
+/// row, not this card - so neither has a place on `CardBack`/`Card`.
+#[derive(Serialize, ToSchema)]
+pub struct CardReveal {
+    #[serde(flatten)]
+    pub back: CardBack,
     pub hanja_hints: Vec<HanjaHint>,
     /// The grammar pattern's possible conjugation endings - a property of
     /// the referenced `grammar_patterns` row, not of this card, but exactly
@@ -261,12 +278,14 @@ pub async fn check_answer(
     Ok(Json(CheckResponse {
         correct,
         reveal: CardReveal {
-            word,
-            definition,
-            sentence,
-            target,
-            alternatives,
-            hanja_eum,
+            back: CardBack {
+                word,
+                definition,
+                sentence,
+                target,
+                alternatives,
+                hanja_eum,
+            },
             hanja_hints,
             grammar_pattern_endings,
         },
