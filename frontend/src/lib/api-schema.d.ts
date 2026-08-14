@@ -252,6 +252,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cards/{card_id}/comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["comment_on_card"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cards/{card_id}/suppress": {
         parameters: {
             query?: never;
@@ -416,71 +432,71 @@ export interface components {
         };
         /**
          * @description The canonical full-card shape: a `cards` row joined with its English
-         *     translation and primary example sentence. Shared verbatim by admin
-         *     search (`admin::search_cards`) and edit (`admin::edit_card`) - previously
-         *     two independently hand-declared structs that happened to agree on 14 of
-         *     their fields, which is exactly the kind of duplication that drifts
-         *     silently over time. Not used by the review flow, which only ever needs
-         *     the `CardPrompt`/`CardReveal` split above - admin editing isn't gated by
-         *     the same secrecy concerns, so it gets the whole row upfront.
+         *     translation and primary example sentence - exactly `CardFront` (next.rs)
+         *     plus `CardBack` (check.rs), i.e. exactly what `CardPrompt` and
+         *     `CardReveal` disclose between them minus the two fields that are
+         *     review-flow state rather than properties of the card itself
+         *     (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
+         *     review history, see `hanja_hints_for`).
+         *
+         *     Flattening the same two structs the review flow already produces, rather
+         *     than hand-declaring their union a third time, is what keeps this
+         *     in sync with them: `Card` used to be its own independently-declared
+         *     20-field struct that merely happened to agree with `CardPrompt`/
+         *     `CardReveal` - previously it was also independent of `admin::AdminCard`,
+         *     which had the exact same problem in miniature (agreeing on 14 of its own
+         *     fields) until both admin structs were unified into this one. Nothing
+         *     enforced this wider agreement in the same way; the frontend's
+         *     `toAdminCard`/`CARD_BACK_FIELDS` (lib/api.ts) had to hand-encode the
+         *     front/back split from the outside, reconstructing in TypeScript what the
+         *     Rust types could just express directly.
+         *
+         *     Shared verbatim by admin search (`admin::search_cards`) and edit
+         *     (`admin::edit_card`). Not used by the review flow itself, which needs
+         *     `CardPrompt`/`CardReveal` proper, extra per-user fields included -
+         *     admin editing isn't gated by the same secrecy concerns, so it gets the
+         *     whole row upfront.
          */
-        Card: {
+        Card: components["schemas"]["CardFront"] & components["schemas"]["CardBack"];
+        /**
+         * @description The card fields disclosed once an answer is graded, shared with the
+         *     admin-editing shape - see `cards::Card`'s doc comment - and with
+         *     `CardFront` (next.rs) for the withheld-until-graded relationship between
+         *     the two. Split out from `CardReveal` (below) for the same reason
+         *     `CardFront` was: so `Card` can flatten this struct instead of
+         *     hand-declaring the same 6 fields a third time. Every field here would
+         *     give the answer away if it shipped any earlier than `CardReveal` ships it.
+         */
+        CardBack: {
             alternatives: string[];
-            /** Format: int64 */
-            card_id: number;
             definition?: string | null;
-            grade?: string | null;
-            grammar_pattern?: string | null;
-            hanja?: string | null;
             hanja_eum?: string | null;
-            /**
-             * Format: int64
-             * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
-             *     for user-created custom cards, which have no upstream dictionary entry.
-             */
-            krdict_id?: number | null;
-            origin_type?: string | null;
-            pos?: string | null;
             sentence: string;
-            /** @description The text after the blank. See `sentence_before`. */
-            sentence_after: string;
-            /**
-             * @description `sentence`, sliced at `target`'s position: the text before the blank.
-             *     Derived once here rather than by every renderer re-searching
-             *     `sentence` for `target` - see `split_sentence`.
-             */
-            sentence_before: string;
-            sentence_translation: string;
-            speech_level?: string | null;
             target: string;
-            tense?: string | null;
-            trans_dfn?: string | null;
-            trans_word: string;
             word: string;
         };
         /**
-         * @description Everything the client may see before it has attempted an answer: enough
-         *     to render the sentence-with-blank, badges, and both translations, but
-         *     nothing `target` could be inferred from. Served by `GET /api/cards/next`.
+         * @description The card fields visible before an answer is checked, shared with the
+         *     admin-editing shape - see `cards::Card`'s doc comment - and with
+         *     `CardBack` (check.rs) for the withheld half. Split out from `CardPrompt`
+         *     (below) so `Card` can flatten this struct instead of hand-declaring the
+         *     same 13 fields a third time: `Card` used to be its own standing struct
+         *     that merely happened to agree with `CardPrompt`'s, the exact
+         *     silent-drift risk `Card`'s doc comment already flags from its earlier
+         *     history with the admin struct it replaced.
          *
          *     `definition` and the unsliced `sentence` are withheld too, even though
          *     neither is rendered by the review UI at all pre- or post-answer - they're
-         *     authoring fields, not review-flow fields. `CardReveal` (below) carries
-         *     them anyway, purely so an admin editing a card mid-review has a correct,
-         *     non-blank baseline to save over.
+         *     authoring fields, not review-flow fields. `CardBack` carries them anyway,
+         *     purely so an admin editing a card mid-review has a correct, non-blank
+         *     baseline to save over.
          */
-        CardPrompt: {
+        CardFront: {
             /** Format: int64 */
             card_id: number;
             grade?: string | null;
             grammar_pattern?: string | null;
-            /**
-             * @description Hanja characters for the pre-answer hint span. The reading and each
-             *     hint's gloss give the answer away - see `CardReveal::hanja_eum` and
-             *     `HanjaHint::trans_word`.
-             */
             hanja?: string | null;
-            hanja_hint_words: string[];
             /**
              * Format: int64
              * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
@@ -495,7 +511,7 @@ export interface components {
              * @description `sentence`, sliced at `target`'s position: the text before the blank.
              *     Derived once here rather than by every renderer re-searching
              *     `sentence` for `target` - see `split_sentence`. The unsliced
-             *     `sentence` and `target` itself are withheld; see `CardReveal`.
+             *     `sentence` and `target` itself are withheld; see `CardBack`.
              */
             sentence_before: string;
             sentence_translation: string;
@@ -505,12 +521,29 @@ export interface components {
             trans_word: string;
         };
         /**
-         * @description Disclosed only once `POST /api/cards/{id}/check` has graded an attempt.
-         *     Every field here would give the answer away if it shipped any earlier.
+         * @description Everything the client may see before it has attempted an answer:
+         *     `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
+         *     review-flow-specific rather than a property of the card itself - it
+         *     depends on the requesting user's review history (see `hanja_hints_for`),
+         *     so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/next`.
          */
-        CardReveal: {
-            alternatives: string[];
-            definition?: string | null;
+        CardPrompt: components["schemas"]["CardFront"] & {
+            /**
+             * @description Hanja characters for the pre-answer hint span. The reading and each
+             *     hint's gloss give the answer away - see `CardBack::hanja_eum` and
+             *     `HanjaHint::trans_word`.
+             */
+            hanja_hint_words: string[];
+        };
+        /**
+         * @description Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
+         *     `CardBack` plus the two fields that are genuinely review-flow-specific
+         *     rather than properties of the card itself - `hanja_hints` depends on the
+         *     requesting user's review history (see `hanja_hints_for`), and
+         *     `grammar_pattern_endings` belongs to the referenced `grammar_patterns`
+         *     row, not this card - so neither has a place on `CardBack`/`Card`.
+         */
+        CardReveal: components["schemas"]["CardBack"] & {
             /**
              * @description The grammar pattern's possible conjugation endings - a property of
              *     the referenced `grammar_patterns` row, not of this card, but exactly
@@ -521,11 +554,7 @@ export interface components {
              *     picking a pattern rather than guessing one card's answer).
              */
             grammar_pattern_endings?: string | null;
-            hanja_eum?: string | null;
             hanja_hints: components["schemas"]["HanjaHint"][];
-            sentence: string;
-            target: string;
-            word: string;
         };
         CardTranslationExport: {
             language_tag: string;
@@ -537,6 +566,13 @@ export interface components {
         };
         CheckResponse: components["schemas"]["CardReveal"] & {
             correct: boolean;
+        };
+        CommentRequest: {
+            body: string;
+        };
+        CommentResponse: {
+            /** Format: int64 */
+            id: number;
         };
         CreateCustomCardRequest: {
             alternatives?: string[] | null;
@@ -895,7 +931,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cards matching a substring search over sentence targets (capped at 50) */
+            /** @description Cards matching a substring search over sentence targets, or an exact card id match (capped at 50) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1521,6 +1557,51 @@ export interface operations {
                 };
             };
             /** @description Card doesn't exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    comment_on_card: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card ID */
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentRequest"];
+            };
+        };
+        responses: {
+            /** @description Comment recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Card not found */
             404: {
                 headers: {
                     [name: string]: unknown;

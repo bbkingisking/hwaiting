@@ -13,17 +13,22 @@ use crate::error::{AppError, AppQuery};
 use super::hanja_hints_for;
 use super::time::{logical_today_start, sqlite_datetime};
 
-/// Everything the client may see before it has attempted an answer: enough
-/// to render the sentence-with-blank, badges, and both translations, but
-/// nothing `target` could be inferred from. Served by `GET /api/cards/next`.
+/// The card fields visible before an answer is checked, shared with the
+/// admin-editing shape - see `cards::Card`'s doc comment - and with
+/// `CardBack` (check.rs) for the withheld half. Split out from `CardPrompt`
+/// (below) so `Card` can flatten this struct instead of hand-declaring the
+/// same 13 fields a third time: `Card` used to be its own standing struct
+/// that merely happened to agree with `CardPrompt`'s, the exact
+/// silent-drift risk `Card`'s doc comment already flags from its earlier
+/// history with the admin struct it replaced.
 ///
 /// `definition` and the unsliced `sentence` are withheld too, even though
 /// neither is rendered by the review UI at all pre- or post-answer - they're
-/// authoring fields, not review-flow fields. `CardReveal` (below) carries
-/// them anyway, purely so an admin editing a card mid-review has a correct,
-/// non-blank baseline to save over.
+/// authoring fields, not review-flow fields. `CardBack` carries them anyway,
+/// purely so an admin editing a card mid-review has a correct, non-blank
+/// baseline to save over.
 #[derive(Serialize, ToSchema)]
-pub struct CardPrompt {
+pub struct CardFront {
     pub card_id: i64,
     /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
     /// for user-created custom cards, which have no upstream dictionary entry.
@@ -36,7 +41,7 @@ pub struct CardPrompt {
     /// `sentence`, sliced at `target`'s position: the text before the blank.
     /// Derived once here rather than by every renderer re-searching
     /// `sentence` for `target` - see `split_sentence`. The unsliced
-    /// `sentence` and `target` itself are withheld; see `CardReveal`.
+    /// `sentence` and `target` itself are withheld; see `CardBack`.
     pub sentence_before: String,
     /// The text after the blank. See `sentence_before`.
     pub sentence_after: String,
@@ -44,10 +49,21 @@ pub struct CardPrompt {
     pub speech_level: Option<String>,
     pub tense: Option<String>,
     pub grammar_pattern: Option<String>,
-    /// Hanja characters for the pre-answer hint span. The reading and each
-    /// hint's gloss give the answer away - see `CardReveal::hanja_eum` and
-    /// `HanjaHint::trans_word`.
     pub hanja: Option<String>,
+}
+
+/// Everything the client may see before it has attempted an answer:
+/// `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
+/// review-flow-specific rather than a property of the card itself - it
+/// depends on the requesting user's review history (see `hanja_hints_for`),
+/// so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/next`.
+#[derive(Serialize, ToSchema)]
+pub struct CardPrompt {
+    #[serde(flatten)]
+    pub front: CardFront,
+    /// Hanja characters for the pre-answer hint span. The reading and each
+    /// hint's gloss give the answer away - see `CardBack::hanja_eum` and
+    /// `HanjaHint::trans_word`.
     pub hanja_hint_words: Vec<String>,
 }
 
@@ -385,20 +401,22 @@ pub async fn get_next_card(
     Ok(Json(NextCardEnvelope {
         card: Some(NextCardResponse {
             prompt: CardPrompt {
-                card_id,
-                krdict_id,
-                pos,
-                origin_type,
-                grade,
-                trans_word,
-                trans_dfn,
-                sentence_before,
-                sentence_after,
-                sentence_translation,
-                speech_level,
-                tense,
-                grammar_pattern,
-                hanja,
+                front: CardFront {
+                    card_id,
+                    krdict_id,
+                    pos,
+                    origin_type,
+                    grade,
+                    trans_word,
+                    trans_dfn,
+                    sentence_before,
+                    sentence_after,
+                    sentence_translation,
+                    speech_level,
+                    tense,
+                    grammar_pattern,
+                    hanja,
+                },
                 hanja_hint_words,
             },
             difficulty,

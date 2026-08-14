@@ -41,41 +41,36 @@ pub struct HanjaHint {
 }
 
 /// The canonical full-card shape: a `cards` row joined with its English
-/// translation and primary example sentence. Shared verbatim by admin
-/// search (`admin::search_cards`) and edit (`admin::edit_card`) - previously
-/// two independently hand-declared structs that happened to agree on 14 of
-/// their fields, which is exactly the kind of duplication that drifts
-/// silently over time. Not used by the review flow, which only ever needs
-/// the `CardPrompt`/`CardReveal` split (see `next`/`check`) - admin editing
-/// isn't gated by the same secrecy concerns, so it gets the whole row upfront.
+/// translation and primary example sentence - exactly `CardFront` (next.rs)
+/// plus `CardBack` (check.rs), i.e. exactly what `CardPrompt` and
+/// `CardReveal` disclose between them minus the two fields that are
+/// review-flow state rather than properties of the card itself
+/// (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
+/// review history, see `hanja_hints_for`).
+///
+/// Flattening the same two structs the review flow already produces, rather
+/// than hand-declaring their union a third time, is what keeps this
+/// in sync with them: `Card` used to be its own independently-declared
+/// 20-field struct that merely happened to agree with `CardPrompt`/
+/// `CardReveal` - previously it was also independent of `admin::AdminCard`,
+/// which had the exact same problem in miniature (agreeing on 14 of its own
+/// fields) until both admin structs were unified into this one. Nothing
+/// enforced this wider agreement in the same way; the frontend's
+/// `toAdminCard`/`CARD_BACK_FIELDS` (lib/api.ts) had to hand-encode the
+/// front/back split from the outside, reconstructing in TypeScript what the
+/// Rust types could just express directly.
+///
+/// Shared verbatim by admin search (`admin::search_cards`) and edit
+/// (`admin::edit_card`). Not used by the review flow itself, which needs
+/// `CardPrompt`/`CardReveal` proper, extra per-user fields included -
+/// admin editing isn't gated by the same secrecy concerns, so it gets the
+/// whole row upfront.
 #[derive(Serialize, ToSchema)]
 pub struct Card {
-    pub card_id: i64,
-    /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
-    /// for user-created custom cards, which have no upstream dictionary entry.
-    pub krdict_id: Option<i64>,
-    pub word: String,
-    pub definition: Option<String>,
-    pub pos: Option<String>,
-    pub origin_type: Option<String>,
-    pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
-    pub grade: Option<String>,
-    pub trans_word: String,
-    pub trans_dfn: Option<String>,
-    pub sentence: String,
-    /// `sentence`, sliced at `target`'s position: the text before the blank.
-    /// Derived once here rather than by every renderer re-searching
-    /// `sentence` for `target` - see `split_sentence`.
-    pub sentence_before: String,
-    /// The text after the blank. See `sentence_before`.
-    pub sentence_after: String,
-    pub sentence_translation: String,
-    pub target: String,
-    pub alternatives: Vec<String>,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
-    pub grammar_pattern: Option<String>,
+    #[serde(flatten)]
+    pub front: CardFront,
+    #[serde(flatten)]
+    pub back: CardBack,
 }
 
 /// Hanja hints for `card_id`: hanja from other cards the user has already
