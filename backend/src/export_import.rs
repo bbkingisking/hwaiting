@@ -22,19 +22,16 @@ pub struct ExportData {
     pub custom_cards: Vec<CustomCardExport>,
 }
 
+// UserSettingsCore (user.rs) is the `user_settings` row proper, flattened
+// here plus the one field genuinely specific to export/import:
+// `fsrs_parameters` carries the actual fitted parameters so they round-trip
+// through an export, where `user::UserSettings` only exposes whether they're
+// set (see UserSettingsCore's doc comment for why this used to be a second
+// hand-declared copy of the same 11 fields).
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct UserSettingsExport {
-    pub show_percentage: bool,
-    pub red_threshold: i64,
-    pub yellow_threshold: i64,
-    pub day_boundary_hour: i64,
-    pub auto_progress_on_correct: bool,
-    pub auto_progress_delay: i64,
-    pub desired_retention: f64,
-    pub daily_new_card_limit: i64,
-    pub history_colorized_area: bool,
-    pub history_colored_dots: bool,
-    pub history_threshold_lines: bool,
+    #[serde(flatten)]
+    pub core: crate::user::UserSettingsCore,
     pub fsrs_parameters: Option<String>,
 }
 
@@ -612,17 +609,17 @@ pub async fn import_data(
         "#
     )
     .bind(user_id)
-    .bind(data.settings.show_percentage)
-    .bind(data.settings.red_threshold)
-    .bind(data.settings.yellow_threshold)
-    .bind(data.settings.day_boundary_hour)
-    .bind(data.settings.auto_progress_on_correct)
-    .bind(data.settings.auto_progress_delay)
-    .bind(data.settings.desired_retention)
-    .bind(data.settings.daily_new_card_limit)
-    .bind(data.settings.history_colorized_area)
-    .bind(data.settings.history_colored_dots)
-    .bind(data.settings.history_threshold_lines)
+    .bind(data.settings.core.show_percentage)
+    .bind(data.settings.core.red_threshold)
+    .bind(data.settings.core.yellow_threshold)
+    .bind(data.settings.core.day_boundary_hour)
+    .bind(data.settings.core.auto_progress_on_correct)
+    .bind(data.settings.core.auto_progress_delay)
+    .bind(data.settings.core.desired_retention)
+    .bind(data.settings.core.daily_new_card_limit)
+    .bind(data.settings.core.history_colorized_area)
+    .bind(data.settings.core.history_colored_dots)
+    .bind(data.settings.core.history_threshold_lines)
     .execute(&mut *tx)
     .await?;
 
@@ -667,7 +664,7 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
     .execute(pool)
     .await?;
 
-    let row = sqlx::query(
+    let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
         SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
@@ -688,18 +685,5 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
     .fetch_optional(pool)
     .await?;
 
-    Ok(UserSettingsExport {
-        show_percentage: row.get("show_percentage"),
-        red_threshold: row.get("red_threshold"),
-        yellow_threshold: row.get("yellow_threshold"),
-        day_boundary_hour: row.get("day_boundary_hour"),
-        auto_progress_on_correct: row.get("auto_progress_on_correct"),
-        auto_progress_delay: row.get("auto_progress_delay"),
-        desired_retention: row.get("desired_retention"),
-        daily_new_card_limit: row.get("daily_new_card_limit"),
-        history_colorized_area: row.get("history_colorized_area"),
-        history_colored_dots: row.get("history_colored_dots"),
-        history_threshold_lines: row.get("history_threshold_lines"),
-        fsrs_parameters,
-    })
+    Ok(UserSettingsExport { core, fsrs_parameters })
 }

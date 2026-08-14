@@ -597,6 +597,18 @@ export interface components {
             success: boolean;
         };
         CustomCard: {
+            /**
+             * @description Was missing here until this field was added: `CreateCustomCardRequest`,
+             *     `UpdateCustomCardRequest`, and export/import's `SentenceExport` all
+             *     accept/carry a card's alternative accepted answers, but this read
+             *     shape - what `GET /api/custom-cards` and `GET /api/custom-cards/{id}`
+             *     actually return - silently dropped them, so there was no way to see
+             *     (or build an edit form around) alternatives you'd already set outside
+             *     of a full data export. Same class of bug as `cards::Card` drifting
+             *     from `CardPrompt`/`CardReveal` - independently hand-declared shapes
+             *     of "the same card" agreeing on every field but one.
+             */
+            alternatives: string[];
             created_at: string;
             definition?: string | null;
             grade?: string | null;
@@ -871,7 +883,32 @@ export interface components {
         UserProfile: {
             username: string;
         };
-        UserSettings: {
+        UserSettings: components["schemas"]["UserSettingsCore"] & {
+            /**
+             * @description Whether the user has FSRS parameters fitted from their own review
+             *     history, as opposed to library defaults - a presence flag, not the
+             *     parameters themselves. See `UserSettingsExport::fsrs_parameters` for
+             *     the portable form export/import actually needs; the two aren't the
+             *     same field under different names, so this doesn't join `core`.
+             */
+            has_fsrs_parameters: boolean;
+        };
+        /**
+         * @description The `user_settings` row proper - every field shared verbatim between the
+         *     live API response (`UserSettings`, below) and data export/import
+         *     (`export_import::UserSettingsExport`). Split out so both flatten this
+         *     struct instead of hand-declaring the same 11 fields a second time: the
+         *     export path used to be its own independently-declared struct that merely
+         *     happened to agree with `UserSettings`, the same silent-drift risk
+         *     `cards::Card` used to carry before it was unified from
+         *     `CardFront`/`CardBack` (see its doc comment in cards/mod.rs) - a settings
+         *     field added to the DB and to one of these two but not the other would
+         *     silently vanish from export, or from the live API, with no compiler
+         *     error either way. `sqlx::FromRow` lets both `get_settings` (below) and
+         *     `export_import::get_user_settings` read a row straight into this shape
+         *     too, rather than each hand-repeating the same 11 `row.get(...)` calls.
+         */
+        UserSettingsCore: {
             /** Format: int64 */
             auto_progress_delay: number;
             auto_progress_on_correct: boolean;
@@ -881,7 +918,6 @@ export interface components {
             day_boundary_hour: number;
             /** Format: double */
             desired_retention: number;
-            has_fsrs_parameters: boolean;
             history_colored_dots: boolean;
             history_colorized_area: boolean;
             history_threshold_lines: boolean;
@@ -891,25 +927,8 @@ export interface components {
             /** Format: int64 */
             yellow_threshold: number;
         };
-        UserSettingsExport: {
-            /** Format: int64 */
-            auto_progress_delay: number;
-            auto_progress_on_correct: boolean;
-            /** Format: int64 */
-            daily_new_card_limit: number;
-            /** Format: int64 */
-            day_boundary_hour: number;
-            /** Format: double */
-            desired_retention: number;
+        UserSettingsExport: components["schemas"]["UserSettingsCore"] & {
             fsrs_parameters?: string | null;
-            history_colored_dots: boolean;
-            history_colorized_area: boolean;
-            history_threshold_lines: boolean;
-            /** Format: int64 */
-            red_threshold: number;
-            show_percentage: boolean;
-            /** Format: int64 */
-            yellow_threshold: number;
         };
     };
     responses: never;
