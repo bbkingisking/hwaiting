@@ -45,6 +45,16 @@ pub struct CustomCard {
     pub trans_dfn: Option<String>,
     pub sentence: String,
     pub target: String,
+    /// Was missing here until this field was added: `CreateCustomCardRequest`,
+    /// `UpdateCustomCardRequest`, and export/import's `SentenceExport` all
+    /// accept/carry a card's alternative accepted answers, but this read
+    /// shape - what `GET /api/custom-cards` and `GET /api/custom-cards/{id}`
+    /// actually return - silently dropped them, so there was no way to see
+    /// (or build an edit form around) alternatives you'd already set outside
+    /// of a full data export. Same class of bug as `cards::Card` drifting
+    /// from `CardPrompt`/`CardReveal` - independently hand-declared shapes
+    /// of "the same card" agreeing on every field but one.
+    pub alternatives: Vec<String>,
     pub sentence_translation: String,
     pub speech_level: Option<String>,
     pub tense: Option<String>,
@@ -59,6 +69,79 @@ pub struct CustomCard {
 #[derive(Serialize, ToSchema)]
 pub struct ListCustomCardsResponse {
     pub cards: Vec<CustomCard>,
+}
+
+// Shared by list_custom_cards and get_custom_card, which differ only in
+// their WHERE clause (all cards owned by the user vs. one by id) - keeping
+// the join/column list in one place means the two can't drift into
+// returning different shapes for what's supposed to be the same read model.
+const CUSTOM_CARD_SELECT: &str = r#"
+    SELECT
+        c.id,
+        c.word,
+        c.definition,
+        pop.slug as pos,
+        g.slug as grade,
+        ot.slug as origin_type,
+        c.hanja,
+        c.hanja_eum,
+        ct.trans_word,
+        ct.trans_dfn,
+        s.id as sentence_id,
+        s.text as sentence,
+        s.target,
+        st.translation as sentence_translation,
+        sl.slug as speech_level,
+        tn.slug as tense,
+        datetime(ccm.created_at) as created_at
+    FROM cards c
+    INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
+    INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+    INNER JOIN sentences s ON c.id = s.card_id
+    LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+    LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
+    LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+    LEFT JOIN grades g ON g.id = c.grade_id
+    LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+    LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
+    LEFT JOIN tenses tn ON tn.id = sih.tense_id
+"#;
+
+// Alternatives live in a join-table keyed by sentence_id rather than a
+// column CUSTOM_CARD_SELECT's row can carry directly, so this fetches them
+// in a second query per row - same N+1 pattern admin::search_cards already
+// uses for the same reason.
+async fn custom_card_from_row(
+    pool: &SqlitePool,
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<CustomCard, AppError> {
+    let sentence_id: i64 = row.get("sentence_id");
+    let alternatives: Vec<String> = sqlx::query_scalar(
+        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?",
+    )
+    .bind(sentence_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(CustomCard {
+        id: row.get("id"),
+        word: row.get("word"),
+        definition: row.get("definition"),
+        trans_word: row.get("trans_word"),
+        trans_dfn: row.get("trans_dfn"),
+        sentence: row.get("sentence"),
+        target: row.get("target"),
+        alternatives,
+        sentence_translation: row.get("sentence_translation"),
+        speech_level: row.get("speech_level"),
+        tense: row.get("tense"),
+        pos: row.get("pos"),
+        grade: row.get("grade"),
+        origin_type: row.get("origin_type"),
+        hanja: row.get("hanja"),
+        hanja_eum: row.get("hanja_eum"),
+        created_at: row.get("created_at"),
+    })
 }
 
 // Create a new custom card
@@ -246,64 +329,17 @@ pub async fn list_custom_cards(
     let user_id = auth.0;
     info!("Listing custom cards for user_id: {}", user_id);
 
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            c.id,
-            c.word,
-            c.definition,
-            pop.slug as pos,
-            g.slug as grade,
-            ot.slug as origin_type,
-            c.hanja,
-            c.hanja_eum,
-            ct.trans_word,
-            ct.trans_dfn,
-            s.text as sentence,
-            s.target,
-            st.translation as sentence_translation,
-            sl.slug as speech_level,
-            tn.slug as tense,
-            datetime(ccm.created_at) as created_at
-        FROM cards c
-        INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
-        INNER JOIN sentences s ON c.id = s.card_id
-        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
-        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
-        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
-        LEFT JOIN grades g ON g.id = c.grade_id
-        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
-        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-        LEFT JOIN tenses tn ON tn.id = sih.tense_id
-        WHERE ccm.user_id = ?
-        ORDER BY ccm.created_at DESC
-        "#
-    )
+    let rows = sqlx::query(&format!(
+        "{CUSTOM_CARD_SELECT} WHERE ccm.user_id = ? ORDER BY ccm.created_at DESC"
+    ))
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
 
-    let cards = rows.into_iter().map(|row| {
-        CustomCard {
-            id: row.get("id"),
-            word: row.get("word"),
-            definition: row.get("definition"),
-            trans_word: row.get("trans_word"),
-            trans_dfn: row.get("trans_dfn"),
-            sentence: row.get("sentence"),
-            target: row.get("target"),
-            sentence_translation: row.get("sentence_translation"),
-            speech_level: row.get("speech_level"),
-            tense: row.get("tense"),
-            pos: row.get("pos"),
-            grade: row.get("grade"),
-            origin_type: row.get("origin_type"),
-            hanja: row.get("hanja"),
-            hanja_eum: row.get("hanja_eum"),
-            created_at: row.get("created_at"),
-        }
-    }).collect();
+    let mut cards = Vec::with_capacity(rows.len());
+    for row in &rows {
+        cards.push(custom_card_from_row(&pool, row).await?);
+    }
 
     Ok(Json(ListCustomCardsResponse { cards }))
 }
@@ -376,64 +412,14 @@ pub async fn get_custom_card(
     let user_id = auth.0;
     info!("Getting custom card {} for user_id: {}", card_id, user_id);
 
-    let row = sqlx::query(
-        r#"
-        SELECT
-            c.id,
-            c.word,
-            c.definition,
-            pop.slug as pos,
-            g.slug as grade,
-            ot.slug as origin_type,
-            c.hanja,
-            c.hanja_eum,
-            ct.trans_word,
-            ct.trans_dfn,
-            s.text as sentence,
-            s.target,
-            st.translation as sentence_translation,
-            sl.slug as speech_level,
-            tn.slug as tense,
-            datetime(ccm.created_at) as created_at
-        FROM cards c
-        INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
-        INNER JOIN sentences s ON c.id = s.card_id
-        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
-        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
-        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
-        LEFT JOIN grades g ON g.id = c.grade_id
-        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
-        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-        LEFT JOIN tenses tn ON tn.id = sih.tense_id
-        WHERE c.id = ? AND ccm.user_id = ?
-        "#
-    )
-    .bind(card_id)
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?;
+    let row = sqlx::query(&format!("{CUSTOM_CARD_SELECT} WHERE c.id = ? AND ccm.user_id = ?"))
+        .bind(card_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
-    let row = row.ok_or(AppError::NotFound)?;
-
-    Ok(Json(CustomCard {
-        id: row.get("id"),
-        word: row.get("word"),
-        definition: row.get("definition"),
-        trans_word: row.get("trans_word"),
-        trans_dfn: row.get("trans_dfn"),
-        sentence: row.get("sentence"),
-        target: row.get("target"),
-        sentence_translation: row.get("sentence_translation"),
-        speech_level: row.get("speech_level"),
-        tense: row.get("tense"),
-        pos: row.get("pos"),
-        grade: row.get("grade"),
-        origin_type: row.get("origin_type"),
-        hanja: row.get("hanja"),
-        hanja_eum: row.get("hanja_eum"),
-        created_at: row.get("created_at"),
-    }))
+    Ok(Json(custom_card_from_row(&pool, &row).await?))
 }
 
 // Update a custom card
