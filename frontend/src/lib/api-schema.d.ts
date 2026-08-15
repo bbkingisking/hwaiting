@@ -1381,7 +1381,16 @@ export interface operations {
     get_next_card: {
         parameters: {
             query?: {
-                exclude?: number;
+                /**
+                 * @description Comma-separated card ids to exclude from the result. The frontend's
+                 *     prefetch sends exactly one (the card currently on screen); the
+                 *     hwaiting-agent CLI sends its whole local set of already-claimed
+                 *     cards, so that concurrent agent processes don't get handed a card
+                 *     someone else already has. `serde_urlencoded` (what axum's `Query`
+                 *     extractor uses) has no support for repeated-key arrays, hence the
+                 *     comma-joined string instead of `exclude=1&exclude=2`.
+                 */
+                exclude?: number[];
             };
             header?: never;
             path?: never;

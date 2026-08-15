@@ -24,7 +24,7 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
         .busy_timeout(Duration::from_secs(5));
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(200)
         .connect_with(options)
         .await?;
 

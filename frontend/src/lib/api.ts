@@ -80,14 +80,17 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 }
 
 interface GetNextCardOptions {
-  excludeCardId?: number
+  // Card ids the caller doesn't want back - see NextCardQuery::exclude on
+  // the backend. Comma-joined into one `exclude` param, since the server's
+  // query deserializer has no support for repeated-key arrays.
+  excludeCardIds?: number[]
   signal?: AbortSignal
 }
 
 export async function getNextCard(options: GetNextCardOptions = {}): Promise<NextCardEnvelope> {
   const params = new URLSearchParams()
-  if (options.excludeCardId !== undefined) {
-    params.set('exclude', String(options.excludeCardId))
+  if (options.excludeCardIds?.length) {
+    params.set('exclude', options.excludeCardIds.join(','))
   }
   const qs = params.toString()
   const url = `${window.location.origin}/api/cards/next${qs ? `?${qs}` : ''}`

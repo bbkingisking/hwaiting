@@ -106,9 +106,26 @@ pub struct NextCardEnvelope {
 #[derive(Deserialize, Default, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct NextCardQuery {
-    // Optional word_id to exclude from the result (used by client prefetch
-    // to skip the card currently being shown to the user).
-    exclude: Option<i64>,
+    /// Comma-separated card ids to exclude from the result. The frontend's
+    /// prefetch sends exactly one (the card currently on screen); the
+    /// hwaiting-agent CLI sends its whole local set of already-claimed
+    /// cards, so that concurrent agent processes don't get handed a card
+    /// someone else already has. `serde_urlencoded` (what axum's `Query`
+    /// extractor uses) has no support for repeated-key arrays, hence the
+    /// comma-joined string instead of `exclude=1&exclude=2`.
+    #[serde(default, deserialize_with = "deserialize_id_list")]
+    exclude: Vec<i64>,
+}
+
+fn deserialize_id_list<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    raw.split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim().parse::<i64>().map_err(serde::de::Error::custom))
+        .collect()
 }
 
 // Get next card due for review
@@ -183,12 +200,12 @@ pub async fn get_next_card(
         .fetch_one(&pool)
         .await?;
 
-        // For prefetch requests (exclude param is set), use stricter limit to prevent race condition.
+        // For prefetch requests (exclude param is non-empty), use stricter limit to prevent race condition.
         // When the user is on card N (new card #19/20), the prefetch for N+1 should not return
         // a new card because by the time N+1 is displayed, card N will have been reviewed,
         // pushing the count to 20/20 and making N+1 display as 21/20.
         // For normal requests, use the actual limit.
-        let is_prefetch = params.exclude.is_some();
+        let is_prefetch = !params.exclude.is_empty();
         let threshold = if is_prefetch {
             daily_new_card_limit - 1  // Block at limit-1 for prefetch
         } else {
@@ -200,9 +217,18 @@ pub async fn get_next_card(
 
     // Get next due card (prioritize due cards by due date, then new cards)
     // Exclude suspended cards via user_card_flags
-    // Optionally skip a specific card_id (used for client-side prefetch)
+    // Optionally skip a set of card_ids (client-side prefetch skips the
+    // card on screen; hwaiting-agent skips every card it knows is already
+    // claimed by a sibling process)
     // When daily new card limit is 0 or reached (including limit-1 buffer), only show cards that have been reviewed before
-    let exclude_id = params.exclude.unwrap_or(-1);
+    let exclude_clause = if params.exclude.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "AND c.id NOT IN ({})",
+            params.exclude.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        )
+    };
 
     let new_card_filter = if new_card_limit_reached {
         // If limit is 0 or reached, only show cards that have been reviewed before (have review history)
@@ -239,7 +265,7 @@ pub async fn get_next_card(
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         {}
         AND (ucf.suspended IS NULL OR ucf.suspended = 0)
-        AND c.id != ?
+        {}
         AND (
             cs.last_review IS NULL
             OR datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
@@ -251,7 +277,7 @@ pub async fn get_next_card(
             RANDOM()
         LIMIT 1
         "#,
-        new_card_filter
+        new_card_filter, exclude_clause
     );
 
     let mut query_builder = sqlx::query(&query)
@@ -264,10 +290,11 @@ pub async fn get_next_card(
         query_builder = query_builder.bind(user_id);
     }
 
-    let row = query_builder
-        .bind(exclude_id)
-        .fetch_optional(&pool)
-        .await?;
+    for id in &params.exclude {
+        query_builder = query_builder.bind(id);
+    }
+
+    let row = query_builder.fetch_optional(&pool).await?;
 
     let Some(row) = row else {
         // No card available. Two independent things can be blocking, and
