@@ -589,6 +589,11 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
               {correct
                 ? `Correct! The answer was ${reveal?.target}.`
                 : `Incorrect. You typed ${submittedAnswer || '(nothing)'}; the answer was ${reveal?.target}.`}
+              {reveal && reveal.alternatives.length > 0 && (
+                <span className="block font-normal text-muted-foreground text-xs mt-0.5">
+                  Also accepted: {reveal.alternatives.join(', ')}
+                </span>
+              )}
             </p>
             <Button onClick={handleAdvance} disabled={advancing} variant="outline" className="w-full">
               {advancing ? 'Loading next card…' : 'Next'}
