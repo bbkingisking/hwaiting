@@ -87,7 +87,7 @@ function AppContent() {
     slot.promise = (async () => {
       try {
         const envelope = await getNextCard({
-          excludeCardId: currentCardId,
+          excludeCardIds: [currentCardId],
           signal: controller.signal,
         })
         if (prefetchRef.current === slot) {

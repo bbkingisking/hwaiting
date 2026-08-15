@@ -123,10 +123,60 @@ pub fn login(username: &str, password: &str) -> Result<Value, AppError> {
     }))
 }
 
-/// Fetches the next due card, passed through verbatim.
+/// Bounds the claim-retry loop in `review`. Each attempt means the server
+/// handed back a card that got claimed out from under us between our
+/// `live_leases` read and our own `claim_card` call - a genuine race, not
+/// the "server doesn't know what's taken" case `live_leases` already
+/// prevents. This many losses in a row means either an unreasonable number
+/// of agents are running, or something is stuck holding leases past their
+/// TTL.
+const MAX_CLAIM_ATTEMPTS: usize = 50;
+
+/// Fetches the next due card, passed through verbatim. Sends every card id
+/// this process can see leased by a sibling `hwaiting-agent review` (same
+/// account, different process - see README) as `exclude`, so the server
+/// filters them out itself rather than us discovering collisions one at a
+/// time - see `config::live_leases` for why that matters at more than a
+/// handful of concurrent agents. The retry loop below only has to cover the
+/// narrower race where two processes' `live_leases` reads both miss each
+/// other and target the same still-unclaimed card.
 pub fn review() -> Result<Value, AppError> {
     let token = require_token()?;
-    parse(&get("/api/cards/next", &token)?)
+
+    for _ in 0..MAX_CLAIM_ATTEMPTS {
+        let exclude = config::live_leases()
+            .map_err(|e| AppError::Message(format!("could not read local leases: {e}")))?;
+        let path = if exclude.is_empty() {
+            "/api/cards/next".to_string()
+        } else {
+            let ids = exclude.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            format!("/api/cards/next?exclude={ids}")
+        };
+        let envelope = parse(&get(&path, &token)?)?;
+
+        let card_id = envelope
+            .get("card")
+            .filter(|c| !c.is_null())
+            .and_then(|c| c.get("card_id"))
+            .and_then(Value::as_i64);
+        let Some(card_id) = card_id else {
+            // Nothing due at all - not a lease collision, so stop rather
+            // than retry.
+            return Ok(envelope);
+        };
+
+        if config::claim_card(card_id)
+            .map_err(|e| AppError::Message(format!("could not claim card {card_id}: {e}")))?
+        {
+            return Ok(envelope);
+        }
+        // Someone claimed it between our `live_leases` read and this
+        // attempt - loop and re-read leases, which will now include it.
+    }
+
+    Err(AppError::Message(format!(
+        "gave up after {MAX_CLAIM_ATTEMPTS} attempts - every due card seems to already be leased by another agent"
+    )))
 }
 
 /// Submits a guess for the given card and returns the graded result
@@ -144,6 +194,14 @@ pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
     )?)?;
 
     put(&format!("/api/cards/{card_id}/suppress"), &token)?;
+
+    // Free the lease `review` took out on this card, now that it's
+    // suppressed server-side and will never be handed out again anyway.
+    // Best-effort: a parse/IO failure here shouldn't fail an otherwise-
+    // successful answer, and a leftover lease just self-expires.
+    if let Ok(id) = card_id.parse::<i64>() {
+        let _ = config::release_card(id);
+    }
 
     Ok(result)
 }
