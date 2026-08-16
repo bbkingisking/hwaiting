@@ -26,11 +26,7 @@ impl Modify for SecurityAddon {
     info(
         title = "hwaiting API",
         version = "1.0.0",
-        description = "Korean FSRS flashcard backend. Stateless JWT bearer auth \
-            (Authorization: Bearer <token>), obtained from /api/auth/login or \
-            /api/auth/signup. Every error response is {\"error\": \"<message>\"}. \
-            See CORS_ALLOWED_ORIGINS / STATIC_DIR / JWT_EXPIRY_SECONDS env vars \
-            for deployment-time behavior not visible in this spec."
+        description = "Korean FSRS flashcard backend."
     ),
     paths(
         crate::auth::login,
