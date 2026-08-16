@@ -24,7 +24,7 @@ import {
   ReferenceLine,
   Dot,
 } from 'recharts'
-import { getReviewHistory, getHistorySummary, getHistoryBreakdown, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
+import { getHistory, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
 import { useEnumLookups } from '@/components/enum-lookups-provider'
 
@@ -176,12 +176,12 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
     if (!open) return
     setIsLoading(true)
     setError(null)
-    Promise.all([getReviewHistory(), getHistorySummary(), getHistoryBreakdown()])
-      .then(([historyRes, summaryRes, breakdownRes]) => {
-        setDays(historyRes.days)
-        setSummary(summaryRes)
-        setBreakdownPos(breakdownRes.by_pos)
-        setBreakdownOrigin(breakdownRes.by_origin)
+    getHistory()
+      .then(({ timeseries, summary, breakdown }) => {
+        setDays(timeseries)
+        setSummary(summary)
+        setBreakdownPos(breakdown.by_pos)
+        setBreakdownOrigin(breakdown.by_origin)
       })
       .catch(() => setError('Failed to load review history.'))
       .finally(() => setIsLoading(false))

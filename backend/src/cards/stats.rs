@@ -37,8 +37,13 @@ pub struct DayHistory {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct ReviewHistoryResponse {
-    pub days: Vec<DayHistory>,
+pub struct HistoryResponse {
+    /// Rolling 5-day (today + 4 back) per-day review counts, for the small history chart.
+    pub timeseries: Vec<DayHistory>,
+    /// All-time aggregate + current FSRS state distribution + streaks.
+    pub summary: HistorySummary,
+    /// All-time accuracy broken down by part-of-speech and by origin type.
+    pub breakdown: HistoryBreakdownResponse,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -245,28 +250,13 @@ pub async fn get_stats(
     }))
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/cards/history",
-    responses(
-        (status = 200, description = "Per-day review history for a rolling window", body = ReviewHistoryResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "cards"
-)]
-pub async fn get_review_history(
-    State(pool): State<SqlitePool>,
-    auth: crate::auth::AuthUser,
-) -> Result<Json<ReviewHistoryResponse>, AppError> {
-    let user_id = auth.0;
-
+async fn query_timeseries(pool: &SqlitePool, user_id: i64) -> Result<Vec<DayHistory>, AppError> {
     // Get day_boundary_hour from user_settings (default 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
         "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await?
     .unwrap_or(4);
 
@@ -294,7 +284,7 @@ pub async fn get_review_history(
     .bind(&day_shift)
     .bind(user_id)
     .bind(&window_start)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
 
     let days = rows
@@ -311,31 +301,16 @@ pub async fn get_review_history(
         })
         .collect();
 
-    Ok(Json(ReviewHistoryResponse { days }))
+    Ok(days)
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/cards/history-summary",
-    responses(
-        (status = 200, description = "Aggregate review history summary + streaks", body = HistorySummary),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "cards"
-)]
-pub async fn get_history_summary(
-    State(pool): State<SqlitePool>,
-    auth: crate::auth::AuthUser,
-) -> Result<Json<HistorySummary>, AppError> {
-    let user_id = auth.0;
-
+async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary, AppError> {
     // Get day_boundary_hour from user_settings (default 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
         "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
     )
     .bind(user_id)
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await?
     .unwrap_or(4);
 
@@ -358,7 +333,7 @@ pub async fn get_history_summary(
         "#,
     ))
     .bind(user_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     let total_reviews: i64 = stats_row.get("total_reviews");
@@ -389,7 +364,7 @@ pub async fn get_history_summary(
         "#,
     )
     .bind(user_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
 
     let mut cards_learning: i64 = 0;
@@ -423,7 +398,7 @@ pub async fn get_history_summary(
     .bind(user_id)
     .bind(user_id)
     .bind(user_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     // Query 3: All review days (logical days) for streak calculation
@@ -437,7 +412,7 @@ pub async fn get_history_summary(
     )
     .bind(logical_day_shift(day_boundary_hour))
     .bind(user_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
 
     // Compute streaks in Rust
@@ -484,7 +459,7 @@ pub async fn get_history_summary(
         max_streak.max(current)
     };
 
-    Ok(Json(HistorySummary {
+    Ok(HistorySummary {
         total_reviews,
         total_cards_reviewed,
         cards_learning,
@@ -496,25 +471,10 @@ pub async fn get_history_summary(
         first_review_date,
         current_streak,
         longest_streak,
-    }))
+    })
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/cards/history-breakdown",
-    responses(
-        (status = 200, description = "Accuracy broken down by part-of-speech and origin type", body = HistoryBreakdownResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "cards"
-)]
-pub async fn get_history_breakdown(
-    State(pool): State<SqlitePool>,
-    auth: crate::auth::AuthUser,
-) -> Result<Json<HistoryBreakdownResponse>, AppError> {
-    let user_id = auth.0;
-
+async fn query_breakdown(pool: &SqlitePool, user_id: i64) -> Result<HistoryBreakdownResponse, AppError> {
     // Breakdown by POS — only include rows where pos is not null/empty
     let pos_rows = sqlx::query(&format!(
         r#"
@@ -532,7 +492,7 @@ pub async fn get_history_breakdown(
         "#,
     ))
     .bind(user_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
 
     let by_pos: Vec<BreakdownRow> = pos_rows
@@ -571,7 +531,7 @@ pub async fn get_history_breakdown(
         "#,
     ))
     .bind(user_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
 
     let by_origin: Vec<BreakdownRow> = origin_rows
@@ -593,5 +553,34 @@ pub async fn get_history_breakdown(
         })
         .collect();
 
-    Ok(Json(HistoryBreakdownResponse { by_pos, by_origin }))
+    Ok(HistoryBreakdownResponse { by_pos, by_origin })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/cards/history",
+    responses(
+        (status = 200, description = "Time series, all-time summary + streaks, and POS/origin accuracy breakdown, run concurrently", body = HistoryResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "cards"
+)]
+pub async fn get_history(
+    State(pool): State<SqlitePool>,
+    auth: crate::auth::AuthUser,
+) -> Result<Json<HistoryResponse>, AppError> {
+    let user_id = auth.0;
+
+    let (timeseries, summary, breakdown) = tokio::try_join!(
+        query_timeseries(&pool, user_id),
+        query_summary(&pool, user_id),
+        query_breakdown(&pool, user_id),
+    )?;
+
+    Ok(Json(HistoryResponse {
+        timeseries,
+        summary,
+        breakdown,
+    }))
 }
