@@ -10,31 +10,8 @@ import type { components } from './api-schema'
 
 type Schemas = components['schemas']
 
-// admin::edit_card accepts/returns freeform JSON (serde_json::Value) by
-// design - there's no backend schema to generate these from, so they stay
-// hand-typed deliberately.
-interface EditCardRequest {
-  word?: string
-  definition?: string | null
-  pos?: string | null
-  origin_type?: string | null
-  hanja?: string | null
-  hanja_eum?: string | null
-  grade?: string | null
-  trans_word?: string
-  trans_dfn?: string | null
-  sentence?: string
-  sentence_translation?: string
-  target?: string
-  alternatives?: string[]
-  speech_level?: string | null
-  tense?: string | null
-  grammar_pattern?: string | null
-}
-
-interface EditCardResponse {
-  success: boolean
-}
+type EditCardRequest = Schemas['UpdateCardRequest']
+type EditCardResponse = Schemas['EditCardResponse']
 
 type CardResponse = Schemas['NextCardResponse']
 type NextCardEnvelope = Schemas['NextCardEnvelope']
@@ -177,24 +154,16 @@ export async function exportUserData(): Promise<void> {
 type StatsResponse = Schemas['StatsResponse']
 
 export type DayHistory = Schemas['DayHistory']
-export type ReviewHistoryResponse = Schemas['ReviewHistoryResponse']
 export type HistorySummary = Schemas['HistorySummary']
-
-export async function getReviewHistory(): Promise<ReviewHistoryResponse> {
-  const url = `${window.location.origin}/api/cards/history`
-  return fetchWithAuth(url)
-}
-
-export async function getHistorySummary(): Promise<HistorySummary> {
-  const url = `${window.location.origin}/api/cards/history-summary`
-  return fetchWithAuth(url)
-}
-
 export type BreakdownRow = Schemas['BreakdownRow']
 export type HistoryBreakdownResponse = Schemas['HistoryBreakdownResponse']
+export type HistoryResponse = Schemas['HistoryResponse']
 
-export async function getHistoryBreakdown(): Promise<HistoryBreakdownResponse> {
-  const url = `${window.location.origin}/api/cards/history-breakdown`
+// Was three separate round-trips (getReviewHistory/getHistorySummary/
+// getHistoryBreakdown) for data the stats page always fetched together;
+// the backend now runs all three queries concurrently behind one endpoint.
+export async function getHistory(): Promise<HistoryResponse> {
+  const url = `${window.location.origin}/api/cards/history`
   return fetchWithAuth(url)
 }
 
