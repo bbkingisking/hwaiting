@@ -33,14 +33,6 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Freeform partial-update body: any subset of `word`, `definition`, `pos`,
-         *     `origin_type`, `hanja`, `hanja_eum`, `grade`, `trans_word`, `trans_dfn`,
-         *     `sentence`, `sentence_translation`, `target`, `alternatives` (array),
-         *     `speech_level`, `tense`, `grammar_pattern`. Absent keys are left
-         *     untouched; explicit `null` clears a nullable column. Enum-backed fields
-         *     are sent as slugs, resolved server-side to lookup-table row IDs.
-         */
         patch: operations["edit_card"];
         trace?: never;
     };
@@ -71,6 +63,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["delete_invite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -131,39 +139,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["get_review_history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cards/history-breakdown": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_history_breakdown"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cards/history-summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_history_summary"];
+        get: operations["get_history"];
         put?: never;
         post?: never;
         delete?: never;
@@ -416,6 +392,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AdminUserSummary: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_admin: boolean;
+            username: string;
+        };
         AuthResponse: {
             is_admin: boolean;
             token: string;
@@ -647,6 +630,9 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        EditCardResponse: {
+            success: boolean;
+        };
         EnumEntry: {
             endings?: string | null;
             label: string;
@@ -698,6 +684,14 @@ export interface components {
         HistoryBreakdownResponse: {
             by_origin: components["schemas"]["BreakdownRow"][];
             by_pos: components["schemas"]["BreakdownRow"][];
+        };
+        HistoryResponse: {
+            /** @description All-time accuracy broken down by part-of-speech and by origin type. */
+            breakdown: components["schemas"]["HistoryBreakdownResponse"];
+            /** @description All-time aggregate + current FSRS state distribution + streaks. */
+            summary: components["schemas"]["HistorySummary"];
+            /** @description Rolling 5-day (today + 4 back) per-day review counts, for the small history chart. */
+            timeseries: components["schemas"]["DayHistory"][];
         };
         HistorySummary: {
             /** Format: double */
@@ -753,6 +747,9 @@ export interface components {
         ListInvitesResponse: {
             codes: components["schemas"]["InviteCode"][];
         };
+        ListUsersResponse: {
+            users: components["schemas"]["AdminUserSummary"][];
+        };
         LoginRequest: {
             password: string;
             username: string;
@@ -788,9 +785,6 @@ export interface components {
             /** Format: double */
             stability?: number | null;
             state?: string | null;
-        };
-        ReviewHistoryResponse: {
-            days: components["schemas"]["DayHistory"][];
         };
         ReviewResponse: {
             success: boolean;
@@ -837,6 +831,33 @@ export interface components {
         };
         SuppressedCardsResponse: {
             cards: components["schemas"]["SuppressedCard"][];
+        };
+        /**
+         * @description Partial card edit. Any field left out of the JSON body is untouched;
+         *     nullable fields (`definition`, `pos`, `origin_type`, `hanja`, `hanja_eum`,
+         *     `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
+         *     explicitly set to `null` to clear the column — that's why they're typed
+         *     `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
+         *     "explicit null" deserialize differently. Enum-backed fields are sent as
+         *     slugs, resolved server-side to lookup-table row IDs.
+         */
+        UpdateCardRequest: {
+            alternatives?: string[] | null;
+            definition?: string | null;
+            grade?: string | null;
+            grammar_pattern?: string | null;
+            hanja?: string | null;
+            hanja_eum?: string | null;
+            origin_type?: string | null;
+            pos?: string | null;
+            sentence?: string | null;
+            sentence_translation?: string | null;
+            speech_level?: string | null;
+            target?: string | null;
+            tense?: string | null;
+            trans_dfn?: string | null;
+            trans_word?: string | null;
+            word?: string | null;
         };
         UpdateCustomCardRequest: {
             alternatives?: string[] | null;
@@ -998,10 +1019,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Partial card edit, see handler doc comment for accepted fields */
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateCardRequest"];
             };
         };
         responses: {
@@ -1010,9 +1030,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EditCardResponse"];
+                };
             };
-            /** @description Body isn't a JSON object */
+            /** @description Target word doesn't appear in the sentence */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1178,6 +1200,47 @@ export interface operations {
             };
         };
     };
+    list_users: {
+        parameters: {
+            query?: {
+                /** @description Exact username match. Omit to list every user. */
+                username?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All users, or the one matching ?username= exactly */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListUsersResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Valid JWT but not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -1291,7 +1354,7 @@ export interface operations {
             };
         };
     };
-    get_review_history: {
+    get_history: {
         parameters: {
             query?: never;
             header?: never;
@@ -1300,71 +1363,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Per-day review history for a rolling window */
+            /** @description Time series, all-time summary + streaks, and POS/origin accuracy breakdown, run concurrently */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewHistoryResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_history_breakdown: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Accuracy broken down by part-of-speech and origin type */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistoryBreakdownResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_history_summary: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Aggregate review history summary + streaks */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistorySummary"];
+                    "application/json": components["schemas"]["HistoryResponse"];
                 };
             };
             /** @description Missing/invalid JWT */
