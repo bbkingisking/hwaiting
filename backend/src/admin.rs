@@ -5,7 +5,6 @@ use axum::{
 };
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
@@ -14,22 +13,18 @@ use crate::auth::AdminUser;
 use crate::cards::{Card, CardBack, CardFront};
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
-/// Extract a nullable string field from JSON, distinguishing absent from null.
-/// Returns `Some(None)` for explicit null, `Some(Some(s))` for a string, `None` for absent.
-fn get_nullable_str(obj: &serde_json::Map<String, Value>, key: &str) -> Option<Option<String>> {
-    match obj.get(key) {
-        None => None,
-        Some(Value::Null) => Some(None),
-        Some(v) => Some(v.as_str().map(|s| s.to_owned())),
-    }
-}
-
-/// Extract an optional string field from JSON. Returns None for absent or null.
-fn get_opt_str(obj: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
-    match obj.get(key) {
-        None | Some(Value::Null) => None,
-        Some(v) => v.as_str().map(|s| s.to_owned()),
-    }
+/// Distinguishes "key absent" (`None`, don't touch the column) from "key
+/// present" (`Some(v)`), where `v` itself distinguishes explicit `null`
+/// (`None`, clear the column) from a value (`Some(String)`). OpenAPI has no
+/// way to express this three-state shape, so the generated schema types
+/// these fields as plain nullable `Option<String>` — accurate for what a
+/// client sends, just not for the absent/null distinction, which is
+/// call-shape rather than data-shape.
+fn double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -177,6 +172,75 @@ pub async fn delete_invite(
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
+pub struct ListUsersQuery {
+    /// Exact username match. Omit to list every user.
+    pub username: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AdminUserSummary {
+    pub id: i64,
+    pub username: String,
+    pub is_admin: bool,
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ListUsersResponse {
+    pub users: Vec<AdminUserSummary>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/users",
+    params(ListUsersQuery),
+    responses(
+        (status = 200, description = "All users, or the one matching ?username= exactly", body = ListUsersResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
+pub async fn list_users(
+    _admin: AdminUser,
+    State(pool): State<SqlitePool>,
+    AppQuery(params): AppQuery<ListUsersQuery>,
+) -> Result<Json<ListUsersResponse>, AppError> {
+    info!("Listing users (username filter: {:?})", params.username);
+
+    // No pagination: same call as list_invites makes for the same reason —
+    // this table is small enough that a hard LIMIT or offset scheme would be
+    // speculative complexity, not a fix for anything actually happening.
+    let rows = match &params.username {
+        Some(username) => {
+            sqlx::query("SELECT id, username, is_admin, created_at FROM users WHERE username = ?")
+                .bind(username)
+                .fetch_all(&pool)
+                .await?
+        }
+        None => {
+            sqlx::query("SELECT id, username, is_admin, created_at FROM users ORDER BY id ASC")
+                .fetch_all(&pool)
+                .await?
+        }
+    };
+
+    let users = rows
+        .into_iter()
+        .map(|row| AdminUserSummary {
+            id: row.get("id"),
+            username: row.get("username"),
+            is_admin: row.get("is_admin"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    Ok(Json(ListUsersResponse { users }))
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchCardsQuery {
     pub q: String,
 }
@@ -295,20 +359,56 @@ pub async fn search_cards(
     Ok(Json(SearchCardsResponse { cards }))
 }
 
-/// Freeform partial-update body: any subset of `word`, `definition`, `pos`,
-/// `origin_type`, `hanja`, `hanja_eum`, `grade`, `trans_word`, `trans_dfn`,
-/// `sentence`, `sentence_translation`, `target`, `alternatives` (array),
-/// `speech_level`, `tense`, `grammar_pattern`. Absent keys are left
-/// untouched; explicit `null` clears a nullable column. Enum-backed fields
-/// are sent as slugs, resolved server-side to lookup-table row IDs.
+/// Partial card edit. Any field left out of the JSON body is untouched;
+/// nullable fields (`definition`, `pos`, `origin_type`, `hanja`, `hanja_eum`,
+/// `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
+/// explicitly set to `null` to clear the column — that's why they're typed
+/// `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
+/// "explicit null" deserialize differently. Enum-backed fields are sent as
+/// slugs, resolved server-side to lookup-table row IDs.
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateCardRequest {
+    pub word: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub definition: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub pos: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub origin_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub hanja: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub hanja_eum: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub grade: Option<Option<String>>,
+    pub trans_word: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub trans_dfn: Option<Option<String>>,
+    pub sentence: Option<String>,
+    pub sentence_translation: Option<String>,
+    pub target: Option<String>,
+    pub alternatives: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub speech_level: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub tense: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub grammar_pattern: Option<Option<String>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct EditCardResponse {
+    pub success: bool,
+}
+
 #[utoipa::path(
     patch,
     path = "/api/admin/cards/{card_id}",
     params(("card_id" = i64, Path, description = "Card ID")),
-    request_body(content = Object, description = "Partial card edit, see handler doc comment for accepted fields"),
+    request_body = UpdateCardRequest,
     responses(
-        (status = 200, description = "Card updated"),
-        (status = 400, description = "Body isn't a JSON object", body = crate::error::ErrorResponse),
+        (status = 200, description = "Card updated", body = EditCardResponse),
+        (status = 400, description = "Target word doesn't appear in the sentence", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
@@ -320,34 +420,28 @@ pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
-    AppJson(payload): AppJson<Value>,
-) -> Result<Json<serde_json::Value>, AppError> {
+    AppJson(payload): AppJson<UpdateCardRequest>,
+) -> Result<Json<EditCardResponse>, AppError> {
     info!("Admin editing card {}", card_id);
 
-    let obj = payload
-        .as_object()
-        .ok_or_else(|| AppError::BadRequest("Request body must be a JSON object".to_string()))?;
-
-    // Extract fields — nullable ones use get_nullable_str so we can distinguish
-    // "absent" (don't touch) from "explicit null" (set to NULL).
-    let word = get_opt_str(obj, "word");
-    let definition = get_nullable_str(obj, "definition");
-    let pos = get_nullable_str(obj, "pos");
-    let origin_type = get_nullable_str(obj, "origin_type");
-    let hanja = get_nullable_str(obj, "hanja");
-    let hanja_eum = get_nullable_str(obj, "hanja_eum");
-    let grade = get_nullable_str(obj, "grade");
-    let trans_word = get_opt_str(obj, "trans_word");
-    let trans_dfn = get_nullable_str(obj, "trans_dfn");
-    let sentence = get_opt_str(obj, "sentence");
-    let sentence_translation = get_opt_str(obj, "sentence_translation");
-    let target = get_opt_str(obj, "target");
-    let alternatives: Option<Vec<String>> = obj.get("alternatives").and_then(|v| {
-        serde_json::from_value(v.clone()).ok()
-    });
-    let speech_level_slug = get_nullable_str(obj, "speech_level");
-    let tense_slug = get_nullable_str(obj, "tense");
-    let grammar_pattern_slug = get_nullable_str(obj, "grammar_pattern");
+    let UpdateCardRequest {
+        word,
+        definition,
+        pos,
+        origin_type,
+        hanja,
+        hanja_eum,
+        grade,
+        trans_word,
+        trans_dfn,
+        sentence,
+        sentence_translation,
+        target,
+        alternatives,
+        speech_level: speech_level_slug,
+        tense: tense_slug,
+        grammar_pattern: grammar_pattern_slug,
+    } = payload;
 
     debug!(
         "Parsed fields: word={:?}, hanja={:?}, hanja_eum={:?}, definition={:?}",
@@ -565,7 +659,7 @@ pub async fn edit_card(
     tx.commit().await?;
 
     info!("Card {} updated successfully", card_id);
-    Ok(Json(serde_json::json!({ "success": true })))
+    Ok(Json(EditCardResponse { success: true }))
 }
 
 
