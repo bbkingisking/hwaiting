@@ -1,0 +1,54 @@
+name: OpenAPI contract
+
+# Keeps hwaitingapi.surge.sh (the Scalar-rendered API reference) in sync with
+# the backend's actual OpenAPI contract. The spec is generated the same way
+# frontend/scripts/generate-api-types.sh does it - `PRINT_OPENAPI=1 cargo
+# run` prints it to stdout and exits before touching the DB or any other
+# config, so this job needs no services or secrets beyond the surge.sh ones.
+on:
+  push:
+    branches: [main]
+    paths: &openapi-paths
+      - "backend/src/**"
+      - "backend/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/openapi/index.html"
+      - "backend/openapi/CNAME"
+      - ".github/workflows/openapi-publish.yml"
+  pull_request:
+    paths: *openapi-paths
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Generate OpenAPI spec
+        working-directory: backend
+        run: PRINT_OPENAPI=1 cargo run --quiet > openapi/openapi.json
+
+      - name: Upload spec artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-spec
+          path: backend/openapi/openapi.json
+
+      # Publishing needs the surge.sh secrets, so only do it for pushes to
+      # main - PRs just prove the spec still generates cleanly.
+      - name: Publish to hwaitingapi.surge.sh
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: backend/openapi
+        env:
+          SURGE_LOGIN: ${{ secrets.SURGE_LOGIN }}
+          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
+        run: |
+          npx --yes surge . hwaitingapi.surge.sh
