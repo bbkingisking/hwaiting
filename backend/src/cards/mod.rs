@@ -5,8 +5,8 @@
 //! one of them.
 
 mod check;
+mod field_values;
 mod fsrs_admin;
-mod lookups;
 mod moderation;
 mod next;
 mod stats;
@@ -21,8 +21,8 @@ mod time;
 // tripping the "can't re-export at wider visibility" error a plain `pub use`
 // would hit.
 pub(crate) use check::*;
+pub(crate) use field_values::*;
 pub(crate) use fsrs_admin::*;
-pub(crate) use lookups::*;
 pub(crate) use moderation::*;
 pub(crate) use next::*;
 pub(crate) use stats::*;

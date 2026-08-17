@@ -4,7 +4,7 @@ import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { CardThemeProvider, useCardTheme } from '@/components/card-theme-provider'
 import { SettingsProvider } from '@/components/settings-provider'
-import { EnumLookupsProvider } from '@/components/enum-lookups-provider'
+import { FieldValuesProvider } from '@/components/field-values-provider'
 
 import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
@@ -327,9 +327,9 @@ function App() {
       <CardThemeProvider>
         <AuthProvider>
           <SettingsProvider>
-            <EnumLookupsProvider>
+            <FieldValuesProvider>
               <AppContent />
-            </EnumLookupsProvider>
+            </FieldValuesProvider>
           </SettingsProvider>
         </AuthProvider>
       </CardThemeProvider>

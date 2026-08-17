@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
         .route("/cards/next", get(cards::get_next_card))
-        .route("/cards/enum-lookups", get(cards::list_enum_lookups))
+        .route("/cards/field-values", get(cards::list_field_values))
         .route("/cards/{card_id}/check", post(cards::check_answer))
         .route("/cards/{card_id}/comment", post(cards::comment_on_card))
         .route("/cards/{card_id}/suppress", put(cards::suppress_card))

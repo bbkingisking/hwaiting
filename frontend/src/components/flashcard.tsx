@@ -16,7 +16,7 @@ import { suppressCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useFieldValues } from '@/components/field-values-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
 import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/components/card-theme-decorations'
 
@@ -221,7 +221,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
   const { theme: cardTheme } = useCardTheme()
-  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useEnumLookups()
+  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')

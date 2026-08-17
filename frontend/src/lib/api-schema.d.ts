@@ -116,14 +116,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/cards/enum-lookups": {
+    "/api/cards/field-values": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["list_enum_lookups"];
+        get: operations["list_field_values"];
         put?: never;
         post?: never;
         delete?: never;
@@ -532,7 +532,7 @@ export interface components {
              *     the referenced `grammar_patterns` row, not of this card, but exactly
              *     as spoiling as `target` for any card that uses the pattern, so it
              *     travels with the reveal rather than in the pattern's public
-             *     label/tooltip (see `list_enum_lookups`, which admin/authoring
+             *     label/tooltip (see `list_field_values`, which admin/authoring
              *     surfaces still fetch endings from - that's a legitimately public use,
              *     picking a pattern rather than guessing one card's answer).
              */
@@ -633,22 +633,6 @@ export interface components {
         EditCardResponse: {
             success: boolean;
         };
-        EnumEntry: {
-            endings?: string | null;
-            label: string;
-            /** Format: int64 */
-            rank?: number | null;
-            slug: string;
-            tooltip?: string | null;
-        };
-        EnumLookups: {
-            grade: components["schemas"]["EnumEntry"][];
-            grammar_pattern: components["schemas"]["EnumEntry"][];
-            origin_type: components["schemas"]["EnumEntry"][];
-            pos: components["schemas"]["EnumEntry"][];
-            speech_level: components["schemas"]["EnumEntry"][];
-            tense: components["schemas"]["EnumEntry"][];
-        };
         /**
          * @description Schema-only mirror of the `{"error": "..."}` envelope every error
          *     response uses (built ad hoc via `serde_json::json!` in
@@ -667,7 +651,36 @@ export interface components {
             suspended_cards: number[];
             version: string;
         };
+        /**
+         * @description The six fields `FieldValues` can return values for, and the only legal
+         *     values for `?fields=`. Wire values are snake_case (`grammar_pattern`,
+         *     ...), matching the response's own field names - see
+         *     `deserialize_field_list`.
+         * @enum {string}
+         */
+        FieldName: "pos" | "origin_type" | "grade" | "speech_level" | "tense" | "grammar_pattern";
+        FieldValue: {
+            endings?: string | null;
+            label: string;
+            /** Format: int64 */
+            rank?: number | null;
+            slug: string;
+            tooltip?: string | null;
+        };
+        FieldValues: {
+            grade?: components["schemas"]["FieldValue"][] | null;
+            grammar_pattern?: components["schemas"]["FieldValue"][] | null;
+            origin_type?: components["schemas"]["FieldValue"][] | null;
+            pos?: components["schemas"]["FieldValue"][] | null;
+            speech_level?: components["schemas"]["FieldValue"][] | null;
+            tense?: components["schemas"]["FieldValue"][] | null;
+        };
         GenerateInvitesRequest: {
+            /**
+             * @description Defaults to 1 if omitted from the body, or if the body is omitted
+             *     entirely (a POST with no `Content-Type` header at all).
+             * @default 1
+             */
             count: number;
         };
         GenerateInvitesResponse: {
@@ -1117,9 +1130,10 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        /** @description Optional; omit the body entirely (or omit `count` within it) to generate 1 code */
+        requestBody?: {
             content: {
-                "application/json": components["schemas"]["GenerateInvitesRequest"];
+                "application/json": null | components["schemas"]["GenerateInvitesRequest"];
             };
         };
         responses: {
@@ -1325,22 +1339,37 @@ export interface operations {
             };
         };
     };
-    list_enum_lookups: {
+    list_field_values: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Comma-separated subset of fields to return (e.g. `fields=pos,tense`).
+                 *     Omit entirely to get all six.
+                 */
+                fields?: components["schemas"]["FieldName"][];
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Lookup-table values for dropdowns/enum displays */
+            /** @description Lookup-table values for dropdowns/enum displays. Fields not requested via `?fields=` are omitted entirely rather than sent empty. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnumLookups"];
+                    "application/json": components["schemas"]["FieldValues"];
+                };
+            };
+            /** @description Unknown name in `?fields=` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Missing/invalid JWT */
@@ -1393,7 +1422,10 @@ export interface operations {
                  *     cards, so that concurrent agent processes don't get handed a card
                  *     someone else already has. `serde_urlencoded` (what axum's `Query`
                  *     extractor uses) has no support for repeated-key arrays, hence the
-                 *     comma-joined string instead of `exclude=1&exclude=2`.
+                 *     comma-joined string instead of `exclude=1&exclude=2`. `explode =
+                 *     false` records that in the schema too, so generated clients send
+                 *     `exclude=1,2,3` (style: form, explode: false) instead of the
+                 *     OpenAPI-default repeated-key form this endpoint can't parse.
                  */
                 exclude?: number[];
             };

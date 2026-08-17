@@ -220,7 +220,7 @@ pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
 /// Fetches the current pos/origin_type/grade/speech_level/tense/
 /// grammar_pattern tables live, so the caller never has to keep a
 /// hardcoded copy in sync by hand.
-pub fn lookups() -> Result<Value, AppError> {
+pub fn field_values() -> Result<Value, AppError> {
     let token = require_token()?;
-    parse(&get("/api/cards/enum-lookups", &token)?)
+    parse(&get("/api/cards/field-values", &token)?)
 }

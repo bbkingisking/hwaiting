@@ -1,8 +1,8 @@
-import type { EnumEntry } from '@/lib/api'
+import type { FieldValue } from '@/lib/api'
 
 export function EnumSelect({ id, options, value, onChange }: {
   id?: string
-  options: Record<string, EnumEntry>
+  options: Record<string, FieldValue>
   value: string
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void
 }) {

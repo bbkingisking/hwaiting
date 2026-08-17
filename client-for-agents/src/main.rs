@@ -27,7 +27,7 @@ enum Command {
     /// Record a content-review note against a card.
     Comment { card_id: String, text: String },
     /// Fetch the pos/origin_type/grade/speech_level/tense/grammar_pattern lookup tables.
-    Lookups,
+    FieldValues,
     /// Look up a card's target word in the official KRDict API.
     Krdict {
         /// The KRDICT target code to look up.
@@ -43,7 +43,7 @@ fn main() -> ExitCode {
         Command::Review => http::review(),
         Command::Answer { card_id, answer } => http::answer(&card_id, &answer),
         Command::Comment { card_id, text } => http::comment(&card_id, &text),
-        Command::Lookups => http::lookups(),
+        Command::FieldValues => http::field_values(),
         Command::Krdict { word_id } => lookup::lookup(word_id),
     };
 

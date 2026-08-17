@@ -112,8 +112,12 @@ pub struct NextCardQuery {
     /// cards, so that concurrent agent processes don't get handed a card
     /// someone else already has. `serde_urlencoded` (what axum's `Query`
     /// extractor uses) has no support for repeated-key arrays, hence the
-    /// comma-joined string instead of `exclude=1&exclude=2`.
+    /// comma-joined string instead of `exclude=1&exclude=2`. `explode =
+    /// false` records that in the schema too, so generated clients send
+    /// `exclude=1,2,3` (style: form, explode: false) instead of the
+    /// OpenAPI-default repeated-key form this endpoint can't parse.
     #[serde(default, deserialize_with = "deserialize_id_list")]
+    #[param(explode = false)]
     exclude: Vec<i64>,
 }
 
