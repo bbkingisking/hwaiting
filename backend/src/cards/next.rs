@@ -220,7 +220,7 @@ pub async fn get_next_card(
     };
 
     // Get next due card (prioritize due cards by due date, then new cards)
-    // Exclude suspended cards via user_card_flags
+    // Exclude suppressed cards via user_card_flags
     // Optionally skip a set of card_ids (client-side prefetch skips the
     // card on screen; hwaiting-agent skips every card it knows is already
     // claimed by a sibling process)
@@ -268,7 +268,7 @@ pub async fn get_next_card(
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         {}
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         {}
         AND (
             cs.last_review IS NULL
@@ -324,7 +324,7 @@ pub async fn get_next_card(
             LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
             WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
             AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
-            AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+            AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
             "#,
         )
         .bind(user_id)
@@ -343,7 +343,7 @@ pub async fn get_next_card(
                     LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
                     WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
                     AND cs.last_review IS NULL
-                    AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+                    AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
                 )
                 "#,
             )

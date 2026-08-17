@@ -648,7 +648,7 @@ export interface components {
             exported_at: string;
             review_history: components["schemas"]["ReviewHistoryExport"][];
             settings: components["schemas"]["UserSettingsExport"];
-            suspended_cards: number[];
+            suppressed_cards: number[];
             version: string;
         };
         /**
@@ -742,7 +742,7 @@ export interface components {
             card_states_derived: number;
             custom_cards_imported: number;
             reviews_imported: number;
-            suspended_cards_imported: number;
+            suppressed_cards_imported: number;
         };
         InflectionHintExport: {
             speech_level?: string | null;
@@ -1567,7 +1567,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description All suspended cards for the user */
+            /** @description All suppressed cards for the user */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1689,7 +1689,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Card suspended from review rotation */
+            /** @description Card suppressed from review rotation */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1721,7 +1721,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Card un-suspended */
+            /** @description Card unsuppressed */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1975,7 +1975,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Full data export: settings, review history, suspended cards, custom cards */
+            /** @description Full data export: settings, review history, suppressed cards, custom cards */
             200: {
                 headers: {
                     [name: string]: unknown;

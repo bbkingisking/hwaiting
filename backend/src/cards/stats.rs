@@ -113,7 +113,7 @@ pub async fn get_stats(
     // Start of the user's current logical day, as UTC for database comparison
     let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
 
-    // Count new cards (cards not in card_states, excluding suspended)
+    // Count new cards (cards not in card_states, excluding suppressed)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
     let new_count_query = if daily_new_card_limit == 0 {
         // When new cards are suppressed (limit = 0), report 0 new cards
@@ -129,7 +129,7 @@ pub async fn get_stats(
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND (cs.last_review IS NULL)
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#
     };
 
@@ -146,7 +146,7 @@ pub async fn get_stats(
             .await?
     };
 
-    // Count due cards (existing cards with last_review set, excluding suspended)
+    // Count due cards (existing cards with last_review set, excluding suppressed)
     let due_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
@@ -156,7 +156,7 @@ pub async fn get_stats(
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND cs.last_review IS NOT NULL
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
         "#,
     )
@@ -209,7 +209,7 @@ pub async fn get_stats(
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#,
     )
     .bind(user_id)
@@ -392,7 +392,7 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND (cs.last_review IS NULL)
-        AND (ucf.suspended IS NULL OR ucf.suspended = 0)
+        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#,
     )
     .bind(user_id)

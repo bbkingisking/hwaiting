@@ -1,5 +1,5 @@
 //! Per-card moderation/curation actions that sit outside the FSRS review
-//! flow: content-review comments and the suspend/unsuspend rotation flags.
+//! flow: content-review comments and the suppress/unsuppress rotation flags.
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,7 @@ pub async fn comment_on_card(
     path = "/api/cards/{card_id}/suppress",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
-        (status = 200, description = "Card suspended from review rotation", body = ReviewResponse),
+        (status = 200, description = "Card suppressed from review rotation", body = ReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -110,13 +110,13 @@ pub async fn suppress_card(
     let user_id = auth.0;
     info!("Suppressing card for user_id: {}, card_id: {}", user_id, card_id);
 
-    // Insert or update user_card_flags to mark as suspended
+    // Insert or update user_card_flags to mark as suppressed
     sqlx::query(
         r#"
-        INSERT INTO user_card_flags (user_id, card_id, suspended)
+        INSERT INTO user_card_flags (user_id, card_id, suppressed)
         VALUES (?, ?, 1)
         ON CONFLICT(user_id, card_id) DO UPDATE SET
-            suspended = 1,
+            suppressed = 1,
             flagged_at = datetime('now')
         "#,
     )
@@ -125,17 +125,17 @@ pub async fn suppress_card(
     .execute(&pool)
     .await?;
 
-    info!("Card suspended successfully");
+    info!("Card suppressed successfully");
 
     Ok(Json(ReviewResponse { success: true }))
 }
 
-// List all suspended cards for the user
+// List all suppressed cards for the user
 #[utoipa::path(
     get,
     path = "/api/cards/suppressed",
     responses(
-        (status = 200, description = "All suspended cards for the user", body = SuppressedCardsResponse),
+        (status = 200, description = "All suppressed cards for the user", body = SuppressedCardsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -146,7 +146,7 @@ pub async fn list_suppressed_cards(
     auth: crate::auth::AuthUser,
 ) -> Result<Json<SuppressedCardsResponse>, AppError> {
     let user_id = auth.0;
-    info!("Listing suspended cards for user_id: {}", user_id);
+    info!("Listing suppressed cards for user_id: {}", user_id);
 
     let rows = sqlx::query(
         r#"
@@ -162,7 +162,7 @@ pub async fn list_suppressed_cards(
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN grades g ON g.id = c.grade_id
-        WHERE ucf.suspended = 1
+        WHERE ucf.suppressed = 1
         ORDER BY c.word ASC
         "#,
     )
@@ -191,7 +191,7 @@ pub async fn list_suppressed_cards(
     path = "/api/cards/{card_id}/unsuppress",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
-        (status = 200, description = "Card un-suspended", body = ReviewResponse),
+        (status = 200, description = "Card unsuppressed", body = ReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -203,12 +203,12 @@ pub async fn unsuppress_card(
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
-    info!("Unsuspending card for user_id: {}, card_id: {}", user_id, card_id);
+    info!("Unsuppressing card for user_id: {}, card_id: {}", user_id, card_id);
 
     sqlx::query(
         r#"
         UPDATE user_card_flags
-        SET suspended = 0
+        SET suppressed = 0
         WHERE user_id = ? AND card_id = ?
         "#,
     )
@@ -217,7 +217,7 @@ pub async fn unsuppress_card(
     .execute(&pool)
     .await?;
 
-    info!("Card unsuspended successfully");
+    info!("Card unsuppressed successfully");
 
     Ok(Json(ReviewResponse { success: true }))
 }
