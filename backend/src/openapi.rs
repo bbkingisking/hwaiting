@@ -26,9 +26,7 @@ impl Modify for SecurityAddon {
     info(
         title = "hwaiting API",
         version = "1.0.0",
-        description = "Korean FSRS flashcard backend. List endpoints wrap their \
-            collection in a field named after the resource, plural (e.g. `cards`, \
-            `codes`, `users`) — never a generic `items` key."
+        description = "Korean FSRS flashcard backend."
     ),
     paths(
         crate::auth::login,
@@ -105,7 +103,7 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "auth", description = "Invite code-gated login and simple login"),
+        (name = "auth", description = "Invite code-gated sign-up and simple login"),
         (name = "cards", description = "Review flow, FSRS scheduling, stats"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "custom-cards", description = "User-authored cards, scoped to the owner"),
