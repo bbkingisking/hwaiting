@@ -14,7 +14,7 @@ import {
   type SuppressedCard,
   ApiError
 } from '@/lib/api'
-import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useFieldValues } from '@/components/field-values-provider'
 
 interface SuppressedCardsDialogProps {
   open: boolean
@@ -25,7 +25,7 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
   const [cards, setCards] = useState<SuppressedCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { pos: posLookup, grade: gradeLookup } = useEnumLookups()
+  const { pos: posLookup, grade: gradeLookup } = useFieldValues()
 
   const loadCards = async () => {
     setIsLoading(true)

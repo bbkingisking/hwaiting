@@ -17,7 +17,7 @@ import {
   type CustomCard,
   ApiError
 } from '@/lib/api'
-import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useFieldValues } from '@/components/field-values-provider'
 import { EnumSelect } from '@/components/enum-select'
 
 interface CustomCardsDialogProps {
@@ -47,7 +47,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   // A native confirm() blocks the page for any automation driving it, so
   // deletion is confirmed with a real dialog instead.
   const [pendingDelete, setPendingDelete] = useState<CustomCard | null>(null)
-  const { pos: posLookup, originType: originTypeLookup, speechLevel: speechLevelLookup, tense: tenseLookup } = useEnumLookups()
+  const { pos: posLookup, originType: originTypeLookup, speechLevel: speechLevelLookup, tense: tenseLookup } = useFieldValues()
 
   const resetForm = () => {
     setWord('')

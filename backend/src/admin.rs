@@ -29,7 +29,15 @@ where
 
 #[derive(Deserialize, ToSchema)]
 pub struct GenerateInvitesRequest {
+    /// Defaults to 1 if omitted from the body, or if the body is omitted
+    /// entirely (a POST with no `Content-Type` header at all).
+    #[serde(default = "default_invite_count")]
+    #[schema(default = 1)]
     pub count: usize,
+}
+
+fn default_invite_count() -> usize {
+    1
 }
 
 #[derive(Serialize, ToSchema)]
@@ -58,7 +66,8 @@ pub struct ListInvitesResponse {
 #[utoipa::path(
     post,
     path = "/api/admin/invites",
-    request_body = GenerateInvitesRequest,
+    request_body(content = Option<GenerateInvitesRequest>, description = "Optional; omit the body \
+        entirely (or omit `count` within it) to generate 1 code"),
     responses(
         (status = 201, description = "Invite codes generated (capped at 100 per request)", body = GenerateInvitesResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -70,9 +79,9 @@ pub struct ListInvitesResponse {
 pub async fn generate_invites(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
-    AppJson(payload): AppJson<GenerateInvitesRequest>,
+    payload: Option<AppJson<GenerateInvitesRequest>>,
 ) -> Result<(StatusCode, Json<GenerateInvitesResponse>), AppError> {
-    let count = payload.count.min(100); // Cap at 100 codes per request
+    let count = payload.map_or(1, |AppJson(req)| req.count).min(100); // Cap at 100 codes per request
     
     info!("Generating {} invite codes", count);
     

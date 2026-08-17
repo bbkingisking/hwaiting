@@ -1,5 +1,5 @@
 use axum::{
-    extract::{FromRequest, FromRequestParts, Path, Query, Request},
+    extract::{FromRequest, FromRequestParts, OptionalFromRequest, Path, Query, Request},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -109,8 +109,30 @@ where
     type Rejection = AppError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        match Json::<T>::from_request(req, state).await {
+        match <Json<T> as FromRequest<S>>::from_request(req, state).await {
             Ok(Json(value)) => Ok(AppJson(value)),
+            Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
+        }
+    }
+}
+
+/// Lets `Option<AppJson<T>>` be used as an extractor, for endpoints where the
+/// body itself is optional (as opposed to merely having optional fields
+/// within it). Mirrors `Json<T>`'s own `OptionalFromRequest` impl: `None`
+/// only when the request has no `Content-Type` header at all - a body sent
+/// with `Content-Type: application/json` still has to be valid JSON (`{}` at
+/// minimum), empty bytes included.
+impl<S, T> OptionalFromRequest<S> for AppJson<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Option<Self>, Self::Rejection> {
+        match <Json<T> as OptionalFromRequest<S>>::from_request(req, state).await {
+            Ok(Some(Json(value))) => Ok(Some(AppJson(value))),
+            Ok(None) => Ok(None),
             Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
         }
     }

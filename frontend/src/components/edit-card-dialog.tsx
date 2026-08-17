@@ -1,7 +1,7 @@
 import { useState, useEffect, useId } from 'react'
 import { editCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { krdictUrl } from '@/lib/utils'
-import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useFieldValues } from '@/components/field-values-provider'
 import { EnumSelect } from '@/components/enum-select'
 import {
   Dialog,
@@ -108,7 +108,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'full' | 'front' | 'back' | null>(null)
-  const { pos, originType, grade, speechLevel, tense, grammarPattern } = useEnumLookups()
+  const { pos, originType, grade, speechLevel, tense, grammarPattern } = useFieldValues()
 
   // Reset form whenever the dialog opens with a (potentially new) card
   useEffect(() => {

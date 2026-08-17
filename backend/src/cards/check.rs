@@ -52,7 +52,7 @@ pub struct CardReveal {
     /// the referenced `grammar_patterns` row, not of this card, but exactly
     /// as spoiling as `target` for any card that uses the pattern, so it
     /// travels with the reveal rather than in the pattern's public
-    /// label/tooltip (see `list_enum_lookups`, which admin/authoring
+    /// label/tooltip (see `list_field_values`, which admin/authoring
     /// surfaces still fetch endings from - that's a legitimately public use,
     /// picking a pattern rather than guessing one card's answer).
     pub grammar_pattern_endings: Option<String>,

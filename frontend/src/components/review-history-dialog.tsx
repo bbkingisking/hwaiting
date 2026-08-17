@@ -26,7 +26,7 @@ import {
 } from 'recharts'
 import { getHistory, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
-import { useEnumLookups } from '@/components/enum-lookups-provider'
+import { useFieldValues } from '@/components/field-values-provider'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -146,7 +146,7 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings, updateSettings } = useSettings()
-  const { pos: posLookup, originType: originTypeLookup } = useEnumLookups()
+  const { pos: posLookup, originType: originTypeLookup } = useFieldValues()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
   const [breakdownPos, setBreakdownPos] = useState<BreakdownRow[]>([])

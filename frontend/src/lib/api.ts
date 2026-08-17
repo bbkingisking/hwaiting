@@ -74,11 +74,11 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   return fetchWithAuth(url, { signal: options.signal })
 }
 
-export type EnumEntry = Schemas['EnumEntry']
-export type EnumLookups = Schemas['EnumLookups']
+export type FieldValue = Schemas['FieldValue']
+export type FieldValues = Schemas['FieldValues']
 
-export async function getEnumLookups(): Promise<EnumLookups> {
-  const url = `${window.location.origin}/api/cards/enum-lookups`
+export async function getFieldValues(): Promise<FieldValues> {
+  const url = `${window.location.origin}/api/cards/field-values`
   return fetchWithAuth(url)
 }
 
