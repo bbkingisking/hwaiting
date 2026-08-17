@@ -1,4 +1,4 @@
-//! User-level FSRS parameter management: `POST /api/cards/optimize-fsrs`
+//! User-level FSRS parameter management: `POST /api/cards/fsrs-parameters`
 //! fits parameters to the user's own review history via `fsrs::compute_parameters`;
 //! `DELETE` on the same path reverts to library defaults. Distinct from
 //! [`super::check`], which applies whichever parameters are currently
@@ -27,7 +27,7 @@ pub struct OptimizeFsrsResponse {
 // Optimize FSRS parameters from user's review history
 #[utoipa::path(
     post,
-    path = "/api/cards/optimize-fsrs",
+    path = "/api/cards/fsrs-parameters",
     responses(
         (status = 200, description = "FSRS parameters optimized from full review history", body = OptimizeFsrsResponse),
         (status = 400, description = "No/insufficient review history to optimize from", body = crate::error::ErrorResponse),
@@ -166,7 +166,7 @@ pub async fn optimize_fsrs(
 // Reset FSRS parameters to defaults
 #[utoipa::path(
     delete,
-    path = "/api/cards/optimize-fsrs",
+    path = "/api/cards/fsrs-parameters",
     responses(
         (status = 204, description = "FSRS parameters reset to library defaults"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),

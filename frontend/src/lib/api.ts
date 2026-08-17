@@ -277,14 +277,14 @@ export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCard
 type OptimizeFsrsResponse = Schemas['OptimizeFsrsResponse']
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
-  const url = `${window.location.origin}/api/cards/optimize-fsrs`
+  const url = `${window.location.origin}/api/cards/fsrs-parameters`
   return fetchWithAuth(url, {
     method: 'POST',
   })
 }
 
 export async function resetFsrsParameters(): Promise<{ success: boolean }> {
-  const url = `${window.location.origin}/api/cards/optimize-fsrs`
+  const url = `${window.location.origin}/api/cards/fsrs-parameters`
   return fetchWithAuth(url, {
     method: 'DELETE',
   })
