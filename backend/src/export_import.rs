@@ -18,7 +18,7 @@ pub struct ExportData {
     pub exported_at: String,
     pub settings: UserSettingsExport,
     pub review_history: Vec<ReviewHistoryExport>,
-    pub suspended_cards: Vec<i64>,
+    pub suppressed_cards: Vec<i64>,
     pub custom_cards: Vec<CustomCardExport>,
 }
 
@@ -100,7 +100,7 @@ pub struct ImportDataResponse {
 pub struct ImportStats {
     pub card_states_derived: usize,
     pub reviews_imported: usize,
-    pub suspended_cards_imported: usize,
+    pub suppressed_cards_imported: usize,
     pub custom_cards_imported: usize,
 }
 
@@ -109,7 +109,7 @@ pub struct ImportStats {
     get,
     path = "/api/user/export",
     responses(
-        (status = 200, description = "Full data export: settings, review history, suspended cards, custom cards", body = ExportData),
+        (status = 200, description = "Full data export: settings, review history, suppressed cards, custom cards", body = ExportData),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -151,12 +151,12 @@ pub async fn export_data(
         }
     }).collect();
 
-    // Get suspended cards
-    let suspended_cards: Vec<i64> = sqlx::query_scalar(
+    // Get suppressed cards
+    let suppressed_cards: Vec<i64> = sqlx::query_scalar(
         r#"
         SELECT card_id
         FROM user_card_flags
-        WHERE user_id = ? AND suspended = 1
+        WHERE user_id = ? AND suppressed = 1
         "#
     )
     .bind(user_id)
@@ -293,13 +293,13 @@ pub async fn export_data(
         exported_at: chrono::Utc::now().to_rfc3339(),
         settings,
         review_history,
-        suspended_cards,
+        suppressed_cards,
         custom_cards,
     };
 
-    info!("Export complete: {} reviews, {} suspended cards, {} custom cards",
+    info!("Export complete: {} reviews, {} suppressed cards, {} custom cards",
         export_data.review_history.len(),
-        export_data.suspended_cards.len(),
+        export_data.suppressed_cards.len(),
         export_data.custom_cards.len()
     );
 
@@ -375,7 +375,7 @@ pub async fn import_data(
     let mut stats = ImportStats {
         card_states_derived: 0,
         reviews_imported: 0,
-        suspended_cards_imported: 0,
+        suppressed_cards_imported: 0,
         custom_cards_imported: 0,
     };
 
@@ -556,8 +556,8 @@ pub async fn import_data(
 
     stats.card_states_derived = derived_result.rows_affected() as usize;
 
-    // Import suspended cards
-    for card_id in data.suspended_cards {
+    // Import suppressed cards
+    for card_id in data.suppressed_cards {
         // Check if card exists
         let card_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)"
@@ -567,15 +567,15 @@ pub async fn import_data(
         .await?;
 
         if !card_exists {
-            warn!("Skipping suspension for non-existent card_id: {}", card_id);
+            warn!("Skipping suppression for non-existent card_id: {}", card_id);
             continue;
         }
 
         sqlx::query(
             r#"
-            INSERT INTO user_card_flags (user_id, card_id, suspended)
+            INSERT INTO user_card_flags (user_id, card_id, suppressed)
             VALUES (?, ?, 1)
-            ON CONFLICT(user_id, card_id) DO UPDATE SET suspended = 1
+            ON CONFLICT(user_id, card_id) DO UPDATE SET suppressed = 1
             "#
         )
         .bind(user_id)
@@ -583,7 +583,7 @@ pub async fn import_data(
         .execute(&mut *tx)
         .await?;
 
-        stats.suspended_cards_imported += 1;
+        stats.suppressed_cards_imported += 1;
     }
 
     // Import settings
