@@ -26,7 +26,9 @@ impl Modify for SecurityAddon {
     info(
         title = "hwaiting API",
         version = "1.0.0",
-        description = "Korean FSRS flashcard backend."
+        description = "Korean FSRS flashcard backend. List endpoints wrap their \
+            collection in a field named after the resource, plural (e.g. `cards`, \
+            `codes`, `users`) — never a generic `items` key."
     ),
     paths(
         crate::auth::login,
@@ -111,4 +113,10 @@ impl Modify for SecurityAddon {
         (name = "misc", description = "Health check"),
     )
 )]
+// Convention for every list-shaped response registered above (ListUsersResponse,
+// ListInvitesResponse, GenerateInvitesResponse, ListCustomCardsResponse,
+// SearchCardsResponse, SuppressedCardsResponse, ...): the collection lives in a
+// field named after the resource, plural - `users`, `codes`, `cards` - never a
+// generic `items`/`data` key. Keep new list endpoints consistent with that
+// rather than introducing another wrapper name.
 pub struct ApiDoc;
