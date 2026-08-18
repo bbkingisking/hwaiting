@@ -15,6 +15,7 @@ import { MoreVertical } from 'lucide-react'
 import { suppressCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
+import { InflectionsDialog } from '@/components/inflections-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useFieldValues } from '@/components/field-values-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
@@ -44,7 +45,7 @@ interface FlashcardProps {
 // before that point.
 function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHint[] {
   if (reveal) return reveal.hanja_hints
-  return (card.hanja_hint_words ?? []).map((hanja) => ({ hanja, hanja_eum: null, trans_word: null }))
+  return (card.hanja_hint_words ?? []).map((hanja) => ({ hanja, word: '', trans_word: null }))
 }
 
 // EditCardDialog edits the backend's canonical full-card shape (see its doc
@@ -59,7 +60,6 @@ function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
     pos: card.pos,
     origin_type: card.origin_type,
     hanja: card.hanja,
-    hanja_eum: reveal.hanja_eum,
     grade: card.grade,
     trans_word: card.trans_word,
     trans_dfn: card.trans_dfn,
@@ -99,7 +99,9 @@ type HanjaHintParams = {
   hanja: string
   hints: HanjaHint[]
   showEum: boolean
-  hanjaEum?: string | null
+  // The reading of `hanja` - Korean orthography is phonetic, so that's just
+  // this card's own `word` (see backend's dropped-hanja_eum migration).
+  word?: string | null
   showTarget: boolean
 }
 
@@ -110,8 +112,8 @@ type HanjaHintParams = {
 //
 // Respects showEum/showTarget for the same reason the visible hint does: the
 // reading and the gloss give the answer away before the card is graded.
-function hanjaHintLabel({ hanja, hints, showEum, hanjaEum, showTarget }: HanjaHintParams): string {
-  const base = `${hanja}${showEum && hanjaEum ? ` (${hanjaEum})` : ''}`
+function hanjaHintLabel({ hanja, hints, showEum, word, showTarget }: HanjaHintParams): string {
+  const base = `${hanja}${showEum && word ? ` (${word})` : ''}`
   if (hints.length === 0) return `Hanja hint: ${base}`
   const glossed = hints
     .map(h => `${h.hanja}${showTarget && h.trans_word ? ` (${h.trans_word})` : ''}`)
@@ -123,7 +125,7 @@ function HanjaHintText({
   hanja,
   hints,
   showEum,
-  hanjaEum,
+  word,
   showTarget,
 }: HanjaHintParams) {
   const [open, setOpen] = useState(false)
@@ -131,12 +133,12 @@ function HanjaHintText({
   if (hints.length === 0) {
     return (
       <>
-        {hanja}{showEum && hanjaEum && ` (${hanjaEum})`}
+        {hanja}{showEum && word && ` (${word})`}
       </>
     )
   }
 
-  const visible = `${hanja}${showEum && hanjaEum ? ` (${hanjaEum})` : ''}`
+  const visible = `${hanja}${showEum && word ? ` (${word})` : ''}`
 
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
@@ -215,6 +217,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [inflectionsOpen, setInflectionsOpen] = useState(false)
   const [advancing, setAdvancing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const submitButtonRef = useRef<HTMLButtonElement>(null)
@@ -251,6 +254,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     setIsAutoProgressing(false)
     setEditOpen(false)
     setMenuOpen(false)
+    setInflectionsOpen(false)
     setAdvancing(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
@@ -265,7 +269,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editOpen || menuOpen) return
+      if (editOpen || menuOpen || inflectionsOpen) return
       if (answered && (e.key === KEYS.ENTER || e.key === KEYS.SPACE)) {
         e.preventDefault()
         handleAdvance()
@@ -274,7 +278,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [answered, handleAdvance, editOpen, menuOpen])
+  }, [answered, handleAdvance, editOpen, menuOpen, inflectionsOpen])
 
   // The backend splits `sentence` around `target` for us (see
   // cards::split_sentence) - it owns both strings and is the only place that
@@ -376,10 +380,26 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
             names the dimension it reports.
           */}
           {card.pos && posLookup[card.pos] && (
-            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              <span className="sr-only">Part of speech: </span>
-              {posLookup[card.pos].label}
-            </span>
+            reveal && reveal.inflections.length > 0 ? (
+              // Conjugation table is exactly as spoiling as `target` (see
+              // CardReveal::inflections), so the pill only becomes clickable
+              // once `reveal` has arrived - pre-reveal it's the same inert
+              // span as every other badge here.
+              <button
+                type="button"
+                data-slot="badge"
+                onClick={() => setInflectionsOpen(true)}
+                aria-label={`Part of speech: ${posLookup[card.pos].label}. Show conjugation table.`}
+                className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/70 cursor-pointer"
+              >
+                {posLookup[card.pos].label}
+              </button>
+            ) : (
+              <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                <span className="sr-only">Part of speech: </span>
+                {posLookup[card.pos].label}
+              </span>
+            )
           )}
           {card.speech_level && speechLevelLookup[card.speech_level] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
@@ -462,7 +482,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
                     hanja: card.hanja,
                     hints: displayHanjaHints(card, reveal),
                     showEum: answered || isAutoProgressing,
-                    hanjaEum: reveal?.hanja_eum,
+                    word: reveal?.word,
                     showTarget: answered || isAutoProgressing,
                   })}
                   className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none"
@@ -471,7 +491,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
                     hanja={card.hanja}
                     hints={displayHanjaHints(card, reveal)}
                     showEum={answered || isAutoProgressing}
-                    hanjaEum={reveal?.hanja_eum}
+                    word={reveal?.word}
                     showTarget={answered || isAutoProgressing}
                   />
                 </span>
@@ -566,6 +586,18 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
             setReveal((prev) => (prev ? { ...prev, ...revealUpdates } : prev))
             onCardUpdated?.(updates)
           }}
+        />
+      )}
+
+      {/* Same mounting gate as EditCardDialog above - the pill that opens
+          this is only clickable once `reveal` exists (see the pos badge). */}
+      {reveal && card.pos && (
+        <InflectionsDialog
+          open={inflectionsOpen}
+          onOpenChange={setInflectionsOpen}
+          word={reveal.word}
+          pos={card.pos}
+          inflections={reveal.inflections}
         />
       )}
 

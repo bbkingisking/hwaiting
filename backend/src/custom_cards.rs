@@ -26,7 +26,6 @@ pub struct CreateCustomCardRequest {
     pub grade: Option<String>,
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
     pub alternatives: Option<Vec<String>>,
 }
 
@@ -62,7 +61,6 @@ pub struct CustomCard {
     pub grade: Option<String>,
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
     pub created_at: String,
 }
 
@@ -84,7 +82,6 @@ const CUSTOM_CARD_SELECT: &str = r#"
         g.slug as grade,
         ot.slug as origin_type,
         c.hanja,
-        c.hanja_eum,
         ct.trans_word,
         ct.trans_dfn,
         s.id as sentence_id,
@@ -139,7 +136,6 @@ async fn custom_card_from_row(
         grade: row.get("grade"),
         origin_type: row.get("origin_type"),
         hanja: row.get("hanja"),
-        hanja_eum: row.get("hanja_eum"),
         created_at: row.get("created_at"),
     })
 }
@@ -199,8 +195,8 @@ pub async fn create_custom_card(
     // Insert into cards table
     let card_result = sqlx::query(
         r#"
-        INSERT INTO cards (word, definition, pos_id, grade_id, origin_type_id, hanja, hanja_eum, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO cards (word, definition, pos_id, grade_id, origin_type_id, hanja, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
         "#
     )
     .bind(&payload.word)
@@ -209,7 +205,6 @@ pub async fn create_custom_card(
     .bind(grade_id)
     .bind(origin_type_id)
     .bind(&payload.hanja)
-    .bind(&payload.hanja_eum)
     .execute(&mut *tx)
     .await?;
 
@@ -438,7 +433,6 @@ pub struct UpdateCustomCardRequest {
     pub grade: Option<String>,
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
     pub alternatives: Option<Vec<String>>,
 }
 
@@ -535,14 +529,6 @@ pub async fn update_custom_card(
     if payload.hanja.is_some() {
         sqlx::query("UPDATE cards SET hanja = ? WHERE id = ?")
             .bind(&payload.hanja)
-            .bind(card_id)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    if payload.hanja_eum.is_some() {
-        sqlx::query("UPDATE cards SET hanja_eum = ? WHERE id = ?")
-            .bind(&payload.hanja_eum)
             .bind(card_id)
             .execute(&mut *tx)
             .await?;

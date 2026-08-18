@@ -76,6 +76,8 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
 
 export type FieldValue = Schemas['FieldValue']
 export type FieldValues = Schemas['FieldValues']
+export type InflectionFormValue = Schemas['InflectionFormValue']
+export type CardInflection = Schemas['CardInflection']
 
 export async function getFieldValues(): Promise<FieldValues> {
   const url = `${window.location.origin}/api/cards/field-values`
@@ -249,7 +251,7 @@ type AdminCard = Schemas['Card']
 // back together, kept here as the single source of truth both that adapter
 // and EditCardDialog's "front"/"back" JSON views read from, rather than each
 // hand-maintaining its own copy that could silently drift from the other.
-export const CARD_BACK_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives', 'hanja_eum'])
+export const CARD_BACK_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives'])
 type SearchCardsResponse = Schemas['SearchCardsResponse']
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {

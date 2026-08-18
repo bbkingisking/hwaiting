@@ -54,7 +54,6 @@ pub struct CustomCardExport {
     pub pos: Option<String>,
     pub origin_type: Option<String>,
     pub hanja: Option<String>,
-    pub hanja_eum: Option<String>,
     pub grade: Option<String>,
     pub translations: Vec<CardTranslationExport>,
     pub sentences: Vec<SentenceExport>,
@@ -181,7 +180,7 @@ pub async fn export_data(
         let card_row = sqlx::query(
             r#"
             SELECT c.word, c.definition, pop.slug as pos, ot.slug as origin_type,
-                   c.hanja, c.hanja_eum, g.slug as grade
+                   c.hanja, g.slug as grade
             FROM cards c
             LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
             LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
@@ -281,7 +280,6 @@ pub async fn export_data(
             pos: card_row.get("pos"),
             origin_type: card_row.get("origin_type"),
             hanja: card_row.get("hanja"),
-            hanja_eum: card_row.get("hanja_eum"),
             grade: card_row.get("grade"),
             translations,
             sentences,
@@ -391,8 +389,8 @@ pub async fn import_data(
         // Insert card
         let card_id = sqlx::query_scalar::<_, i64>(
             r#"
-            INSERT INTO cards (word, definition, pos_id, origin_type_id, hanja, hanja_eum, grade_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO cards (word, definition, pos_id, origin_type_id, hanja, grade_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             RETURNING id
             "#
         )
@@ -401,7 +399,6 @@ pub async fn import_data(
         .bind(pos_id)
         .bind(origin_type_id)
         .bind(&custom_card.hanja)
-        .bind(&custom_card.hanja_eum)
         .bind(grade_id)
         .fetch_one(&mut *tx)
         .await?;

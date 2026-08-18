@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { getFieldValues, type FieldValue } from '@/lib/api'
+import { getFieldValues, type FieldValue, type InflectionFormValue } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 
 type FieldValueMap = Record<string, FieldValue>
+type InflectionFormMap = Record<string, InflectionFormValue>
 
 interface FieldValuesContextType {
   pos: FieldValueMap
@@ -11,6 +12,11 @@ interface FieldValuesContextType {
   speechLevel: FieldValueMap
   tense: FieldValueMap
   grammarPattern: FieldValueMap
+  // Catalog of possible inflected forms (label/ending/category), keyed by
+  // slug - non-spoiling, unlike the actual conjugated forms for one card
+  // (CardReveal.inflections), which only carry the same slug plus the form
+  // itself and are looked up against this map. See InflectionsDialog.
+  inflectionForm: InflectionFormMap
 }
 
 const emptyFieldValues: FieldValuesContextType = {
@@ -20,9 +26,10 @@ const emptyFieldValues: FieldValuesContextType = {
   speechLevel: {},
   tense: {},
   grammarPattern: {},
+  inflectionForm: {},
 }
 
-function toMap(entries: FieldValue[] | null | undefined): FieldValueMap {
+function toMap<T extends { slug: string }>(entries: T[] | null | undefined): Record<string, T> {
   return Object.fromEntries((entries ?? []).map(e => [e.slug, e]))
 }
 
@@ -49,6 +56,7 @@ export function FieldValuesProvider({ children }: { children: React.ReactNode })
           speechLevel: toMap(data.speech_level),
           tense: toMap(data.tense),
           grammarPattern: toMap(data.grammar_pattern),
+          inflectionForm: toMap(data.inflection_form),
         })
       } catch (err) {
         console.error('Failed to fetch field values:', err)

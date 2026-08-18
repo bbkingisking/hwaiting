@@ -24,7 +24,7 @@ pub struct FieldValue {
     pub endings: Option<String>,
 }
 
-/// The six fields `FieldValues` can return values for, and the only legal
+/// The seven fields `FieldValues` can return values for, and the only legal
 /// values for `?fields=`. Wire values are snake_case (`grammar_pattern`,
 /// ...), matching the response's own field names - see
 /// `deserialize_field_list`.
@@ -37,6 +37,55 @@ pub enum FieldName {
     SpeechLevel,
     Tense,
     GrammarPattern,
+    InflectionForm,
+}
+
+/// The catalog of possible inflected forms (dictionary form, 해요체 present,
+/// ...) grouped by category - non-spoiling, unlike the actual conjugated
+/// forms for one card (see `CardReveal::inflections` in check.rs, which is
+/// gated the same way `grammar_pattern_endings` is). Shaped for the review
+/// UI to build a table directly: group by `category_slug` in `sort_order`,
+/// skip `verb_only` rows for 형용사 cards.
+#[derive(Serialize, ToSchema)]
+pub struct InflectionFormValue {
+    pub slug: String,
+    pub label_en: String,
+    pub label_ko: String,
+    pub ending_ko: String,
+    pub category_slug: String,
+    pub category_label_en: String,
+    pub category_label_ko: String,
+    pub verb_only: bool,
+    pub sort_order: i64,
+}
+
+async fn fetch_inflection_forms(pool: &SqlitePool) -> Result<Vec<InflectionFormValue>, AppError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT f.slug, f.label_en, f.label_ko, f.ending_ko, f.verb_only, f.sort_order,
+               c.slug as category_slug, c.label_en as category_label_en, c.label_ko as category_label_ko
+        FROM inflection_forms f
+        JOIN inflection_categories c ON f.category_id = c.id
+        ORDER BY f.sort_order
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| InflectionFormValue {
+            slug: row.get("slug"),
+            label_en: row.get("label_en"),
+            label_ko: row.get("label_ko"),
+            ending_ko: row.get("ending_ko"),
+            category_slug: row.get("category_slug"),
+            category_label_en: row.get("category_label_en"),
+            category_label_ko: row.get("category_label_ko"),
+            verb_only: row.get::<i64, _>("verb_only") != 0,
+            sort_order: row.get("sort_order"),
+        })
+        .collect())
 }
 
 #[derive(Deserialize, Default, IntoParams)]
@@ -112,6 +161,8 @@ pub struct FieldValues {
     pub tense: Option<Vec<FieldValue>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grammar_pattern: Option<Vec<FieldValue>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inflection_form: Option<Vec<InflectionFormValue>>,
 }
 
 #[utoipa::path(
@@ -164,6 +215,11 @@ pub async fn list_field_values(
     } else {
         None
     };
+    let inflection_form = if wanted(FieldName::InflectionForm) {
+        Some(fetch_inflection_forms(&pool).await?)
+    } else {
+        None
+    };
 
     Ok(Json(FieldValues {
         pos,
@@ -172,5 +228,6 @@ pub async fn list_field_values(
         speech_level,
         tense,
         grammar_pattern,
+        inflection_form,
     }))
 }

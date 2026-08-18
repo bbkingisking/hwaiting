@@ -234,7 +234,7 @@ function AppContent() {
 
   // EditCardDialog edits the backend's canonical full-card shape (see its
   // doc comment in lib/api.ts), most of which - word, definition, sentence,
-  // target, alternatives, hanja_eum - isn't part of `card` (CardPrompt) at
+  // target, alternatives - isn't part of `card` (CardPrompt) at
   // all; that half lives only in Flashcard's local `reveal` state, which
   // patches itself directly from the same `updates` (see flashcard.tsx's own
   // onSaved wrapper). Only the fields CardPrompt actually has are relevant

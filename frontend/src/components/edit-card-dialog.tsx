@@ -27,7 +27,6 @@ interface FormState {
   pos: string
   origin_type: string
   hanja: string
-  hanja_eum: string
   grade: string
   trans_word: string
   trans_dfn: string
@@ -47,7 +46,6 @@ function toFormState(card: AdminCard): FormState {
     pos: card.pos ?? '',
     origin_type: card.origin_type ?? '',
     hanja: card.hanja ?? '',
-    hanja_eum: card.hanja_eum ?? '',
     grade: card.grade ?? '',
     trans_word: card.trans_word ?? '',
     trans_dfn: card.trans_dfn ?? '',
@@ -135,7 +133,6 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         pos: nullIfEmpty(form.pos),
         origin_type: nullIfEmpty(form.origin_type),
         hanja: nullIfEmpty(form.hanja),
-        hanja_eum: nullIfEmpty(form.hanja_eum),
         grade: nullIfEmpty(form.grade),
         trans_word: form.trans_word.trim() || undefined,
         trans_dfn: nullIfEmpty(form.trans_dfn),
@@ -229,14 +226,13 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Hanja">
-              {id => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
-            </Field>
-            <Field label="Hanja reading">
-              {id => <Input id={id} value={form.hanja_eum} onChange={handleChange('hanja_eum')} />}
-            </Field>
-          </div>
+          {/* No separate "hanja reading" field: Korean orthography is
+              phonetic, so the reading of `hanja` is just the card's own
+              `word`, edited above - see the backend's dropped-hanja_eum
+              migration. */}
+          <Field label="Hanja">
+            {id => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
+          </Field>
 
           <Field label="Origin type">
             {id => <EnumSelect id={id} options={originType} value={form.origin_type} onChange={handleChange('origin_type')} />}

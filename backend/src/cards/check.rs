@@ -34,15 +34,26 @@ pub struct CardBack {
     pub sentence: String,
     pub target: String,
     pub alternatives: Vec<String>,
-    pub hanja_eum: Option<String>,
+}
+
+/// One resolved row from `card_inflections`, joined out to the catalog's
+/// `slug` rather than repeating its label/category (those are non-spoiling
+/// and already available from `list_field_values(fields=inflection_form)` -
+/// see `InflectionFormValue`). Only the conjugated `form` itself gives the
+/// answer away.
+#[derive(Serialize, ToSchema)]
+pub struct CardInflection {
+    pub form_slug: String,
+    pub form: String,
 }
 
 /// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
-/// `CardBack` plus the two fields that are genuinely review-flow-specific
+/// `CardBack` plus the fields that are genuinely review-flow-specific
 /// rather than properties of the card itself - `hanja_hints` depends on the
 /// requesting user's review history (see `hanja_hints_for`), and
-/// `grammar_pattern_endings` belongs to the referenced `grammar_patterns`
-/// row, not this card - so neither has a place on `CardBack`/`Card`.
+/// `grammar_pattern_endings`/`inflections` belong to rows referencing this
+/// card rather than the card itself - so none has a place on
+/// `CardBack`/`Card`.
 #[derive(Serialize, ToSchema)]
 pub struct CardReveal {
     #[serde(flatten)]
@@ -56,6 +67,11 @@ pub struct CardReveal {
     /// surfaces still fetch endings from - that's a legitimately public use,
     /// picking a pattern rather than guessing one card's answer).
     pub grammar_pattern_endings: Option<String>,
+    /// This card's resolved `card_inflections` rows (empty if the card
+    /// hasn't been run through the inflection generator, or isn't a
+    /// 동사/형용사) - each `form` is exactly as spoiling as `target`, so
+    /// like `grammar_pattern_endings` this only ships with the reveal.
+    pub inflections: Vec<CardInflection>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -92,7 +108,7 @@ pub async fn check_answer(
     // only place allowed to know `target` before the client does.
     let row = sqlx::query(
         r#"
-        SELECT c.word, c.definition, c.hanja, c.hanja_eum,
+        SELECT c.word, c.definition, c.hanja,
                s.id as sentence_id, s.text as sentence, s.target,
                gp.endings as grammar_pattern_endings
         FROM cards c
@@ -109,7 +125,6 @@ pub async fn check_answer(
     let word: String = row.get("word");
     let definition: Option<String> = row.get("definition");
     let hanja: Option<String> = row.get("hanja");
-    let hanja_eum: Option<String> = row.get("hanja_eum");
     let sentence_id: i64 = row.get("sentence_id");
     let sentence: String = row.get("sentence");
     let target: String = row.get("target");
@@ -126,6 +141,25 @@ pub async fn check_answer(
     let correct = trimmed == target || alternatives.iter().any(|alt| alt == trimmed);
 
     let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
+
+    let inflections: Vec<CardInflection> = sqlx::query(
+        r#"
+        SELECT f.slug as form_slug, ci.form
+        FROM card_inflections ci
+        JOIN inflection_forms f ON ci.inflection_form_id = f.id
+        WHERE ci.card_id = ?
+        ORDER BY f.sort_order
+        "#,
+    )
+    .bind(card_id)
+    .fetch_all(&pool)
+    .await?
+    .iter()
+    .map(|row| CardInflection {
+        form_slug: row.get("form_slug"),
+        form: row.get("form"),
+    })
+    .collect();
 
     info!(
         "Checking answer for user_id: {}, card_id: {}, correct: {}",
@@ -277,10 +311,10 @@ pub async fn check_answer(
                 sentence,
                 target,
                 alternatives,
-                hanja_eum,
             },
             hanja_hints,
             grammar_pattern_endings,
+            inflections,
         },
     }))
 }

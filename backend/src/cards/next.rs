@@ -62,8 +62,9 @@ pub struct CardPrompt {
     #[serde(flatten)]
     pub front: CardFront,
     /// Hanja characters for the pre-answer hint span. The reading and each
-    /// hint's gloss give the answer away - see `CardBack::hanja_eum` and
-    /// `HanjaHint::trans_word`.
+    /// hint's gloss give the answer away - the reading is `CardBack::word`
+    /// itself (Korean orthography is phonetic, so a word's spelling and its
+    /// hanja's reading are the same fact) - see also `HanjaHint::trans_word`.
     pub hanja_hint_words: Vec<String>,
 }
 
@@ -244,7 +245,7 @@ pub async fn get_next_card(
     let query = format!(
         r#"
         SELECT
-            c.id, c.krdict_id, c.word, c.definition, c.hanja, c.hanja_eum,
+            c.id, c.krdict_id, c.word, c.definition, c.hanja,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
