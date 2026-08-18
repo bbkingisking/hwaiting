@@ -293,7 +293,7 @@ pub async fn search_cards(
     let rows = sqlx::query(
         r#"
         SELECT
-            c.id, c.krdict_id, c.word, c.definition, c.hanja, c.hanja_eum,
+            c.id, c.krdict_id, c.word, c.definition, c.hanja,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
             s.id as sentence_id, s.text as sentence, s.target,
@@ -357,7 +357,6 @@ pub async fn search_cards(
             back: CardBack {
                 word: row.get("word"),
                 definition: row.get("definition"),
-                hanja_eum: row.get("hanja_eum"),
                 sentence,
                 target,
                 alternatives,
@@ -369,7 +368,7 @@ pub async fn search_cards(
 }
 
 /// Partial card edit. Any field left out of the JSON body is untouched;
-/// nullable fields (`definition`, `pos`, `origin_type`, `hanja`, `hanja_eum`,
+/// nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
 /// `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
 /// explicitly set to `null` to clear the column — that's why they're typed
 /// `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
@@ -386,8 +385,6 @@ pub struct UpdateCardRequest {
     pub origin_type: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub hanja: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option")]
-    pub hanja_eum: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub grade: Option<Option<String>>,
     pub trans_word: Option<String>,
@@ -439,7 +436,6 @@ pub async fn edit_card(
         pos,
         origin_type,
         hanja,
-        hanja_eum,
         grade,
         trans_word,
         trans_dfn,
@@ -453,8 +449,8 @@ pub async fn edit_card(
     } = payload;
 
     debug!(
-        "Parsed fields: word={:?}, hanja={:?}, hanja_eum={:?}, definition={:?}",
-        word, hanja, hanja_eum, definition
+        "Parsed fields: word={:?}, hanja={:?}, definition={:?}",
+        word, hanja, definition
     );
 
     // Verify the card exists
@@ -485,7 +481,6 @@ pub async fn edit_card(
         if pos_id.is_some()         { sets.push("pos_id = ?") }
         if origin_type_id.is_some() { sets.push("origin_type_id = ?") }
         if hanja.is_some()       { sets.push("hanja = ?") }
-        if hanja_eum.is_some()   { sets.push("hanja_eum = ?") }
         if grade_id.is_some()       { sets.push("grade_id = ?") }
         if grammar_pattern_id.is_some() { sets.push("grammar_pattern_id = ?") }
 
@@ -498,7 +493,6 @@ pub async fn edit_card(
             if let Some(v) = pos_id         { q = q.bind(v) }
             if let Some(v) = origin_type_id { q = q.bind(v) }
             if let Some(ref v) = hanja       { q = q.bind(v.as_deref()) }
-            if let Some(ref v) = hanja_eum   { q = q.bind(v.as_deref()) }
             if let Some(v) = grade_id       { q = q.bind(v) }
             if let Some(v) = grammar_pattern_id { q = q.bind(v) }
             let result = q.bind(card_id).execute(&mut *tx).await?;

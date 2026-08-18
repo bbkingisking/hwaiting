@@ -453,7 +453,6 @@ export interface components {
         CardBack: {
             alternatives: string[];
             definition?: string | null;
-            hanja_eum?: string | null;
             sentence: string;
             target: string;
             word: string;
@@ -504,6 +503,17 @@ export interface components {
             trans_word: string;
         };
         /**
+         * @description One resolved row from `card_inflections`, joined out to the catalog's
+         *     `slug` rather than repeating its label/category (those are non-spoiling
+         *     and already available from `list_field_values(fields=inflection_form)` -
+         *     see `InflectionFormValue`). Only the conjugated `form` itself gives the
+         *     answer away.
+         */
+        CardInflection: {
+            form: string;
+            form_slug: string;
+        };
+        /**
          * @description Everything the client may see before it has attempted an answer:
          *     `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
          *     review-flow-specific rather than a property of the card itself - it
@@ -513,18 +523,20 @@ export interface components {
         CardPrompt: components["schemas"]["CardFront"] & {
             /**
              * @description Hanja characters for the pre-answer hint span. The reading and each
-             *     hint's gloss give the answer away - see `CardBack::hanja_eum` and
-             *     `HanjaHint::trans_word`.
+             *     hint's gloss give the answer away - the reading is `CardBack::word`
+             *     itself (Korean orthography is phonetic, so a word's spelling and its
+             *     hanja's reading are the same fact) - see also `HanjaHint::trans_word`.
              */
             hanja_hint_words: string[];
         };
         /**
          * @description Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
-         *     `CardBack` plus the two fields that are genuinely review-flow-specific
+         *     `CardBack` plus the fields that are genuinely review-flow-specific
          *     rather than properties of the card itself - `hanja_hints` depends on the
          *     requesting user's review history (see `hanja_hints_for`), and
-         *     `grammar_pattern_endings` belongs to the referenced `grammar_patterns`
-         *     row, not this card - so neither has a place on `CardBack`/`Card`.
+         *     `grammar_pattern_endings`/`inflections` belong to rows referencing this
+         *     card rather than the card itself - so none has a place on
+         *     `CardBack`/`Card`.
          */
         CardReveal: components["schemas"]["CardBack"] & {
             /**
@@ -538,6 +550,13 @@ export interface components {
              */
             grammar_pattern_endings?: string | null;
             hanja_hints: components["schemas"]["HanjaHint"][];
+            /**
+             * @description This card's resolved `card_inflections` rows (empty if the card
+             *     hasn't been run through the inflection generator, or isn't a
+             *     동사/형용사) - each `form` is exactly as spoiling as `target`, so
+             *     like `grammar_pattern_endings` this only ships with the reveal.
+             */
+            inflections: components["schemas"]["CardInflection"][];
         };
         CardTranslationExport: {
             language_tag: string;
@@ -562,7 +581,6 @@ export interface components {
             definition?: string | null;
             grade?: string | null;
             hanja?: string | null;
-            hanja_eum?: string | null;
             origin_type?: string | null;
             pos?: string | null;
             sentence: string;
@@ -596,7 +614,6 @@ export interface components {
             definition?: string | null;
             grade?: string | null;
             hanja?: string | null;
-            hanja_eum?: string | null;
             /** Format: int64 */
             id: number;
             origin_type?: string | null;
@@ -614,7 +631,6 @@ export interface components {
             definition?: string | null;
             grade?: string | null;
             hanja?: string | null;
-            hanja_eum?: string | null;
             origin_type?: string | null;
             pos?: string | null;
             sentences: components["schemas"]["SentenceExport"][];
@@ -652,13 +668,13 @@ export interface components {
             version: string;
         };
         /**
-         * @description The six fields `FieldValues` can return values for, and the only legal
+         * @description The seven fields `FieldValues` can return values for, and the only legal
          *     values for `?fields=`. Wire values are snake_case (`grammar_pattern`,
          *     ...), matching the response's own field names - see
          *     `deserialize_field_list`.
          * @enum {string}
          */
-        FieldName: "pos" | "origin_type" | "grade" | "speech_level" | "tense" | "grammar_pattern";
+        FieldName: "pos" | "origin_type" | "grade" | "speech_level" | "tense" | "grammar_pattern" | "inflection_form";
         FieldValue: {
             endings?: string | null;
             label: string;
@@ -670,6 +686,7 @@ export interface components {
         FieldValues: {
             grade?: components["schemas"]["FieldValue"][] | null;
             grammar_pattern?: components["schemas"]["FieldValue"][] | null;
+            inflection_form?: components["schemas"]["InflectionFormValue"][] | null;
             origin_type?: components["schemas"]["FieldValue"][] | null;
             pos?: components["schemas"]["FieldValue"][] | null;
             speech_level?: components["schemas"]["FieldValue"][] | null;
@@ -691,8 +708,8 @@ export interface components {
         };
         HanjaHint: {
             hanja: string;
-            hanja_eum?: string | null;
             trans_word?: string | null;
+            word: string;
         };
         HistoryBreakdownResponse: {
             by_origin: components["schemas"]["BreakdownRow"][];
@@ -743,6 +760,26 @@ export interface components {
             custom_cards_imported: number;
             reviews_imported: number;
             suppressed_cards_imported: number;
+        };
+        /**
+         * @description The catalog of possible inflected forms (dictionary form, 해요체 present,
+         *     ...) grouped by category - non-spoiling, unlike the actual conjugated
+         *     forms for one card (see `CardReveal::inflections` in check.rs, which is
+         *     gated the same way `grammar_pattern_endings` is). Shaped for the review
+         *     UI to build a table directly: group by `category_slug` in `sort_order`,
+         *     skip `verb_only` rows for 형용사 cards.
+         */
+        InflectionFormValue: {
+            category_label_en: string;
+            category_label_ko: string;
+            category_slug: string;
+            ending_ko: string;
+            label_en: string;
+            label_ko: string;
+            slug: string;
+            /** Format: int64 */
+            sort_order: number;
+            verb_only: boolean;
         };
         InflectionHintExport: {
             speech_level?: string | null;
@@ -847,7 +884,7 @@ export interface components {
         };
         /**
          * @description Partial card edit. Any field left out of the JSON body is untouched;
-         *     nullable fields (`definition`, `pos`, `origin_type`, `hanja`, `hanja_eum`,
+         *     nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
          *     `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
          *     explicitly set to `null` to clear the column — that's why they're typed
          *     `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
@@ -860,7 +897,6 @@ export interface components {
             grade?: string | null;
             grammar_pattern?: string | null;
             hanja?: string | null;
-            hanja_eum?: string | null;
             origin_type?: string | null;
             pos?: string | null;
             sentence?: string | null;
@@ -877,7 +913,6 @@ export interface components {
             definition?: string | null;
             grade?: string | null;
             hanja?: string | null;
-            hanja_eum?: string | null;
             origin_type?: string | null;
             pos?: string | null;
             sentence?: string | null;

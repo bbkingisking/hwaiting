@@ -1,0 +1,15 @@
+-- cards.hanja_eum is fully redundant with cards.word: for any card with
+-- `hanja` populated, `hanja` is the etymology of exactly that card's word,
+-- and Korean orthography is phonetic (hangul spelling IS the reading), so
+-- "the reading of this word's hanja" and "this word's spelling" are the
+-- same fact by construction, not just current data. Verified directly
+-- against the db before dropping this: every populated hanja_eum equalled
+-- its own card's word, no exceptions, across all 1721 cards.
+--
+-- NOTE: the backend (cards/mod.rs, check.rs, next.rs, custom_cards.rs,
+-- export_import.rs, admin.rs) and frontend (flashcard.tsx,
+-- edit-card-dialog.tsx, custom-cards-dialog.tsx, lib/api.ts,
+-- api-schema.d.ts) all still reference hanja_eum as of this migration and
+-- will fail once it's applied, until updated to read `word` instead
+-- wherever they currently read `hanja_eum`.
+ALTER TABLE cards DROP COLUMN hanja_eum;

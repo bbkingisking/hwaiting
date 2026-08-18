@@ -38,8 +38,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [definition, setDefinition] = useState('')
   const [originType, setOriginType] = useState('')
   const [hanja, setHanja] = useState('')
-  const [hanjaEum, setHanjaEum] = useState('')
-  
+
   const [cards, setCards] = useState<CustomCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
@@ -61,7 +60,6 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
     setDefinition('')
     setOriginType('')
     setHanja('')
-    setHanjaEum('')
   }
 
   const loadCards = async () => {
@@ -94,7 +92,6 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
         definition: definition || null,
         origin_type: originType || null,
         hanja: hanja || null,
-        hanja_eum: hanjaEum || null,
       })
       resetForm()
       setShowCreateForm(false)
@@ -331,17 +328,9 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="hanja-eum">
-                  Hanja Reading (한자음)
-                </Label>
-                <Input
-                  id="hanja-eum"
-                  value={hanjaEum}
-                  onChange={(e) => setHanjaEum(e.target.value)}
-                  placeholder="e.g., 자주"
-                />
-              </div>
+              {/* No separate "hanja reading" field: Korean orthography is
+                  phonetic, so the reading of `hanja` is just this card's own
+                  `word`, entered above. */}
 
               <div className="flex gap-2 pt-4">
                 <Button

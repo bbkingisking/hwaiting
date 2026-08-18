@@ -36,7 +36,7 @@ use crate::error::AppError;
 #[derive(Serialize, Clone, ToSchema)]
 pub struct HanjaHint {
     pub hanja: String,
-    pub hanja_eum: Option<String>,
+    pub word: String,
     pub trans_word: Option<String>,
 }
 
@@ -91,7 +91,7 @@ async fn hanja_hints_for(
 
     let other_hanja_rows = sqlx::query(
         r#"
-        SELECT DISTINCT c.hanja, c.hanja_eum, ct.trans_word
+        SELECT DISTINCT c.hanja, c.word, ct.trans_word
         FROM card_states cs
         INNER JOIN cards c ON c.id = cs.card_id
         INNER JOIN card_translations ct ON ct.card_id = c.id AND ct.language_tag = 'en'
@@ -118,7 +118,7 @@ async fn hanja_hints_for(
             if !current_chars.is_empty() && !other_chars.is_empty() && current_chars.intersection(&other_chars).next().is_some() {
                 Some(HanjaHint {
                     hanja: other_hanja,
-                    hanja_eum: row.get("hanja_eum"),
+                    word: row.get("word"),
                     trans_word: row.get("trans_word"),
                 })
             } else {
