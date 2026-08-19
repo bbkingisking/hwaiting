@@ -1,0 +1,26 @@
+-- Two independent honorific axes, both separate from tense and
+-- speech_level:
+--
+-- is_honorific: subject honorification (주체높임, -(으)시-). Marks respect
+-- toward the grammatical subject. Card 555's target `찾아오신` (an
+-- adnominal form, which doesn't inflect for speech level at all) had
+-- speech_level wrongly set to hasipsio-che -- the real signal in that
+-- target was -시-, which had nowhere to go.
+--
+-- is_humble: object honorification (객체높임/겸양법) -- a small closed set
+-- of suppletive verbs (드리다, 뵙다, 여쭙다, 모시다) that lower the
+-- speaker/agent to elevate the object/recipient, rather than a productive
+-- infix on the subject. Genuinely independent of is_honorific: the two can
+-- co-occur in the same target, e.g. 드리셨습니다 = 드리다 (object-honorific
+-- lexeme) + -시- (subject-honorific infix) + -습니다, so this can't be
+-- collapsed into a single honorific_type_id lookup the way tense/
+-- speech_level are -- a target isn't limited to exactly one of these the
+-- way it's limited to exactly one tense.
+--
+-- Both NOT NULL DEFAULT 0, unlike the nullable speech_level_id/tense_id:
+-- neither is a pragmatic judgment call the way those are, both are visible
+-- morphological/lexical facts, and the unmarked case is the overwhelming
+-- default. Row backfill for already-tagged sentences is handled
+-- separately, not as part of this migration.
+ALTER TABLE sentence_inflection_hints ADD COLUMN is_honorific INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sentence_inflection_hints ADD COLUMN is_humble INTEGER NOT NULL DEFAULT 0;
