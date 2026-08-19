@@ -187,11 +187,22 @@ pub fn review() -> Result<Value, AppError> {
 pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
     let token = require_token()?;
     let body = json!({ "answer": guess });
-    let result = parse(&post_json(
+    let mut result = parse(&post_json(
         &format!("/api/cards/{card_id}/check"),
         Some(&token),
         &body,
     )?)?;
+
+    // The backend's reveal always resolves this card's `card_inflections`
+    // rows (joined out to `inflection_forms`) and ships them as
+    // `inflections`, with no request-side opt-out - see
+    // `backend/src/cards/check.rs`. That catalog isn't part of what this
+    // review flow works with (see `field_values`, which likewise never
+    // requests `inflection_form`), so drop it here rather than passing it
+    // through verbatim.
+    if let Some(obj) = result.as_object_mut() {
+        obj.remove("inflections");
+    }
 
     put(&format!("/api/cards/{card_id}/suppress"), &token)?;
 
@@ -217,10 +228,16 @@ pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
     )?)
 }
 
-/// Fetches the current pos/origin_type/grade/speech_level/tense/
-/// grammar_pattern tables live, so the caller never has to keep a
-/// hardcoded copy in sync by hand.
+/// Fetches the current pos/grade/speech_level/tense/grammar_pattern tables
+/// live, so the caller never has to keep a hardcoded copy in sync by hand.
+/// Deliberately omits `inflection_form` from `?fields=` - the backend would
+/// otherwise join `inflection_forms`/`inflection_categories` in, and that
+/// catalog isn't part of what this review flow works with (see `answer`,
+/// which strips the matching `inflections` rows out of the reveal for the
+/// same reason). `origin_type` is left out too - not something this flow
+/// needs either.
 pub fn field_values() -> Result<Value, AppError> {
     let token = require_token()?;
-    parse(&get("/api/cards/field-values", &token)?)
+    let path = "/api/cards/field-values?fields=pos,grade,speech_level,tense,grammar_pattern";
+    parse(&get(path, &token)?)
 }
