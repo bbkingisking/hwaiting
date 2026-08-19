@@ -46,8 +46,8 @@ pub struct CardFront {
     /// The text after the blank. See `sentence_before`.
     pub sentence_after: String,
     pub sentence_translation: String,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
+    #[serde(flatten)]
+    pub inflection_hint: crate::inflection_hints::InflectionHint,
     pub grammar_pattern: Option<String>,
     pub hanja: Option<String>,
 }
@@ -251,6 +251,8 @@ pub async fn get_next_card(
             s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
             sl.slug as speech_level, tn.slug as tense,
+            COALESCE(sih.is_honorific, 0) as is_honorific,
+            COALESCE(sih.is_humble, 0) as is_humble,
             gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
@@ -388,8 +390,7 @@ pub async fn get_next_card(
     let sentence: String = row.get("sentence");
     let sentence_translation: String = row.get("sentence_translation");
     let target: String = row.get("target");
-    let speech_level: Option<String> = row.get("speech_level");
-    let tense: Option<String> = row.get("tense");
+    let inflection_hint = crate::inflection_hints::InflectionHint::from_row(&row);
     let grammar_pattern: Option<String> = row.get("grammar_pattern");
 
     debug!("Selected card_id: {} ({})", card_id, word);
@@ -444,8 +445,7 @@ pub async fn get_next_card(
                     sentence_before,
                     sentence_after,
                     sentence_translation,
-                    speech_level,
-                    tense,
+                    inflection_hint,
                     grammar_pattern,
                     hanja,
                 },

@@ -35,6 +35,8 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
   const [pos, setPos] = useState('')
   const [speechLevel, setSpeechLevel] = useState('')
   const [tense, setTense] = useState('')
+  const [isHonorific, setIsHonorific] = useState(false)
+  const [isHumble, setIsHumble] = useState(false)
   const [definition, setDefinition] = useState('')
   const [originType, setOriginType] = useState('')
   const [hanja, setHanja] = useState('')
@@ -57,6 +59,8 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
     setPos('')
     setSpeechLevel('')
     setTense('')
+    setIsHonorific(false)
+    setIsHumble(false)
     setDefinition('')
     setOriginType('')
     setHanja('')
@@ -89,6 +93,8 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
         pos: pos || null,
         speech_level: speechLevel || null,
         tense: tense || null,
+        is_honorific: isHonorific || null,
+        is_humble: isHumble || null,
         definition: definition || null,
         origin_type: originType || null,
         hanja: hanja || null,
@@ -170,7 +176,7 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                         <div className="text-xs text-muted-foreground">
                           {card.sentence}
                         </div>
-                        {(card.pos || card.speech_level || card.tense) && (
+                        {(card.pos || card.speech_level || card.tense || card.is_honorific || card.is_humble) && (
                           <div className="flex gap-2 pt-1">
                             {card.pos && posLookup[card.pos] && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
@@ -185,6 +191,18 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                             {card.tense && tenseLookup[card.tense] && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
                                 {tenseLookup[card.tense].label}
+                              </span>
+                            )}
+                            {/* Not lookup-backed like the three badges above -
+                                just booleans, see migration 20240101000025. */}
+                            {card.is_honorific && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                                Honorific
+                              </span>
+                            )}
+                            {card.is_humble && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                                Humble
                               </span>
                             )}
                           </div>
@@ -293,6 +311,34 @@ export function CustomCardsDialog({ open, onOpenChange }: CustomCardsDialogProps
                   Tense
                 </Label>
                 <EnumSelect id="tense" options={tenseLookup} value={tense} onChange={(e) => setTense(e.target.value)} />
+              </div>
+
+              {/* Not EnumSelect like part of speech/speech level/tense above:
+                  is_honorific/is_humble aren't lookup-table-backed, just
+                  booleans (see migration 20240101000025) - and independent
+                  of each other, not mutually exclusive, so a pair of
+                  checkboxes rather than a single select. */}
+              <div className="flex gap-4">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    id="is-honorific"
+                    type="checkbox"
+                    checked={isHonorific}
+                    onChange={(e) => setIsHonorific(e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <Label htmlFor="is-honorific">Subject honorific (-시-)</Label>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    id="is-humble"
+                    type="checkbox"
+                    checked={isHumble}
+                    onChange={(e) => setIsHumble(e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <Label htmlFor="is-humble">Object honorific (겸양어)</Label>
+                </div>
               </div>
 
               <div className="space-y-2">

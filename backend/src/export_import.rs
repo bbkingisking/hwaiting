@@ -73,13 +73,7 @@ pub struct SentenceExport {
     #[serde(default)]
     pub alternatives: Vec<String>,
     pub translation: Option<String>,
-    pub inflection_hint: Option<InflectionHintExport>,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct InflectionHintExport {
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
+    pub inflection_hint: Option<crate::inflection_hints::InflectionHint>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -239,7 +233,9 @@ pub async fn export_data(
             // Get inflection hint
             let inflection_hint_row = sqlx::query(
                 r#"
-                SELECT sl.slug as speech_level, tn.slug as tense
+                SELECT sl.slug as speech_level, tn.slug as tense,
+                       COALESCE(sih.is_honorific, 0) as is_honorific,
+                       COALESCE(sih.is_humble, 0) as is_humble
                 FROM sentence_inflection_hints sih
                 LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
                 LEFT JOIN tenses tn ON tn.id = sih.tense_id
@@ -250,12 +246,9 @@ pub async fn export_data(
             .fetch_optional(&pool)
             .await?;
 
-            let inflection_hint = inflection_hint_row.map(|row| {
-                InflectionHintExport {
-                    speech_level: row.get("speech_level"),
-                    tense: row.get("tense"),
-                }
-            });
+            let inflection_hint = inflection_hint_row
+                .as_ref()
+                .map(crate::inflection_hints::InflectionHint::from_row);
 
             // Get alternatives
             let alternatives: Vec<String> = sqlx::query_scalar(
@@ -460,13 +453,15 @@ pub async fn import_data(
                 let tense_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "tenses", hint.tense).await?;
                 sqlx::query(
                     r#"
-                    INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id)
-                    VALUES (?, ?, ?)
+                    INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble)
+                    VALUES (?, ?, ?, ?, ?)
                     "#
                 )
                 .bind(sentence_id)
                 .bind(speech_level_id)
                 .bind(tense_id)
+                .bind(hint.is_honorific)
+                .bind(hint.is_humble)
                 .execute(&mut *tx)
                 .await?;
             }

@@ -20,8 +20,8 @@ pub struct CreateCustomCardRequest {
     pub sentence: String,
     pub target: String,
     pub sentence_translation: String,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
+    #[serde(flatten)]
+    pub inflection_hint: crate::inflection_hints::InflectionHintWrite,
     pub pos: Option<String>,
     pub grade: Option<String>,
     pub origin_type: Option<String>,
@@ -55,8 +55,8 @@ pub struct CustomCard {
     /// of "the same card" agreeing on every field but one.
     pub alternatives: Vec<String>,
     pub sentence_translation: String,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
+    #[serde(flatten)]
+    pub inflection_hint: crate::inflection_hints::InflectionHint,
     pub pos: Option<String>,
     pub grade: Option<String>,
     pub origin_type: Option<String>,
@@ -90,6 +90,8 @@ const CUSTOM_CARD_SELECT: &str = r#"
         st.translation as sentence_translation,
         sl.slug as speech_level,
         tn.slug as tense,
+        COALESCE(sih.is_honorific, 0) as is_honorific,
+        COALESCE(sih.is_humble, 0) as is_humble,
         datetime(ccm.created_at) as created_at
     FROM cards c
     INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
@@ -130,8 +132,7 @@ async fn custom_card_from_row(
         target: row.get("target"),
         alternatives,
         sentence_translation: row.get("sentence_translation"),
-        speech_level: row.get("speech_level"),
-        tense: row.get("tense"),
+        inflection_hint: crate::inflection_hints::InflectionHint::from_row(row),
         pos: row.get("pos"),
         grade: row.get("grade"),
         origin_type: row.get("origin_type"),
@@ -262,16 +263,18 @@ pub async fn create_custom_card(
     .execute(&mut *tx)
     .await?;
 
-    // Insert into sentence_inflection_hints if either speech_level or tense is provided
-    let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.speech_level.clone().map(Some)).await?.flatten();
-    let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.tense.clone().map(Some)).await?.flatten();
-    if speech_level_id.is_some() || tense_id.is_some() {
+    // Insert into sentence_inflection_hints if any of the four fields is provided
+    let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.inflection_hint.speech_level.clone().map(Some)).await?.flatten();
+    let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.inflection_hint.tense.clone().map(Some)).await?.flatten();
+    if !payload.inflection_hint.is_empty() {
         sqlx::query(
-            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id) VALUES (?, ?, ?)"
+            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
         )
         .bind(sentence_id)
         .bind(speech_level_id)
         .bind(tense_id)
+        .bind(payload.inflection_hint.is_honorific.unwrap_or(false))
+        .bind(payload.inflection_hint.is_humble.unwrap_or(false))
         .execute(&mut *tx)
         .await?;
     }
@@ -427,8 +430,8 @@ pub struct UpdateCustomCardRequest {
     pub sentence: Option<String>,
     pub target: Option<String>,
     pub sentence_translation: Option<String>,
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
+    #[serde(flatten)]
+    pub inflection_hint: crate::inflection_hints::InflectionHintWrite,
     pub pos: Option<String>,
     pub grade: Option<String>,
     pub origin_type: Option<String>,
@@ -623,7 +626,7 @@ pub async fn update_custom_card(
     }
 
     // Update sentence_inflection_hints
-    if payload.speech_level.is_some() || payload.tense.is_some() {
+    if !payload.inflection_hint.is_empty() {
         let sentence_id: i64 = sqlx::query_scalar(
             "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
         )
@@ -639,11 +642,11 @@ pub async fn update_custom_card(
         .fetch_one(&mut *tx)
         .await?;
 
-        let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.speech_level.clone().map(Some)).await?.flatten();
-        let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.tense.clone().map(Some)).await?.flatten();
+        let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.inflection_hint.speech_level.clone().map(Some)).await?.flatten();
+        let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.inflection_hint.tense.clone().map(Some)).await?.flatten();
 
         if hints_exist {
-            if payload.speech_level.is_some() {
+            if payload.inflection_hint.speech_level.is_some() {
                 sqlx::query("UPDATE sentence_inflection_hints SET speech_level_id = ? WHERE sentence_id = ?")
                     .bind(speech_level_id)
                     .bind(sentence_id)
@@ -651,21 +654,40 @@ pub async fn update_custom_card(
                     .await?;
             }
 
-            if payload.tense.is_some() {
+            if payload.inflection_hint.tense.is_some() {
                 sqlx::query("UPDATE sentence_inflection_hints SET tense_id = ? WHERE sentence_id = ?")
                     .bind(tense_id)
                     .bind(sentence_id)
                     .execute(&mut *tx)
                     .await?;
             }
+
+            if let Some(v) = payload.inflection_hint.is_honorific {
+                sqlx::query("UPDATE sentence_inflection_hints SET is_honorific = ? WHERE sentence_id = ?")
+                    .bind(v)
+                    .bind(sentence_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+
+            if let Some(v) = payload.inflection_hint.is_humble {
+                sqlx::query("UPDATE sentence_inflection_hints SET is_humble = ? WHERE sentence_id = ?")
+                    .bind(v)
+                    .bind(sentence_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         } else {
-            // Insert new hints if either is provided (matches create_custom_card's behavior)
+            // Insert new hints if any of the four fields is provided (matches
+            // create_custom_card's behavior)
             sqlx::query(
-                "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id) VALUES (?, ?, ?)"
+                "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
             )
             .bind(sentence_id)
             .bind(speech_level_id)
             .bind(tense_id)
+            .bind(payload.inflection_hint.is_honorific.unwrap_or(false))
+            .bind(payload.inflection_hint.is_humble.unwrap_or(false))
             .execute(&mut *tx)
             .await?;
         }
