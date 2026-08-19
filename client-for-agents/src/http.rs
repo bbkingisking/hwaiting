@@ -1,7 +1,8 @@
 //! Talks to the hwaiting review API. Every function here returns the
-//! server's JSON response passed through verbatim (as a `serde_json::Value`).
-//! Nothing here interprets card content, that's the skill's job, not this
-//! binary's.
+//! server's JSON response as a `serde_json::Value`, trimmed of fields this
+//! review flow has no use for (`review`, `answer`, `field_values` each
+//! note their own) but otherwise untouched - nothing here interprets card
+//! content, that's the skill's job, not this binary's.
 
 use serde_json::{Value, json};
 use std::fmt;
@@ -132,14 +133,27 @@ pub fn login(username: &str, password: &str) -> Result<Value, AppError> {
 /// TTL.
 const MAX_CLAIM_ATTEMPTS: usize = 50;
 
-/// Fetches the next due card, passed through verbatim. Sends every card id
-/// this process can see leased by a sibling `hwaiting-agent review` (same
-/// account, different process - see README) as `exclude`, so the server
-/// filters them out itself rather than us discovering collisions one at a
-/// time - see `config::live_leases` for why that matters at more than a
-/// handful of concurrent agents. The retry loop below only has to cover the
-/// narrower race where two processes' `live_leases` reads both miss each
-/// other and target the same still-unclaimed card.
+/// `card` fields the review UI needs but this flow doesn't - dropped to
+/// keep the object flat and small, same spirit as `FIELD_VALUES_FIELDS`.
+const CARD_FIELDS_TO_DROP: &[&str] = &[
+    "difficulty",
+    "grade",
+    "guess_count",
+    "hanja_hint_words",
+    "origin_type",
+    "wrong_guess_count",
+];
+
+/// Fetches the next due card. Sends every card id this process can see
+/// leased by a sibling `hwaiting-agent review` (same account, different
+/// process - see README) as `exclude`, so the server filters them out
+/// itself rather than us discovering collisions one at a time - see
+/// `config::live_leases` for why that matters at more than a handful of
+/// concurrent agents. The retry loop below only has to cover the narrower
+/// race where two processes' `live_leases` reads both miss each other and
+/// target the same still-unclaimed card. The envelope is trimmed
+/// (`CARD_FIELDS_TO_DROP`, plus the top-level `next_due_at` this flow never
+/// uses) before it's handed back, rather than passed through verbatim.
 pub fn review() -> Result<Value, AppError> {
     let token = require_token()?;
 
@@ -152,7 +166,15 @@ pub fn review() -> Result<Value, AppError> {
             let ids = exclude.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
             format!("/api/cards/next?exclude={ids}")
         };
-        let envelope = parse(&get(&path, &token)?)?;
+        let mut envelope = parse(&get(&path, &token)?)?;
+        if let Some(obj) = envelope.as_object_mut() {
+            obj.remove("next_due_at");
+            if let Some(card) = obj.get_mut("card").and_then(Value::as_object_mut) {
+                for key in CARD_FIELDS_TO_DROP {
+                    card.remove(*key);
+                }
+            }
+        }
 
         let card_id = envelope
             .get("card")
@@ -180,10 +202,11 @@ pub fn review() -> Result<Value, AppError> {
 }
 
 /// Submits a guess for the given card and returns the graded result
-/// (CheckResponse: correct + the CardReveal fields), passed through
-/// verbatim. Then suppresses the card so it never comes up again for this
-/// user - right or wrong, the agent has now seen it once, and the point is
-/// coverage of the deck rather than mastering it via spaced repetition.
+/// (CheckResponse: correct + the CardReveal fields, minus `inflections` -
+/// see below). Then suppresses the card so it never comes up again for
+/// this user - right or wrong, the agent has now seen it once, and the
+/// point is coverage of the deck rather than mastering it via spaced
+/// repetition.
 pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
     let token = require_token()?;
     let body = json!({ "answer": guess });
@@ -228,16 +251,40 @@ pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
     )?)
 }
 
-/// Fetches the current pos/grade/speech_level/tense/grammar_pattern tables
-/// live, so the caller never has to keep a hardcoded copy in sync by hand.
-/// Deliberately omits `inflection_form` from `?fields=` - the backend would
-/// otherwise join `inflection_forms`/`inflection_categories` in, and that
-/// catalog isn't part of what this review flow works with (see `answer`,
-/// which strips the matching `inflections` rows out of the reveal for the
-/// same reason). `origin_type` is left out too - not something this flow
-/// needs either.
+/// Fields not requested via `?fields=` because this review flow has no use
+/// for them - see `field_values`. `inflection_form` would also pull the
+/// backend into joining `inflection_forms`/`inflection_categories` in (see
+/// `answer`, which strips the matching `inflections` rows out of the
+/// reveal for the same reason).
+const FIELD_VALUES_FIELDS: &str = "pos,speech_level,tense,grammar_pattern";
+
+/// Fetches the current pos/speech_level/tense/grammar_pattern tables live,
+/// so the caller never has to keep a hardcoded copy in sync by hand (see
+/// `FIELD_VALUES_FIELDS` for what's deliberately left out). Each entry's
+/// `rank` is dropped when null rather than shipped as a no-op line - most
+/// of these fields don't use it at all.
 pub fn field_values() -> Result<Value, AppError> {
     let token = require_token()?;
-    let path = "/api/cards/field-values?fields=pos,grade,speech_level,tense,grammar_pattern";
-    parse(&get(path, &token)?)
+    let path = format!("/api/cards/field-values?fields={FIELD_VALUES_FIELDS}");
+    let mut value = parse(&get(&path, &token)?)?;
+    strip_null_rank(&mut value);
+    Ok(value)
+}
+
+/// Recursively drops any `"rank": null` entry from a JSON value - `rank` is
+/// `Option<i64>` on `FieldValue` and usually absent, so a `null` line for
+/// every entry that doesn't use it is just noise.
+fn strip_null_rank(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if matches!(map.get("rank"), Some(Value::Null)) {
+                map.remove("rank");
+            }
+            for v in map.values_mut() {
+                strip_null_rank(v);
+            }
+        }
+        Value::Array(arr) => arr.iter_mut().for_each(strip_null_rank),
+        _ => {}
+    }
 }
