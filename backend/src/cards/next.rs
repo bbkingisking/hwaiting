@@ -248,24 +248,23 @@ pub async fn get_next_card(
             c.id, c.krdict_id, c.word, c.definition, c.hanja,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
-            s.id as sentence_id, s.text as sentence, s.target,
+            s.id as sentence_id, s.text as sentence, tg.form as target,
             st.translation as sentence_translation,
             sl.slug as speech_level, tn.slug as tense,
-            COALESCE(sih.is_honorific, 0) as is_honorific,
-            COALESCE(sih.is_humble, 0) as is_humble,
+            tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
         INNER JOIN sentences s ON c.id = s.card_id
+        INNER JOIN targets tg ON tg.sentence_id = s.id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
-        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
         LEFT JOIN grades g ON g.id = c.grade_id
-        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-        LEFT JOIN tenses tn ON tn.id = sih.tense_id
+        LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
+        LEFT JOIN tenses tn ON tn.id = tg.tense_id
         LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?

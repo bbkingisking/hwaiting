@@ -207,11 +207,21 @@ pub async fn export_data(
         }).collect();
 
         // Get sentences
+        // One row per sentence, its target (and target-scoped hints) joined
+        // in directly - unlike before migration 20240101000026, a `targets`
+        // row is now guaranteed to exist for every sentence (its `form` is
+        // NOT NULL), so this no longer needs a separate per-sentence hint
+        // query that might come back empty.
         let sentence_rows = sqlx::query(
             r#"
-            SELECT id, text, target
-            FROM sentences
-            WHERE card_id = ?
+            SELECT s.id, s.text, tg.form as target,
+                   sl.slug as speech_level, tn.slug as tense,
+                   tg.is_honorific, tg.is_humble
+            FROM sentences s
+            INNER JOIN targets tg ON tg.sentence_id = s.id
+            LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
+            LEFT JOIN tenses tn ON tn.id = tg.tense_id
+            WHERE s.card_id = ?
             "#
         )
         .bind(card_id)
@@ -221,7 +231,7 @@ pub async fn export_data(
         let mut sentences = Vec::new();
         for sentence_row in sentence_rows {
             let sentence_id: i64 = sentence_row.get("id");
-            
+
             // Get translation
             let translation: Option<String> = sqlx::query_scalar(
                 "SELECT translation FROM sentence_translations WHERE sentence_id = ?"
@@ -230,29 +240,11 @@ pub async fn export_data(
             .fetch_optional(&pool)
             .await?;
 
-            // Get inflection hint
-            let inflection_hint_row = sqlx::query(
-                r#"
-                SELECT sl.slug as speech_level, tn.slug as tense,
-                       COALESCE(sih.is_honorific, 0) as is_honorific,
-                       COALESCE(sih.is_humble, 0) as is_humble
-                FROM sentence_inflection_hints sih
-                LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-                LEFT JOIN tenses tn ON tn.id = sih.tense_id
-                WHERE sih.sentence_id = ?
-                "#
-            )
-            .bind(sentence_id)
-            .fetch_optional(&pool)
-            .await?;
-
-            let inflection_hint = inflection_hint_row
-                .as_ref()
-                .map(crate::inflection_hints::InflectionHint::from_row);
+            let inflection_hint = Some(crate::inflection_hints::InflectionHint::from_row(&sentence_row));
 
             // Get alternatives
             let alternatives: Vec<String> = sqlx::query_scalar(
-                "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
+                "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?"
             )
             .bind(sentence_id)
             .fetch_all(&pool)
@@ -425,14 +417,13 @@ pub async fn import_data(
         for sentence in custom_card.sentences {
             let sentence_id = sqlx::query_scalar::<_, i64>(
                 r#"
-                INSERT INTO sentences (card_id, text, target)
-                VALUES (?, ?, ?)
+                INSERT INTO sentences (card_id, text)
+                VALUES (?, ?)
                 RETURNING id
                 "#
             )
             .bind(card_id)
             .bind(&sentence.text)
-            .bind(&sentence.target)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -447,31 +438,34 @@ pub async fn import_data(
                 .await?;
             }
 
-            // Insert inflection hint if present
-            if let Some(hint) = sentence.inflection_hint {
-                let speech_level_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "speech_levels", hint.speech_level).await?;
-                let tense_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "tenses", hint.tense).await?;
-                sqlx::query(
-                    r#"
-                    INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble)
-                    VALUES (?, ?, ?, ?, ?)
-                    "#
-                )
-                .bind(sentence_id)
-                .bind(speech_level_id)
-                .bind(tense_id)
-                .bind(hint.is_honorific)
-                .bind(hint.is_humble)
-                .execute(&mut *tx)
-                .await?;
-            }
+            // Insert into targets - unconditional (form is required on
+            // every sentence); older exports with no inflection_hint at all
+            // just get a row with unset hints, same as a freshly-created
+            // untagged card.
+            let hint = sentence.inflection_hint.unwrap_or_default();
+            let speech_level_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "speech_levels", hint.speech_level).await?;
+            let tense_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "tenses", hint.tense).await?;
+            sqlx::query(
+                r#"
+                INSERT INTO targets (sentence_id, form, speech_level_id, tense_id, is_honorific, is_humble)
+                VALUES (?, ?, ?, ?, ?, ?)
+                "#
+            )
+            .bind(sentence_id)
+            .bind(&sentence.target)
+            .bind(speech_level_id)
+            .bind(tense_id)
+            .bind(hint.is_honorific)
+            .bind(hint.is_humble)
+            .execute(&mut *tx)
+            .await?;
 
             // Insert alternatives
             for alt in &sentence.alternatives {
                 let trimmed = alt.trim();
                 if !trimmed.is_empty() {
                     sqlx::query(
-                        "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                        "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                     )
                     .bind(sentence_id)
                     .bind(trimmed)

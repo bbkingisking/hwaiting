@@ -297,25 +297,24 @@ pub async fn search_cards(
             c.id, c.krdict_id, c.word, c.definition, c.hanja,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
-            s.id as sentence_id, s.text as sentence, s.target,
+            s.id as sentence_id, s.text as sentence, tg.form as target,
             st.translation as sentence_translation,
             sl.slug as speech_level, tn.slug as tense,
-            COALESCE(sih.is_honorific, 0) as is_honorific,
-            COALESCE(sih.is_humble, 0) as is_humble,
+            tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern
         FROM cards c
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
         INNER JOIN sentences s ON c.id = s.card_id
+        INNER JOIN targets tg ON tg.sentence_id = s.id
         LEFT JOIN sentence_translations st ON s.id = st.sentence_id
-        LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
         LEFT JOIN grades g ON g.id = c.grade_id
-        LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-        LEFT JOIN tenses tn ON tn.id = sih.tense_id
+        LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
+        LEFT JOIN tenses tn ON tn.id = tg.tense_id
         LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
-        WHERE s.target LIKE ? ESCAPE '\' OR c.id = ?
-        ORDER BY length(s.target) ASC, s.target ASC
+        WHERE tg.form LIKE ? ESCAPE '\' OR c.id = ?
+        ORDER BY length(tg.form) ASC, tg.form ASC
         LIMIT 50
         "#,
     )
@@ -328,7 +327,7 @@ pub async fn search_cards(
     for row in rows {
         let sentence_id: i64 = row.get("sentence_id");
         let alternatives: Vec<String> = sqlx::query_scalar(
-            "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?",
+            "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?",
         )
         .bind(sentence_id)
         .fetch_all(&pool)
@@ -539,154 +538,128 @@ pub async fn edit_card(
         }
     }
 
-    // Update sentences + sentence_translations (first sentence row for this card)
-    if sentence.is_some() || target.is_some() || sentence_translation.is_some() {
-        let sentence_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
-                .bind(card_id)
-                .fetch_optional(&mut *tx)
-                .await?;
+    // Resolve this card's sentence once - shared by the sentence-text
+    // update, the target/hint update, and the alternatives update below.
+    let sentence_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
+            .bind(card_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
-        if let Some(sid) = sentence_id {
-            // Validate that target still appears in the sentence once both
-            // sides of this edit are applied - same invariant
-            // custom_cards::update_custom_card enforces, missing here because
-            // this handler grew as a freeform partial update and never
-            // re-checked it. Without this, a typo in either field produces a
-            // card that silently renders with no blank (see
-            // cards::split_sentence's fallback).
-            if sentence.is_some() || target.is_some() {
-                let current = sqlx::query("SELECT text, target FROM sentences WHERE id = ?")
+    if let Some(sid) = sentence_id {
+        // Validate that target still appears in the sentence once both
+        // sides of this edit are applied - same invariant
+        // custom_cards::update_custom_card enforces, missing here because
+        // this handler grew as a freeform partial update and never
+        // re-checked it. Without this, a typo in either field produces a
+        // card that silently renders with no blank (see
+        // cards::split_sentence's fallback). text and target live on
+        // separate tables (sentences.text / targets.form - see migration
+        // 20240101000026), so whichever side isn't being edited has to be
+        // read from wherever it actually lives.
+        if sentence.is_some() || target.is_some() {
+            let effective_sentence = match &sentence {
+                Some(v) => v.clone(),
+                None => sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
                     .bind(sid)
                     .fetch_one(&mut *tx)
-                    .await?;
-                let current_text: String = current.get("text");
-                let current_target: String = current.get("target");
-                let effective_sentence = sentence.as_deref().unwrap_or(&current_text);
-                let effective_target = target.as_deref().unwrap_or(&current_target);
-                if !effective_sentence.contains(effective_target) {
-                    return Err(AppError::BadRequest(
-                        "Target word must appear in the sentence".to_string(),
-                    ));
-                }
+                    .await?,
+            };
+            let effective_target = match &target {
+                Some(v) => v.clone(),
+                None => sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
+                    .bind(sid)
+                    .fetch_one(&mut *tx)
+                    .await?,
+            };
+            if !effective_sentence.contains(&effective_target) {
+                return Err(AppError::BadRequest(
+                    "Target word must appear in the sentence".to_string(),
+                ));
             }
+        }
 
-            let mut sets: Vec<&str> = Vec::new();
-            if sentence.is_some() { sets.push("text = ?") }
-            if target.is_some()   { sets.push("target = ?") }
-
-            if !sets.is_empty() {
-                let sql = format!("UPDATE sentences SET {} WHERE id = ?", sets.join(", "));
-                let mut q = sqlx::query(&sql);
-                if let Some(ref v) = sentence { q = q.bind(v.as_str()) }
-                if let Some(ref v) = target   { q = q.bind(v.as_str()) }
-                q.bind(sid).execute(&mut *tx).await?;
-            }
-
-            if let Some(ref st) = sentence_translation {
-                sqlx::query(
-                    "UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?",
-                )
+        // Update sentences.text + sentence_translations
+        if let Some(ref v) = sentence {
+            sqlx::query("UPDATE sentences SET text = ? WHERE id = ?")
+                .bind(v.as_str())
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        if let Some(ref st) = sentence_translation {
+            sqlx::query("UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?")
                 .bind(st.as_str())
                 .bind(sid)
                 .execute(&mut *tx)
                 .await?;
-            }
         }
-    }
 
-    // Update alternative targets
-    if let Some(ref alts) = alternatives {
-        let sentence_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
-                .bind(card_id)
-                .fetch_optional(&mut *tx)
+        // Update targets (form / speech_level / tense / is_honorific /
+        // is_humble). No exists-check/insert branch needed here unlike the
+        // old sentence_inflection_hints: a `targets` row is created
+        // unconditionally alongside every sentence now (its `form` is
+        // NOT NULL), never left absent the way hint rows used to be.
+        let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
+        let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
+        if let Some(ref v) = target {
+            sqlx::query("UPDATE targets SET form = ? WHERE sentence_id = ?")
+                .bind(v.as_str())
+                .bind(sid)
+                .execute(&mut *tx)
                 .await?;
+        }
+        if let Some(v) = speech_level_id {
+            sqlx::query("UPDATE targets SET speech_level_id = ? WHERE sentence_id = ?")
+                .bind(v)
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        if let Some(v) = tense_id {
+            sqlx::query("UPDATE targets SET tense_id = ? WHERE sentence_id = ?")
+                .bind(v)
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        // is_honorific/is_humble are NOT NULL, so an explicit null (v: None)
+        // clears to the column's own default (false) rather than being
+        // rejected - there's no NULL state on a boolean column for "clear"
+        // to mean anything else.
+        if let Some(v) = is_honorific {
+            sqlx::query("UPDATE targets SET is_honorific = ? WHERE sentence_id = ?")
+                .bind(v.unwrap_or(false))
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        if let Some(v) = is_humble {
+            sqlx::query("UPDATE targets SET is_humble = ? WHERE sentence_id = ?")
+                .bind(v.unwrap_or(false))
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
 
-        if let Some(sid) = sentence_id {
-            // Delete existing alternatives
-            sqlx::query("DELETE FROM sentence_alternative_targets WHERE sentence_id = ?")
+        // Update alternative targets
+        if let Some(ref alts) = alternatives {
+            sqlx::query("DELETE FROM target_alternatives WHERE sentence_id = ?")
                 .bind(sid)
                 .execute(&mut *tx)
                 .await?;
 
-            // Insert new alternatives
             for alt in alts {
                 let trimmed = alt.trim();
                 if !trimmed.is_empty() {
                     sqlx::query(
-                        "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                        "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                     )
                     .bind(sid)
                     .bind(trimmed)
                     .execute(&mut *tx)
                     .await?;
                 }
-            }
-        }
-    }
-
-    // Update sentence_inflection_hints (speech_level / tense / is_honorific / is_humble)
-    let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
-    let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
-    if speech_level_id.is_some() || tense_id.is_some() || is_honorific.is_some() || is_humble.is_some() {
-        let sentence_id: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
-                .bind(card_id)
-                .fetch_optional(&mut *tx)
-                .await?;
-
-        if let Some(sid) = sentence_id {
-            let hint_exists: bool =
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sentence_inflection_hints WHERE sentence_id = ?)")
-                    .bind(sid)
-                    .fetch_one(&mut *tx)
-                    .await?;
-
-            if hint_exists {
-                if let Some(v) = speech_level_id {
-                    sqlx::query("UPDATE sentence_inflection_hints SET speech_level_id = ? WHERE sentence_id = ?")
-                        .bind(v)
-                        .bind(sid)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-                if let Some(v) = tense_id {
-                    sqlx::query("UPDATE sentence_inflection_hints SET tense_id = ? WHERE sentence_id = ?")
-                        .bind(v)
-                        .bind(sid)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-                // is_honorific/is_humble are NOT NULL, so an explicit null
-                // (v: None) clears to the column's own default (false)
-                // rather than being rejected - there's no NULL state on a
-                // boolean column for "clear" to mean anything else.
-                if let Some(v) = is_honorific {
-                    sqlx::query("UPDATE sentence_inflection_hints SET is_honorific = ? WHERE sentence_id = ?")
-                        .bind(v.unwrap_or(false))
-                        .bind(sid)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-                if let Some(v) = is_humble {
-                    sqlx::query("UPDATE sentence_inflection_hints SET is_humble = ? WHERE sentence_id = ?")
-                        .bind(v.unwrap_or(false))
-                        .bind(sid)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-            } else {
-                sqlx::query(
-                    "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
-                )
-                .bind(sid)
-                .bind(speech_level_id.flatten())
-                .bind(tense_id.flatten())
-                .bind(is_honorific.flatten().unwrap_or(false))
-                .bind(is_humble.flatten().unwrap_or(false))
-                .execute(&mut *tx)
-                .await?;
             }
         }
     }
