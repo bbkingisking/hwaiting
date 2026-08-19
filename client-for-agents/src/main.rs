@@ -26,7 +26,7 @@ enum Command {
     Answer { card_id: String, answer: String },
     /// Record a content-review note against a card.
     Comment { card_id: String, text: String },
-    /// Fetch the pos/origin_type/grade/speech_level/tense/grammar_pattern lookup tables.
+    /// Fetch the pos/grade/speech_level/tense/grammar_pattern lookup tables.
     FieldValues,
     /// Look up a card's target word in the official KRDict API.
     Krdict {
