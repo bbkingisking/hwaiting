@@ -20,11 +20,12 @@ use crate::error::{AppError, AppJson, AppPath, AppQuery};
 /// these fields as plain nullable `Option<String>` — accurate for what a
 /// client sends, just not for the absent/null distinction, which is
 /// call-shape rather than data-shape.
-fn double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+fn double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
 {
-    Option::<String>::deserialize(deserializer).map(Some)
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -299,6 +300,8 @@ pub async fn search_cards(
             s.id as sentence_id, s.text as sentence, s.target,
             st.translation as sentence_translation,
             sl.slug as speech_level, tn.slug as tense,
+            COALESCE(sih.is_honorific, 0) as is_honorific,
+            COALESCE(sih.is_humble, 0) as is_humble,
             gp.slug as grammar_pattern
         FROM cards c
         INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
@@ -350,8 +353,7 @@ pub async fn search_cards(
                 sentence_translation: row
                     .get::<Option<String>, _>("sentence_translation")
                     .unwrap_or_default(),
-                speech_level: row.get("speech_level"),
-                tense: row.get("tense"),
+                inflection_hint: crate::inflection_hints::InflectionHint::from_row(&row),
                 grammar_pattern: row.get("grammar_pattern"),
             },
             back: CardBack {
@@ -369,11 +371,15 @@ pub async fn search_cards(
 
 /// Partial card edit. Any field left out of the JSON body is untouched;
 /// nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
-/// `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
-/// explicitly set to `null` to clear the column — that's why they're typed
-/// `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
-/// "explicit null" deserialize differently. Enum-backed fields are sent as
-/// slugs, resolved server-side to lookup-table row IDs.
+/// `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`,
+/// `is_honorific`, `is_humble`) can be explicitly set to `null` to clear
+/// the column — that's why they're typed `Option<Option<_>>` rather than
+/// `Option<_>`, so "omitted" and "explicit null" deserialize differently.
+/// Enum-backed fields are sent as slugs, resolved server-side to
+/// lookup-table row IDs. `is_honorific`/`is_humble` aren't flattened from
+/// `inflection_hints::InflectionHintWrite` the way `custom_cards`' create/
+/// update requests are, because that struct's fields don't distinguish
+/// omitted from explicit-null the way this struct's do throughout.
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateCardRequest {
     pub word: Option<String>,
@@ -400,6 +406,10 @@ pub struct UpdateCardRequest {
     pub tense: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub grammar_pattern: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub is_honorific: Option<Option<bool>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub is_humble: Option<Option<bool>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -446,6 +456,8 @@ pub async fn edit_card(
         speech_level: speech_level_slug,
         tense: tense_slug,
         grammar_pattern: grammar_pattern_slug,
+        is_honorific,
+        is_humble,
     } = payload;
 
     debug!(
@@ -614,10 +626,10 @@ pub async fn edit_card(
         }
     }
 
-    // Update sentence_inflection_hints (speech_level / tense)
+    // Update sentence_inflection_hints (speech_level / tense / is_honorific / is_humble)
     let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
     let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
-    if speech_level_id.is_some() || tense_id.is_some() {
+    if speech_level_id.is_some() || tense_id.is_some() || is_honorific.is_some() || is_humble.is_some() {
         let sentence_id: Option<i64> =
             sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
                 .bind(card_id)
@@ -646,13 +658,33 @@ pub async fn edit_card(
                         .execute(&mut *tx)
                         .await?;
                 }
+                // is_honorific/is_humble are NOT NULL, so an explicit null
+                // (v: None) clears to the column's own default (false)
+                // rather than being rejected - there's no NULL state on a
+                // boolean column for "clear" to mean anything else.
+                if let Some(v) = is_honorific {
+                    sqlx::query("UPDATE sentence_inflection_hints SET is_honorific = ? WHERE sentence_id = ?")
+                        .bind(v.unwrap_or(false))
+                        .bind(sid)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                if let Some(v) = is_humble {
+                    sqlx::query("UPDATE sentence_inflection_hints SET is_humble = ? WHERE sentence_id = ?")
+                        .bind(v.unwrap_or(false))
+                        .bind(sid)
+                        .execute(&mut *tx)
+                        .await?;
+                }
             } else {
                 sqlx::query(
-                    "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id) VALUES (?, ?, ?)"
+                    "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
                 )
                 .bind(sid)
                 .bind(speech_level_id.flatten())
                 .bind(tense_id.flatten())
+                .bind(is_honorific.flatten().unwrap_or(false))
+                .bind(is_humble.flatten().unwrap_or(false))
                 .execute(&mut *tx)
                 .await?;
             }

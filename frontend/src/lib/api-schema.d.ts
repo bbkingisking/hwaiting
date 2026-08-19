@@ -473,7 +473,7 @@ export interface components {
          *     purely so an admin editing a card mid-review has a correct, non-blank
          *     baseline to save over.
          */
-        CardFront: {
+        CardFront: components["schemas"]["InflectionHint"] & {
             /** Format: int64 */
             card_id: number;
             grade?: string | null;
@@ -497,8 +497,6 @@ export interface components {
              */
             sentence_before: string;
             sentence_translation: string;
-            speech_level?: string | null;
-            tense?: string | null;
             trans_dfn?: string | null;
             trans_word: string;
         };
@@ -576,7 +574,7 @@ export interface components {
             /** Format: int64 */
             id: number;
         };
-        CreateCustomCardRequest: {
+        CreateCustomCardRequest: components["schemas"]["InflectionHintWrite"] & {
             alternatives?: string[] | null;
             definition?: string | null;
             grade?: string | null;
@@ -585,9 +583,7 @@ export interface components {
             pos?: string | null;
             sentence: string;
             sentence_translation: string;
-            speech_level?: string | null;
             target: string;
-            tense?: string | null;
             trans_dfn?: string | null;
             trans_word: string;
             word: string;
@@ -597,7 +593,7 @@ export interface components {
             id: number;
             success: boolean;
         };
-        CustomCard: {
+        CustomCard: components["schemas"]["InflectionHint"] & {
             /**
              * @description Was missing here until this field was added: `CreateCustomCardRequest`,
              *     `UpdateCustomCardRequest`, and export/import's `SentenceExport` all
@@ -620,9 +616,7 @@ export interface components {
             pos?: string | null;
             sentence: string;
             sentence_translation: string;
-            speech_level?: string | null;
             target: string;
-            tense?: string | null;
             trans_dfn?: string | null;
             trans_word: string;
             word: string;
@@ -781,7 +775,42 @@ export interface components {
             sort_order: number;
             verb_only: boolean;
         };
-        InflectionHintExport: {
+        /**
+         * @description Read shape: a tagged sentence's hints once resolved from their
+         *     lookup-table ids back to slugs. `#[serde(flatten)]`ed into every
+         *     response that carries a sentence's hints, so the wire shape (four flat
+         *     top-level fields) is unchanged from before `is_honorific`/`is_humble`
+         *     existed. Also used directly (nested, not flattened) as
+         *     `export_import::SentenceExport::inflection_hint`.
+         */
+        InflectionHint: {
+            /**
+             * @description Subject honorification (주체높임, -(으)시-). Independent of
+             *     `is_humble` rather than sharing a lookup table with it (the way
+             *     `speech_level`/`tense` share theirs) because a target isn't limited
+             *     to at most one of the two -- see migration 20240101000025.
+             */
+            is_honorific?: boolean;
+            /**
+             * @description Object honorification (객체높임/겸양법 -- 드리다, 뵙다, 여쭙다,
+             *     모시다-type suppletive verbs). See migration 20240101000025.
+             */
+            is_humble?: boolean;
+            speech_level?: string | null;
+            tense?: string | null;
+        };
+        /**
+         * @description Write shape: what a create/update request carries for a sentence's
+         *     hints, when the endpoint doesn't need to distinguish "omit" from
+         *     "explicit null" (contrast `admin::UpdateCardRequest`, which does and so
+         *     declares its own four fields with the double-option pattern instead of
+         *     flattening this). Shared by `custom_cards::CreateCustomCardRequest` and
+         *     `custom_cards::UpdateCustomCardRequest`, which already agreed on this
+         *     exact shape before `is_honorific`/`is_humble` existed.
+         */
+        InflectionHintWrite: {
+            is_honorific?: boolean | null;
+            is_humble?: boolean | null;
             speech_level?: string | null;
             tense?: string | null;
         };
@@ -844,7 +873,7 @@ export interface components {
         };
         SentenceExport: {
             alternatives?: string[];
-            inflection_hint?: null | components["schemas"]["InflectionHintExport"];
+            inflection_hint?: null | components["schemas"]["InflectionHint"];
             target: string;
             text: string;
             translation?: string | null;
@@ -885,11 +914,15 @@ export interface components {
         /**
          * @description Partial card edit. Any field left out of the JSON body is untouched;
          *     nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
-         *     `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`) can be
-         *     explicitly set to `null` to clear the column — that's why they're typed
-         *     `Option<Option<String>>` rather than `Option<String>`, so "omitted" and
-         *     "explicit null" deserialize differently. Enum-backed fields are sent as
-         *     slugs, resolved server-side to lookup-table row IDs.
+         *     `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`,
+         *     `is_honorific`, `is_humble`) can be explicitly set to `null` to clear
+         *     the column — that's why they're typed `Option<Option<_>>` rather than
+         *     `Option<_>`, so "omitted" and "explicit null" deserialize differently.
+         *     Enum-backed fields are sent as slugs, resolved server-side to
+         *     lookup-table row IDs. `is_honorific`/`is_humble` aren't flattened from
+         *     `inflection_hints::InflectionHintWrite` the way `custom_cards`' create/
+         *     update requests are, because that struct's fields don't distinguish
+         *     omitted from explicit-null the way this struct's do throughout.
          */
         UpdateCardRequest: {
             alternatives?: string[] | null;
@@ -897,6 +930,8 @@ export interface components {
             grade?: string | null;
             grammar_pattern?: string | null;
             hanja?: string | null;
+            is_honorific?: boolean | null;
+            is_humble?: boolean | null;
             origin_type?: string | null;
             pos?: string | null;
             sentence?: string | null;
@@ -908,7 +943,7 @@ export interface components {
             trans_word?: string | null;
             word?: string | null;
         };
-        UpdateCustomCardRequest: {
+        UpdateCustomCardRequest: components["schemas"]["InflectionHintWrite"] & {
             alternatives?: string[] | null;
             definition?: string | null;
             grade?: string | null;
@@ -917,9 +952,7 @@ export interface components {
             pos?: string | null;
             sentence?: string | null;
             sentence_translation?: string | null;
-            speech_level?: string | null;
             target?: string | null;
-            tense?: string | null;
             trans_dfn?: string | null;
             trans_word?: string | null;
             word?: string | null;

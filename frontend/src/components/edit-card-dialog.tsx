@@ -36,6 +36,8 @@ interface FormState {
   alternatives: string
   speech_level: string
   tense: string
+  is_honorific: boolean
+  is_humble: boolean
   grammar_pattern: string
 }
 
@@ -55,6 +57,8 @@ function toFormState(card: AdminCard): FormState {
     alternatives: (card.alternatives ?? []).join(', '),
     speech_level: card.speech_level ?? '',
     tense: card.tense ?? '',
+    is_honorific: card.is_honorific ?? false,
+    is_humble: card.is_humble ?? false,
     grammar_pattern: card.grammar_pattern ?? '',
   }
 }
@@ -123,6 +127,12 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     }
   }
 
+  function handleCheckboxChange(field: 'is_honorific' | 'is_humble') {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setForm(prev => ({ ...prev, [field]: e.target.checked }))
+    }
+  }
+
   async function handleSave() {
     setSaving(true)
     setError(null)
@@ -142,6 +152,8 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
         speech_level: nullIfEmpty(form.speech_level),
         tense: nullIfEmpty(form.tense),
+        is_honorific: form.is_honorific,
+        is_humble: form.is_humble,
         grammar_pattern: nullIfEmpty(form.grammar_pattern),
       }
       await editCard(card.card_id, updates)
@@ -247,6 +259,15 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
             </Field>
           </div>
 
+          {/* Not EnumSelect like politeness/tense above: is_honorific/is_humble
+              aren't lookup-table-backed, just booleans (see migration
+              20240101000025) - and independent of each other, not mutually
+              exclusive, so a pair of checkboxes rather than a single select. */}
+          <div className="flex gap-4">
+            <CheckboxField label="Subject honorific (-시-)" checked={form.is_honorific} onChange={handleCheckboxChange('is_honorific')} />
+            <CheckboxField label="Object honorific (겸양어)" checked={form.is_humble} onChange={handleCheckboxChange('is_humble')} />
+          </div>
+
           <Field label="Grammar pattern">
             {id => <EnumSelect id={id} options={grammarPattern} value={form.grammar_pattern} onChange={handleChange('grammar_pattern')} />}
           </Field>
@@ -347,6 +368,22 @@ function Field({ label, children }: { label: string; children: (id: string) => R
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
       {children(id)}
+    </div>
+  )
+}
+
+function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+  const id = useId()
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-4 w-4 rounded border-input"
+      />
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
     </div>
   )
 }

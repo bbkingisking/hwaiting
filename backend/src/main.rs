@@ -23,6 +23,7 @@ mod db;
 mod enum_lookup;
 mod error;
 mod export_import;
+mod inflection_hints;
 mod openapi;
 mod user;
 

@@ -71,6 +71,8 @@ function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
     alternatives: reveal.alternatives,
     speech_level: card.speech_level,
     tense: card.tense,
+    is_honorific: card.is_honorific,
+    is_humble: card.is_humble,
     grammar_pattern: card.grammar_pattern,
   }
 }
@@ -411,6 +413,21 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               <span className="sr-only">Tense: </span>
               {tenseLookup[card.tense].label}
+            </span>
+          )}
+          {/* is_honorific/is_humble aren't lookup-table-backed like speech_level/tense
+              above (see migration 20240101000025) - just booleans, so no *Lookup
+              indirection needed for their labels. */}
+          {card.is_honorific && (
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Subject honorific: </span>
+              Honorific
+            </span>
+          )}
+          {card.is_humble && (
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Object honorific: </span>
+              Humble
             </span>
           )}
           {card.grammar_pattern && grammarPatterns[card.grammar_pattern] && (
