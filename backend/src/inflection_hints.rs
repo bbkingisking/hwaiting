@@ -1,6 +1,8 @@
 //! The shape of a target's tagged grammatical facts, shared across every
-//! surface that reads or writes `sentence_inflection_hints`. Previously
-//! hand-declared per-struct at each of `cards::CardFront`,
+//! surface that reads or writes the `targets` table (see migration
+//! 20240101000026 - `speech_level_id`/`tense_id`/`is_honorific`/
+//! `is_humble` all live on that table, alongside the target's own `form`).
+//! Previously hand-declared per-struct at each of `cards::CardFront`,
 //! `custom_cards::CustomCard`, and export_import's now-deleted
 //! `InflectionHintExport` (and independently again as request fields on the
 //! create/update side) -- the exact "same shape, agreeing on every field
@@ -37,13 +39,13 @@ pub struct InflectionHint {
 
 impl InflectionHint {
     /// Reads the four columns by name from a row whose query joined
-    /// `sentence_inflection_hints` (aliasing `speech_levels.slug`/
-    /// `tenses.slug` as `speech_level`/`tense`) via `LEFT JOIN`. Because
-    /// that's a left join, a sentence with no hints row at all comes back
-    /// with every column NULL despite `is_honorific`/`is_humble` being
-    /// `NOT NULL` in the table itself -- the SELECT must
-    /// `COALESCE(sih.is_honorific, 0)` (and same for `is_humble`) for this
-    /// to decode rather than error.
+    /// `targets` (aliasing `speech_levels.slug`/`tenses.slug` as
+    /// `speech_level`/`tense`, same as before migration 20240101000026 --
+    /// only the joined table changed). Callers should `INNER JOIN targets`
+    /// rather than `LEFT JOIN`: unlike the old `sentence_inflection_hints`,
+    /// a `targets` row is guaranteed to exist for every sentence (its
+    /// `form` is `NOT NULL`), so there's no sparse-row case to `COALESCE`
+    /// around here the way there used to be.
     pub fn from_row(row: &sqlx::sqlite::SqliteRow) -> Self {
         use sqlx::Row;
         Self {
@@ -68,16 +70,4 @@ pub struct InflectionHintWrite {
     pub tense: Option<String>,
     pub is_honorific: Option<bool>,
     pub is_humble: Option<bool>,
-}
-
-impl InflectionHintWrite {
-    /// True when the request carries nothing for any of the four fields --
-    /// callers use this to skip touching `sentence_inflection_hints`
-    /// entirely rather than writing an all-absent row.
-    pub fn is_empty(&self) -> bool {
-        self.speech_level.is_none()
-            && self.tense.is_none()
-            && self.is_honorific.is_none()
-            && self.is_humble.is_none()
-    }
 }

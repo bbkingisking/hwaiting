@@ -109,10 +109,11 @@ pub async fn check_answer(
     let row = sqlx::query(
         r#"
         SELECT c.word, c.definition, c.hanja,
-               s.id as sentence_id, s.text as sentence, s.target,
+               s.id as sentence_id, s.text as sentence, tg.form as target,
                gp.endings as grammar_pattern_endings
         FROM cards c
         INNER JOIN sentences s ON c.id = s.card_id
+        INNER JOIN targets tg ON tg.sentence_id = s.id
         LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         WHERE c.id = ?
         "#,
@@ -131,7 +132,7 @@ pub async fn check_answer(
     let grammar_pattern_endings: Option<String> = row.get("grammar_pattern_endings");
 
     let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?"
+        "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?"
     )
     .bind(sentence_id)
     .fetch_all(&pool)

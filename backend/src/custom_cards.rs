@@ -86,24 +86,24 @@ const CUSTOM_CARD_SELECT: &str = r#"
         ct.trans_dfn,
         s.id as sentence_id,
         s.text as sentence,
-        s.target,
+        tg.form as target,
         st.translation as sentence_translation,
         sl.slug as speech_level,
         tn.slug as tense,
-        COALESCE(sih.is_honorific, 0) as is_honorific,
-        COALESCE(sih.is_humble, 0) as is_humble,
+        tg.is_honorific,
+        tg.is_humble,
         datetime(ccm.created_at) as created_at
     FROM cards c
     INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
     INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
     INNER JOIN sentences s ON c.id = s.card_id
+    INNER JOIN targets tg ON tg.sentence_id = s.id
     LEFT JOIN sentence_translations st ON s.id = st.sentence_id
-    LEFT JOIN sentence_inflection_hints sih ON s.id = sih.sentence_id
     LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
     LEFT JOIN grades g ON g.id = c.grade_id
     LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
-    LEFT JOIN speech_levels sl ON sl.id = sih.speech_level_id
-    LEFT JOIN tenses tn ON tn.id = sih.tense_id
+    LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
+    LEFT JOIN tenses tn ON tn.id = tg.tense_id
 "#;
 
 // Alternatives live in a join-table keyed by sentence_id rather than a
@@ -116,7 +116,7 @@ async fn custom_card_from_row(
 ) -> Result<CustomCard, AppError> {
     let sentence_id: i64 = row.get("sentence_id");
     let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM sentence_alternative_targets WHERE sentence_id = ?",
+        "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?",
     )
     .bind(sentence_id)
     .fetch_all(pool)
@@ -239,13 +239,12 @@ pub async fn create_custom_card(
     // Insert into sentences
     let sentence_result = sqlx::query(
         r#"
-        INSERT INTO sentences (card_id, text, target, created_at)
-        VALUES (?, ?, ?, datetime('now'))
+        INSERT INTO sentences (card_id, text, created_at)
+        VALUES (?, ?, datetime('now'))
         "#
     )
     .bind(card_id)
     .bind(&payload.sentence)
-    .bind(&payload.target)
     .execute(&mut *tx)
     .await?;
 
@@ -263,21 +262,22 @@ pub async fn create_custom_card(
     .execute(&mut *tx)
     .await?;
 
-    // Insert into sentence_inflection_hints if any of the four fields is provided
+    // Insert into targets - unconditional (unlike the old
+    // sentence_inflection_hints, which only got a row when at least one
+    // hint field was set), since `form` is required on every sentence.
     let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.inflection_hint.speech_level.clone().map(Some)).await?.flatten();
     let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.inflection_hint.tense.clone().map(Some)).await?.flatten();
-    if !payload.inflection_hint.is_empty() {
-        sqlx::query(
-            "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(sentence_id)
-        .bind(speech_level_id)
-        .bind(tense_id)
-        .bind(payload.inflection_hint.is_honorific.unwrap_or(false))
-        .bind(payload.inflection_hint.is_humble.unwrap_or(false))
-        .execute(&mut *tx)
-        .await?;
-    }
+    sqlx::query(
+        "INSERT INTO targets (sentence_id, form, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(sentence_id)
+    .bind(&payload.target)
+    .bind(speech_level_id)
+    .bind(tense_id)
+    .bind(payload.inflection_hint.is_honorific.unwrap_or(false))
+    .bind(payload.inflection_hint.is_humble.unwrap_or(false))
+    .execute(&mut *tx)
+    .await?;
 
     // Insert alternative targets
     if let Some(ref alts) = payload.alternatives {
@@ -285,7 +285,7 @@ pub async fn create_custom_card(
             let trimmed = alt.trim();
             if !trimmed.is_empty() {
                 sqlx::query(
-                    "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                    "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                 )
                 .bind(sentence_id)
                 .bind(trimmed)
@@ -557,32 +557,42 @@ pub async fn update_custom_card(
             .await?;
     }
 
-    // Update sentences table
-    let needs_sentence_validation = payload.sentence.is_some() || payload.target.is_some();
-    
-    if needs_sentence_validation {
-        // Get current sentence and target
-        let current = sqlx::query(
-            "SELECT text, target FROM sentences WHERE card_id = ? LIMIT 1"
-        )
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    // Resolve this card's sentence once - shared by the sentence-text
+    // update, the target/hint update, and the alternatives update below.
+    let sentence_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
+    )
+    .bind(card_id)
+    .fetch_one(&mut *tx)
+    .await?;
 
-        let sentence = payload.sentence.as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| current.get("text"));
-        let target = payload.target.as_ref()
-            .map(|t| t.as_str())
-            .unwrap_or_else(|| current.get("target"));
+    // Validate sentence/target together before writing either. text and
+    // target live on separate tables (sentences.text / targets.form - see
+    // migration 20240101000026), so whichever side isn't being edited has
+    // to be read from wherever it actually lives.
+    if payload.sentence.is_some() || payload.target.is_some() {
+        let effective_sentence = match &payload.sentence {
+            Some(v) => v.clone(),
+            None => sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
+                .bind(sentence_id)
+                .fetch_one(&mut *tx)
+                .await?,
+        };
+        let effective_target = match &payload.target {
+            Some(v) => v.clone(),
+            None => sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
+                .bind(sentence_id)
+                .fetch_one(&mut *tx)
+                .await?,
+        };
 
-        if sentence.trim().is_empty() {
+        if effective_sentence.trim().is_empty() {
             return Err(AppError::BadRequest("Sentence cannot be empty".to_string()));
         }
-        if target.trim().is_empty() {
+        if effective_target.trim().is_empty() {
             return Err(AppError::BadRequest("Target cannot be empty".to_string()));
         }
-        if !sentence.contains(target) {
+        if !effective_sentence.contains(&effective_target) {
             return Err(AppError::BadRequest(
                 "Target word must appear in the sentence".to_string(),
             ));
@@ -590,17 +600,9 @@ pub async fn update_custom_card(
     }
 
     if let Some(sentence) = &payload.sentence {
-        sqlx::query("UPDATE sentences SET text = ? WHERE card_id = ?")
+        sqlx::query("UPDATE sentences SET text = ? WHERE id = ?")
             .bind(sentence)
-            .bind(card_id)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    if let Some(target) = &payload.target {
-        sqlx::query("UPDATE sentences SET target = ? WHERE card_id = ?")
-            .bind(target)
-            .bind(card_id)
+            .bind(sentence_id)
             .execute(&mut *tx)
             .await?;
     }
@@ -610,14 +612,6 @@ pub async fn update_custom_card(
         if sentence_translation.trim().is_empty() {
             return Err(AppError::BadRequest("Sentence translation cannot be empty".to_string()));
         }
-        // Get sentence_id first
-        let sentence_id: i64 = sqlx::query_scalar(
-            "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
-        )
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
         sqlx::query("UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?")
             .bind(sentence_translation)
             .bind(sentence_id)
@@ -625,85 +619,58 @@ pub async fn update_custom_card(
             .await?;
     }
 
-    // Update sentence_inflection_hints
-    if !payload.inflection_hint.is_empty() {
-        let sentence_id: i64 = sqlx::query_scalar(
-            "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
-        )
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        // Check if hints exist
-        let hints_exist: bool = sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM sentence_inflection_hints WHERE sentence_id = ?"
-        )
-        .bind(sentence_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.inflection_hint.speech_level.clone().map(Some)).await?.flatten();
-        let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.inflection_hint.tense.clone().map(Some)).await?.flatten();
-
-        if hints_exist {
-            if payload.inflection_hint.speech_level.is_some() {
-                sqlx::query("UPDATE sentence_inflection_hints SET speech_level_id = ? WHERE sentence_id = ?")
-                    .bind(speech_level_id)
-                    .bind(sentence_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-
-            if payload.inflection_hint.tense.is_some() {
-                sqlx::query("UPDATE sentence_inflection_hints SET tense_id = ? WHERE sentence_id = ?")
-                    .bind(tense_id)
-                    .bind(sentence_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-
-            if let Some(v) = payload.inflection_hint.is_honorific {
-                sqlx::query("UPDATE sentence_inflection_hints SET is_honorific = ? WHERE sentence_id = ?")
-                    .bind(v)
-                    .bind(sentence_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-
-            if let Some(v) = payload.inflection_hint.is_humble {
-                sqlx::query("UPDATE sentence_inflection_hints SET is_humble = ? WHERE sentence_id = ?")
-                    .bind(v)
-                    .bind(sentence_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-        } else {
-            // Insert new hints if any of the four fields is provided (matches
-            // create_custom_card's behavior)
-            sqlx::query(
-                "INSERT INTO sentence_inflection_hints (sentence_id, speech_level_id, tense_id, is_honorific, is_humble) VALUES (?, ?, ?, ?, ?)"
-            )
+    // Update targets (form / speech_level / tense / is_honorific /
+    // is_humble). No exists-check/insert branch needed here unlike the old
+    // sentence_inflection_hints: a `targets` row is created unconditionally
+    // alongside every sentence now (its `form` is NOT NULL), never left
+    // absent the way hint rows used to be.
+    if let Some(target) = &payload.target {
+        sqlx::query("UPDATE targets SET form = ? WHERE sentence_id = ?")
+            .bind(target)
             .bind(sentence_id)
-            .bind(speech_level_id)
-            .bind(tense_id)
-            .bind(payload.inflection_hint.is_honorific.unwrap_or(false))
-            .bind(payload.inflection_hint.is_humble.unwrap_or(false))
             .execute(&mut *tx)
             .await?;
-        }
+    }
+
+    let speech_level_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", payload.inflection_hint.speech_level.clone().map(Some)).await?.flatten();
+    let tense_id: Option<i64> = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", payload.inflection_hint.tense.clone().map(Some)).await?.flatten();
+
+    if payload.inflection_hint.speech_level.is_some() {
+        sqlx::query("UPDATE targets SET speech_level_id = ? WHERE sentence_id = ?")
+            .bind(speech_level_id)
+            .bind(sentence_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if payload.inflection_hint.tense.is_some() {
+        sqlx::query("UPDATE targets SET tense_id = ? WHERE sentence_id = ?")
+            .bind(tense_id)
+            .bind(sentence_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if let Some(v) = payload.inflection_hint.is_honorific {
+        sqlx::query("UPDATE targets SET is_honorific = ? WHERE sentence_id = ?")
+            .bind(v)
+            .bind(sentence_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if let Some(v) = payload.inflection_hint.is_humble {
+        sqlx::query("UPDATE targets SET is_humble = ? WHERE sentence_id = ?")
+            .bind(v)
+            .bind(sentence_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     // Update alternative targets
     if let Some(ref alts) = payload.alternatives {
-        let sentence_id: i64 = sqlx::query_scalar(
-            "SELECT id FROM sentences WHERE card_id = ? LIMIT 1"
-        )
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
         // Delete existing
-        sqlx::query("DELETE FROM sentence_alternative_targets WHERE sentence_id = ?")
+        sqlx::query("DELETE FROM target_alternatives WHERE sentence_id = ?")
             .bind(sentence_id)
             .execute(&mut *tx)
             .await?;
@@ -713,7 +680,7 @@ pub async fn update_custom_card(
             let trimmed = alt.trim();
             if !trimmed.is_empty() {
                 sqlx::query(
-                    "INSERT INTO sentence_alternative_targets (sentence_id, alt_target) VALUES (?, ?)"
+                    "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                 )
                 .bind(sentence_id)
                 .bind(trimmed)
