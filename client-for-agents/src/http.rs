@@ -202,10 +202,10 @@ pub fn review() -> Result<Value, AppError> {
 }
 
 /// Submits a guess for the given card and returns the graded result
-/// (CheckResponse: correct + the CardReveal fields, minus `inflections` -
-/// see below). Then suppresses the card so it never comes up again for
-/// this user - right or wrong, the agent has now seen it once, and the
-/// point is coverage of the deck rather than mastering it via spaced
+/// (CheckResponse: correct + the CardReveal fields, minus `inflections` and
+/// `hanja_hints` - see below). Then suppresses the card so it never comes up
+/// again for this user - right or wrong, the agent has now seen it once, and
+/// the point is coverage of the deck rather than mastering it via spaced
 /// repetition.
 pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
     let token = require_token()?;
@@ -222,9 +222,14 @@ pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
     // `backend/src/cards/check.rs`. That catalog isn't part of what this
     // review flow works with (see `field_values`, which likewise never
     // requests `inflection_form`), so drop it here rather than passing it
-    // through verbatim.
+    // through verbatim. `hanja_hints` is dropped for the same reason
+    // `hanja_hint_words` is dropped from `review`'s envelope
+    // (`CARD_FIELDS_TO_DROP`): it's the requesting user's own review-history
+    // scaffolding (see `hanja_hints_for`), not a property of the card, and
+    // this flow has no use for it.
     if let Some(obj) = result.as_object_mut() {
         obj.remove("inflections");
+        obj.remove("hanja_hints");
     }
 
     put(&format!("/api/cards/{card_id}/suppress"), &token)?;
