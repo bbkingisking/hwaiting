@@ -21,7 +21,11 @@ pub struct FieldValue {
     pub label: String,
     pub tooltip: Option<String>,
     pub rank: Option<i64>,
-    pub endings: Option<String>,
+    /// A grammar pattern's literal conjugation endings (e.g. `["-네", "-네요",
+    /// "-군", "-군요"]`), one entry per `grammar_patterns_endings` row -
+    /// empty for every other field (which has no such concept at all) and
+    /// for a grammar pattern with none recorded yet.
+    pub endings: Vec<String>,
 }
 
 /// The seven fields `FieldValues` can return values for, and the only legal
@@ -45,7 +49,7 @@ pub enum FieldName {
 /// forms for one card (see `CardReveal::inflections` in check.rs, which is
 /// gated the same way `grammar_pattern_endings` is). Shaped for the review
 /// UI to build a table directly: group by `category_slug` in `sort_order`,
-/// skip `verb_only` rows for 형용사 cards.
+/// skip a row whose `restricted_to_pos` doesn't match the card's own `pos`.
 #[derive(Serialize, ToSchema)]
 pub struct InflectionFormValue {
     pub slug: String,
@@ -55,20 +59,53 @@ pub struct InflectionFormValue {
     pub category_slug: String,
     pub category_label_en: String,
     pub category_label_ko: String,
-    pub verb_only: bool,
+    /// The `parts_of_speech` slug this form is restricted to (e.g. `"verb"`
+    /// for `adnominal_present_verb`, `"adjective"` for
+    /// `adnominal_present_adj`), or `None` if every part of speech gets this
+    /// form - see migration 20240101000048, which replaced a single
+    /// `verb_only` boolean with this fk once a form needed the opposite
+    /// restriction direction.
+    pub restricted_to_pos: Option<String>,
     pub sort_order: i64,
 }
 
 async fn fetch_inflection_forms(pool: &SqlitePool) -> Result<Vec<InflectionFormValue>, AppError> {
+    // conjugation_matrix_forms_labels is deliberately sparse (see migration
+    // 20240101000046) - a row exists only where category + speech level
+    // don't already say everything about a form (e.g. `future_haeyo` needs
+    // "Future" spelled out because its category is "future" already, but
+    // `present_haeyo` needs nothing beyond its category's own "Present").
+    // COALESCE falls back to the category's label wherever the sparse
+    // per-form one is absent, composing exactly the label the old
+    // (now-dropped) `inflection_forms.label_en/label_ko` columns used to
+    // store directly - see that migration's doc comment for why baking it
+    // back into a stored column would reintroduce the duplication this
+    // schema was redesigned to remove.
+    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+    let kor_id = crate::enum_lookup::kor_language_id(pool).await?;
+
     let rows = sqlx::query(
         r#"
-        SELECT f.slug, f.label_en, f.label_ko, f.ending_ko, f.verb_only, f.sort_order,
-               c.slug as category_slug, c.label_en as category_label_en, c.label_ko as category_label_ko
-        FROM inflection_forms f
-        JOIN inflection_categories c ON f.category_id = c.id
+        SELECT f.slug, f.ending as ending_ko, f.sort_order,
+               rp.slug as restricted_to_pos,
+               c.slug as category_slug,
+               cl_en.label as category_label_en, cl_ko.label as category_label_ko,
+               COALESCE(fl_en.label, cl_en.label) as label_en,
+               COALESCE(fl_ko.label, cl_ko.label) as label_ko
+        FROM conjugation_matrix_forms f
+        JOIN conjugation_matrix_categories c ON c.id = f.category_id
+        INNER JOIN conjugation_matrix_categories_labels cl_en ON cl_en.category_id = c.id AND cl_en.language_id = ?
+        INNER JOIN conjugation_matrix_categories_labels cl_ko ON cl_ko.category_id = c.id AND cl_ko.language_id = ?
+        LEFT JOIN conjugation_matrix_forms_labels fl_en ON fl_en.form_id = f.id AND fl_en.language_id = ?
+        LEFT JOIN conjugation_matrix_forms_labels fl_ko ON fl_ko.form_id = f.id AND fl_ko.language_id = ?
+        LEFT JOIN parts_of_speech rp ON rp.id = f.restricted_to_pos_id
         ORDER BY f.sort_order
         "#,
     )
+    .bind(eng_id)
+    .bind(kor_id)
+    .bind(eng_id)
+    .bind(kor_id)
     .fetch_all(pool)
     .await?;
 
@@ -82,7 +119,7 @@ async fn fetch_inflection_forms(pool: &SqlitePool) -> Result<Vec<InflectionFormV
             category_slug: row.get("category_slug"),
             category_label_en: row.get("category_label_en"),
             category_label_ko: row.get("category_label_ko"),
-            verb_only: row.get::<i64, _>("verb_only") != 0,
+            restricted_to_pos: row.get("restricted_to_pos"),
             sort_order: row.get("sort_order"),
         })
         .collect())
@@ -125,24 +162,63 @@ async fn fetch_field_values(
     has_rank: bool,
     has_endings: bool,
 ) -> Result<Vec<FieldValue>, AppError> {
-    let cols = format!(
-        "slug, label{}{}{}",
-        if has_tooltip { ", tooltip" } else { "" },
-        if has_rank { ", rank" } else { "" },
-        if has_endings { ", endings" } else { "" },
+    // `label`/`tooltip` moved off the lookup table itself and into
+    // per-language `_labels`/`_tooltips` side tables (migrations
+    // 20240101000041/42) - `labels_table` is the one place the table ->
+    // child-table/fk-column mapping lives, shared with
+    // `enum_lookup::resolve_or_create_id` so the two can't drift apart.
+    // Every value below is still English-only, matching the app's current
+    // all-English status quo (see `enum_lookup`'s doc comment).
+    let (labels_table, fk_column) = crate::enum_lookup::labels_table(table);
+    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+
+    let tooltip_expr = if has_tooltip {
+        "(SELECT tooltip FROM grammar_patterns_tooltips \
+          WHERE grammar_pattern_id = t.id AND language_id = ?) AS tooltip"
+    } else {
+        "NULL AS tooltip"
+    };
+    let rank_expr = if has_rank { "t.rank AS rank" } else { "NULL AS rank" };
+    // `grammar_patterns_endings` (migration 20240101000040) is one row per
+    // literal ending - `json_group_array` folds a pattern's rows into a
+    // JSON array in the same `ORDER BY id` they were seeded in, so
+    // `FieldValue.endings` ships the normalized list itself rather than a
+    // hand-formatted display string. `COALESCE` covers the zero-row case,
+    // which `json_group_array` would otherwise leave NULL instead of `[]`.
+    let endings_expr = if has_endings {
+        "COALESCE((SELECT json_group_array(ending) FROM \
+          (SELECT ending FROM grammar_patterns_endings \
+           WHERE grammar_pattern_id = t.id ORDER BY id)), '[]') AS endings_json"
+    } else {
+        "'[]' AS endings_json"
+    };
+
+    let sql = format!(
+        "SELECT t.slug, l.label, {tooltip_expr}, {rank_expr}, {endings_expr} \
+         FROM {table} t \
+         INNER JOIN {labels_table} l ON l.{fk_column} = t.id AND l.language_id = ? \
+         ORDER BY t.id"
     );
-    let rows = sqlx::query(&format!("SELECT {cols} FROM {table} ORDER BY id"))
-        .fetch_all(pool)
-        .await?;
+
+    let mut query = sqlx::query(&sql);
+    if has_tooltip {
+        query = query.bind(eng_id);
+    }
+    query = query.bind(eng_id);
+
+    let rows = query.fetch_all(pool).await?;
 
     Ok(rows
         .iter()
-        .map(|row| FieldValue {
-            slug: row.get("slug"),
-            label: row.get("label"),
-            tooltip: if has_tooltip { row.get("tooltip") } else { None },
-            rank: if has_rank { row.get("rank") } else { None },
-            endings: if has_endings { row.get("endings") } else { None },
+        .map(|row| {
+            let endings_json: String = row.get("endings_json");
+            FieldValue {
+                slug: row.get("slug"),
+                label: row.get("label"),
+                tooltip: row.get("tooltip"),
+                rank: row.get("rank"),
+                endings: serde_json::from_str(&endings_json).unwrap_or_default(),
+            }
         })
         .collect())
 }

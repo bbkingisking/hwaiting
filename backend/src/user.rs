@@ -15,7 +15,7 @@ pub struct UserProfile {
     pub username: String,
 }
 
-/// The `user_settings` row proper - every field shared verbatim between the
+/// The `users_settings` row proper - every field shared verbatim between the
 /// live API response (`UserSettings`, below) and data export/import
 /// (`export_import::UserSettingsExport`). Split out so both flatten this
 /// struct instead of hand-declaring the same 11 fields a second time: the
@@ -123,10 +123,10 @@ pub async fn get_settings(
     let user_id = auth.0;
     info!("Getting settings for user_id: {}", user_id);
 
-    // Ensure user_settings row exists
+    // Ensure users_settings row exists
     sqlx::query(
         r#"
-        INSERT INTO user_settings (user_id)
+        INSERT INTO users_settings (user_id)
         VALUES (?)
         ON CONFLICT(user_id) DO NOTHING
         "#
@@ -138,7 +138,7 @@ pub async fn get_settings(
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
         SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
-        FROM user_settings
+        FROM users_settings
         WHERE user_id = ?
         "#
     )
@@ -148,7 +148,7 @@ pub async fn get_settings(
 
     // Check if user has custom FSRS parameters
     let has_fsrs_parameters: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM user_fsrs_parameters WHERE user_id = ?)"
+        "SELECT EXISTS(SELECT 1 FROM users_fsrs_parameters WHERE user_id = ?)"
     )
     .bind(user_id)
     .fetch_one(&pool)
@@ -178,10 +178,10 @@ pub async fn update_settings(
     let user_id = auth.0;
     info!("Updating settings for user_id: {}", user_id);
 
-    // Ensure user_settings row exists
+    // Ensure users_settings row exists
     sqlx::query(
         r#"
-        INSERT INTO user_settings (user_id)
+        INSERT INTO users_settings (user_id)
         VALUES (?)
         ON CONFLICT(user_id) DO NOTHING
         "#
@@ -192,7 +192,7 @@ pub async fn update_settings(
 
     // Update individual fields if provided
     if let Some(show_percentage) = payload.show_percentage {
-        sqlx::query("UPDATE user_settings SET show_percentage = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET show_percentage = ? WHERE user_id = ?")
             .bind(show_percentage)
             .bind(user_id)
             .execute(&pool)
@@ -200,7 +200,7 @@ pub async fn update_settings(
     }
 
     if let Some(red_threshold) = payload.red_threshold {
-        sqlx::query("UPDATE user_settings SET red_threshold = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET red_threshold = ? WHERE user_id = ?")
             .bind(red_threshold)
             .bind(user_id)
             .execute(&pool)
@@ -208,7 +208,7 @@ pub async fn update_settings(
     }
 
     if let Some(yellow_threshold) = payload.yellow_threshold {
-        sqlx::query("UPDATE user_settings SET yellow_threshold = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET yellow_threshold = ? WHERE user_id = ?")
             .bind(yellow_threshold)
             .bind(user_id)
             .execute(&pool)
@@ -220,7 +220,7 @@ pub async fn update_settings(
         if day_boundary_hour < 0 || day_boundary_hour > 23 {
             return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
         }
-        sqlx::query("UPDATE user_settings SET day_boundary_hour = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET day_boundary_hour = ? WHERE user_id = ?")
             .bind(day_boundary_hour)
             .bind(user_id)
             .execute(&pool)
@@ -228,7 +228,7 @@ pub async fn update_settings(
     }
 
     if let Some(auto_progress_on_correct) = payload.auto_progress_on_correct {
-        sqlx::query("UPDATE user_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
             .bind(auto_progress_on_correct)
             .bind(user_id)
             .execute(&pool)
@@ -239,7 +239,7 @@ pub async fn update_settings(
         if auto_progress_delay < 0 || auto_progress_delay > 3000 {
             return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
         }
-        sqlx::query("UPDATE user_settings SET auto_progress_delay = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET auto_progress_delay = ? WHERE user_id = ?")
             .bind(auto_progress_delay)
             .bind(user_id)
             .execute(&pool)
@@ -250,7 +250,7 @@ pub async fn update_settings(
         if desired_retention < 0.5 || desired_retention > 0.99 {
             return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
         }
-        sqlx::query("UPDATE user_settings SET desired_retention = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET desired_retention = ? WHERE user_id = ?")
             .bind(desired_retention)
             .bind(user_id)
             .execute(&pool)
@@ -261,7 +261,7 @@ pub async fn update_settings(
         if daily_new_card_limit.is_negative() {
             return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()))
         }
-        sqlx::query("UPDATE user_settings SET daily_new_card_limit = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET daily_new_card_limit = ? WHERE user_id = ?")
             .bind(daily_new_card_limit)
             .bind(user_id)
             .execute(&pool)
@@ -269,7 +269,7 @@ pub async fn update_settings(
     }
 
     if let Some(v) = payload.history_colorized_area {
-        sqlx::query("UPDATE user_settings SET history_colorized_area = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET history_colorized_area = ? WHERE user_id = ?")
             .bind(v)
             .bind(user_id)
             .execute(&pool)
@@ -277,7 +277,7 @@ pub async fn update_settings(
     }
 
     if let Some(v) = payload.history_colored_dots {
-        sqlx::query("UPDATE user_settings SET history_colored_dots = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET history_colored_dots = ? WHERE user_id = ?")
             .bind(v)
             .bind(user_id)
             .execute(&pool)
@@ -285,7 +285,7 @@ pub async fn update_settings(
     }
 
     if let Some(v) = payload.history_threshold_lines {
-        sqlx::query("UPDATE user_settings SET history_threshold_lines = ? WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET history_threshold_lines = ? WHERE user_id = ?")
             .bind(v)
             .bind(user_id)
             .execute(&pool)

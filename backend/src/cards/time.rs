@@ -49,10 +49,10 @@ pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
 
 /// Parses a timestamp that may be in either format this app has ever
 /// written to a `TEXT` "datetime" column: RFC3339 (`DateTime::to_rfc3339()`,
-/// what `check::check_answer` writes to `card_states.last_review`), or
+/// what `check::check_answer` writes to `cards_states.last_review`), or
 /// SQLite's own `datetime('now')` format - what every column relying on a
 /// schema `DEFAULT` instead of an explicit bind gets (e.g.
-/// `review_history.reviewed_at`), and what `card_states.last_review` itself
+/// `review_history.reviewed_at`), and what `cards_states.last_review` itself
 /// falls back to after a backup restore that recreated the row via raw SQL
 /// rather than through this application.
 ///

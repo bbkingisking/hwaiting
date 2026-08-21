@@ -1,4 +1,4 @@
-//! Aggregate views over `review_history`/`card_states`: the status-bar
+//! Aggregate views over `review_history`/`cards_states`: the status-bar
 //! summary, the rolling per-day history chart, the all-time summary with
 //! streaks, and the by-POS/origin accuracy breakdown. None of these affect
 //! scheduling; they all read what [`super::check::check_answer`] already wrote.
@@ -94,16 +94,16 @@ pub async fn get_stats(
 
     // Get daily_new_card_limit setting (0 = suppress all new cards)
     let daily_new_card_limit: i64 = sqlx::query_scalar(
-        "SELECT daily_new_card_limit FROM user_settings WHERE user_id = ?"
+        "SELECT daily_new_card_limit FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
     .await?
     .unwrap_or(20);
 
-    // Get day_boundary_hour from user_settings (default to 4)
+    // Get day_boundary_hour from users_settings (default to 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
@@ -113,7 +113,7 @@ pub async fn get_stats(
     // Start of the user's current logical day, as UTC for database comparison
     let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
 
-    // Count new cards (cards not in card_states, excluding suppressed)
+    // Count new cards (cards not in cards_states, excluding suppressed)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
     let new_count_query = if daily_new_card_limit == 0 {
         // When new cards are suppressed (limit = 0), report 0 new cards
@@ -125,8 +125,8 @@ pub async fn get_stats(
         SELECT COUNT(*)
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND (cs.last_review IS NULL)
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -152,8 +152,8 @@ pub async fn get_stats(
         SELECT COUNT(*)
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND cs.last_review IS NOT NULL
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -205,8 +205,8 @@ pub async fn get_stats(
         SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -251,9 +251,9 @@ pub async fn get_stats(
 }
 
 async fn query_timeseries(pool: &SqlitePool, user_id: i64) -> Result<Vec<DayHistory>, AppError> {
-    // Get day_boundary_hour from user_settings (default 4)
+    // Get day_boundary_hour from users_settings (default 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -305,9 +305,9 @@ async fn query_timeseries(pool: &SqlitePool, user_id: i64) -> Result<Vec<DayHist
 }
 
 async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary, AppError> {
-    // Get day_boundary_hour from user_settings (default 4)
+    // Get day_boundary_hour from users_settings (default 4)
     let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM user_settings WHERE user_id = ?"
+        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -358,7 +358,7 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
     let state_rows = sqlx::query(
         r#"
         SELECT state, COUNT(*) AS cnt
-        FROM card_states
+        FROM cards_states
         WHERE user_id = ?
         GROUP BY state
         "#,
@@ -388,8 +388,8 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
         SELECT COUNT(*)
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         AND (cs.last_review IS NULL)
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -475,22 +475,31 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
 }
 
 async fn query_breakdown(pool: &SqlitePool, user_id: i64) -> Result<HistoryBreakdownResponse, AppError> {
+    // pop.slug/ot.slug are ascii identifiers as of migration 20240101000043
+    // (the human-readable text moved to parts_of_speech_labels/
+    // origin_types_labels), so the breakdown's `label` needs the same
+    // `_labels` join `field_values::fetch_field_values` uses, or this chart
+    // would start rendering `verb`/`native-korean` instead of readable text.
+    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+
     // Breakdown by POS — only include rows where pos is not null/empty
     let pos_rows = sqlx::query(&format!(
         r#"
         SELECT
-            pop.slug AS label,
+            popl.label AS label,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         JOIN parts_of_speech pop ON pop.id = c.pos_id
+        JOIN parts_of_speech_labels popl ON popl.pos_id = pop.id AND popl.language_id = ?
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-        GROUP BY pop.slug
+        GROUP BY popl.label
         ORDER BY reviews DESC
         "#,
     ))
+    .bind(eng_id)
     .bind(user_id)
     .fetch_all(pool)
     .await?;
@@ -518,18 +527,20 @@ async fn query_breakdown(pool: &SqlitePool, user_id: i64) -> Result<HistoryBreak
     let origin_rows = sqlx::query(&format!(
         r#"
         SELECT
-            ot.slug AS label,
+            otl.label AS label,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         JOIN origin_types ot ON ot.id = c.origin_type_id
+        JOIN origin_types_labels otl ON otl.origin_type_id = ot.id AND otl.language_id = ?
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-        GROUP BY ot.slug
+        GROUP BY otl.label
         ORDER BY reviews DESC
         "#,
     ))
+    .bind(eng_id)
     .bind(user_id)
     .fetch_all(pool)
     .await?;

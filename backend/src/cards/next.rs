@@ -159,7 +159,7 @@ pub async fn get_next_card(
 
     // Get user settings
     let user_row = sqlx::query(
-        "SELECT daily_new_card_limit, day_boundary_hour FROM user_settings WHERE user_id = ?"
+        "SELECT daily_new_card_limit, day_boundary_hour FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
@@ -221,7 +221,7 @@ pub async fn get_next_card(
     };
 
     // Get next due card (prioritize due cards by due date, then new cards)
-    // Exclude suppressed cards via user_card_flags
+    // Exclude suppressed cards via users_card_flags
     // Optionally skip a set of card_ids (client-side prefetch skips the
     // card on screen; hwaiting-agent skips every card it knows is already
     // claimed by a sibling process)
@@ -242,6 +242,8 @@ pub async fn get_next_card(
         ""
     };
 
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
+
     let query = format!(
         r#"
         SELECT
@@ -256,18 +258,18 @@ pub async fn get_next_card(
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
         LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
         INNER JOIN targets tg ON tg.sentence_id = s.id
-        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
         LEFT JOIN grades g ON g.id = c.grade_id
         LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
         LEFT JOIN tenses tn ON tn.id = tg.tense_id
-        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
-        LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        LEFT JOIN grammar_patterns gp ON gp.id = tg.grammar_pattern_id
+        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
         {}
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -287,6 +289,8 @@ pub async fn get_next_card(
     );
 
     let mut query_builder = sqlx::query(&query)
+        .bind(eng_id)
+        .bind(eng_id)
         .bind(user_id)
         .bind(user_id)
         .bind(user_id);
@@ -322,8 +326,8 @@ pub async fn get_next_card(
             SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
             FROM cards c
             LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-            INNER JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-            LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+            INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+            LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
             WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
             AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
             AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
@@ -341,8 +345,8 @@ pub async fn get_next_card(
                 SELECT EXISTS (
                     SELECT 1 FROM cards c
                     LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-                    LEFT JOIN card_states cs ON cs.card_id = c.id AND cs.user_id = ?
-                    LEFT JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+                    LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+                    LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
                     WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
                     AND cs.last_review IS NULL
                     AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)

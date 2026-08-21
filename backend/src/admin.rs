@@ -290,6 +290,7 @@ pub async fn search_cards(
         q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
     );
     let card_id: Option<i64> = q.parse().ok();
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     let rows = sqlx::query(
         r#"
@@ -303,21 +304,23 @@ pub async fn search_cards(
             tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern
         FROM cards c
-        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
         INNER JOIN targets tg ON tg.sentence_id = s.id
-        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
         LEFT JOIN grades g ON g.id = c.grade_id
         LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
         LEFT JOIN tenses tn ON tn.id = tg.tense_id
-        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
+        LEFT JOIN grammar_patterns gp ON gp.id = tg.grammar_pattern_id
         WHERE tg.form LIKE ? ESCAPE '\' OR c.id = ?
         ORDER BY length(tg.form) ASC, tg.form ASC
         LIMIT 50
         "#,
     )
+    .bind(eng_id)
+    .bind(eng_id)
     .bind(&pattern)
     .bind(card_id)
     .fetch_all(&pool)
@@ -327,7 +330,7 @@ pub async fn search_cards(
     for row in rows {
         let sentence_id: i64 = row.get("sentence_id");
         let alternatives: Vec<String> = sqlx::query_scalar(
-            "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?",
+            "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?",
         )
         .bind(sentence_id)
         .fetch_all(&pool)
@@ -481,6 +484,10 @@ pub async fn edit_card(
     let pos_id = crate::enum_lookup::resolve_optional_id(&mut tx, "parts_of_speech", pos).await?;
     let origin_type_id = crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", origin_type).await?;
     let grade_id = crate::enum_lookup::resolve_optional_id(&mut tx, "grades", grade).await?;
+    // grammar_pattern_id lives on `targets` as of migration 20240101000039,
+    // not on `cards` - resolved here alongside the other enum slugs, but
+    // written into the targets SET block below (alongside
+    // speech_level_id/tense_id) rather than the cards SET block.
     let grammar_pattern_id = crate::enum_lookup::resolve_optional_id(&mut tx, "grammar_patterns", grammar_pattern_slug).await?;
 
     // Update cards table — build SET clause dynamically so absent fields are untouched
@@ -493,7 +500,6 @@ pub async fn edit_card(
         if origin_type_id.is_some() { sets.push("origin_type_id = ?") }
         if hanja.is_some()       { sets.push("hanja = ?") }
         if grade_id.is_some()       { sets.push("grade_id = ?") }
-        if grammar_pattern_id.is_some() { sets.push("grammar_pattern_id = ?") }
 
         if !sets.is_empty() {
             let sql = format!("UPDATE cards SET {} WHERE id = ?", sets.join(", "));
@@ -505,35 +511,36 @@ pub async fn edit_card(
             if let Some(v) = origin_type_id { q = q.bind(v) }
             if let Some(ref v) = hanja       { q = q.bind(v.as_deref()) }
             if let Some(v) = grade_id       { q = q.bind(v) }
-            if let Some(v) = grammar_pattern_id { q = q.bind(v) }
             let result = q.bind(card_id).execute(&mut *tx).await?;
             debug!("Cards update rows_affected: {}", result.rows_affected());
         }
     }
 
-    // Update card_translations (first English row)
+    // Update cards_translations (first English row)
     {
         let mut sets: Vec<&str> = Vec::new();
         if trans_word.is_some() { sets.push("trans_word = ?") }
         if trans_dfn.is_some()  { sets.push("trans_dfn = ?") }
 
         if !sets.is_empty() {
+            let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
             let ct_exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM card_translations WHERE card_id = ? AND language_tag = 'en')"
+                "SELECT EXISTS(SELECT 1 FROM cards_translations WHERE card_id = ? AND language_id = ?)"
             )
             .bind(card_id)
+            .bind(eng_id)
             .fetch_one(&mut *tx)
             .await?;
 
             if ct_exists {
                 let sql = format!(
-                    "UPDATE card_translations SET {} WHERE card_id = ? AND language_tag = 'en'",
+                    "UPDATE cards_translations SET {} WHERE card_id = ? AND language_id = ?",
                     sets.join(", ")
                 );
                 let mut q = sqlx::query(&sql);
                 if let Some(ref v) = trans_word { q = q.bind(v.as_str()) }
                 if let Some(ref v) = trans_dfn  { q = q.bind(v.as_deref()) }
-                q.bind(card_id).execute(&mut *tx).await?;
+                q.bind(card_id).bind(eng_id).execute(&mut *tx).await?;
             }
         }
     }
@@ -579,7 +586,7 @@ pub async fn edit_card(
             }
         }
 
-        // Update sentences.text + sentence_translations
+        // Update sentences.text + sentences_translations
         if let Some(ref v) = sentence {
             sqlx::query("UPDATE sentences SET text = ? WHERE id = ?")
                 .bind(v.as_str())
@@ -588,18 +595,25 @@ pub async fn edit_card(
                 .await?;
         }
         if let Some(ref st) = sentence_translation {
-            sqlx::query("UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?")
+            // sentences_translations widened to one row per (sentence_id,
+            // language_id) as of migration 20240101000045 - pin the update
+            // to the eng row explicitly, since an unqualified
+            // `WHERE sentence_id = ?` would now touch every language's row
+            // for this sentence at once.
+            let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+            sqlx::query("UPDATE sentences_translations SET translation = ? WHERE sentence_id = ? AND language_id = ?")
                 .bind(st.as_str())
                 .bind(sid)
+                .bind(eng_id)
                 .execute(&mut *tx)
                 .await?;
         }
 
-        // Update targets (form / speech_level / tense / is_honorific /
-        // is_humble). No exists-check/insert branch needed here unlike the
-        // old sentence_inflection_hints: a `targets` row is created
-        // unconditionally alongside every sentence now (its `form` is
-        // NOT NULL), never left absent the way hint rows used to be.
+        // Update targets (form / speech_level / tense / grammar_pattern /
+        // is_honorific / is_humble). No exists-check/insert branch needed
+        // here unlike the old sentence_inflection_hints: a `targets` row is
+        // created unconditionally alongside every sentence now (its `form`
+        // is NOT NULL), never left absent the way hint rows used to be.
         let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
         let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
         if let Some(ref v) = target {
@@ -618,6 +632,13 @@ pub async fn edit_card(
         }
         if let Some(v) = tense_id {
             sqlx::query("UPDATE targets SET tense_id = ? WHERE sentence_id = ?")
+                .bind(v)
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+        }
+        if let Some(v) = grammar_pattern_id {
+            sqlx::query("UPDATE targets SET grammar_pattern_id = ? WHERE sentence_id = ?")
                 .bind(v)
                 .bind(sid)
                 .execute(&mut *tx)
@@ -644,7 +665,7 @@ pub async fn edit_card(
 
         // Update alternative targets
         if let Some(ref alts) = alternatives {
-            sqlx::query("DELETE FROM target_alternatives WHERE sentence_id = ?")
+            sqlx::query("DELETE FROM targets_alternatives WHERE sentence_id = ?")
                 .bind(sid)
                 .execute(&mut *tx)
                 .await?;
@@ -653,7 +674,7 @@ pub async fn edit_card(
                 let trimmed = alt.trim();
                 if !trimmed.is_empty() {
                     sqlx::query(
-                        "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
+                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                     )
                     .bind(sid)
                     .bind(trimmed)
