@@ -15,7 +15,7 @@ export function EnumSelect({ id, options, value, onChange }: {
     >
       <option value="">—</option>
       {Object.values(options).map(o => (
-        <option key={o.slug} value={o.slug}>{o.endings ? `${o.label} (${o.endings})` : o.label}</option>
+        <option key={o.slug} value={o.slug}>{o.endings.length > 0 ? `${o.label} (${o.endings.join(', ')})` : o.label}</option>
       ))}
     </select>
   )

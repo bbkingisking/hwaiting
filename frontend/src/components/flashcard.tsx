@@ -180,11 +180,11 @@ function GrammarPatternPill({
   // The pattern's conjugation endings - as spoiling as `target` for any card
   // that uses this pattern, so it only arrives with the reveal (see
   // CardReveal::grammar_pattern_endings); its mere presence is the gate.
-  endings?: string | null
+  endings?: string[]
 }) {
   const [open, setOpen] = useState(false)
 
-  const explanation = `${tooltip}${endings ? ` (${endings})` : ''}`
+  const explanation = `${tooltip}${endings && endings.length > 0 ? ` (${endings.join(', ')})` : ''}`
 
   return (
     <Tooltip open={open} onOpenChange={setOpen}>

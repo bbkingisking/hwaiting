@@ -22,7 +22,7 @@ pub struct ExportData {
     pub custom_cards: Vec<CustomCardExport>,
 }
 
-// UserSettingsCore (user.rs) is the `user_settings` row proper, flattened
+// UserSettingsCore (user.rs) is the `users_settings` row proper, flattened
 // here plus the one field genuinely specific to export/import:
 // `fsrs_parameters` carries the actual fitted parameters so they round-trip
 // through an export, where `user::UserSettings` only exposes whether they're
@@ -61,7 +61,10 @@ pub struct CustomCardExport {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct CardTranslationExport {
-    pub language_tag: String,
+    /// `languages.slug` (ISO 639-3, e.g. `"eng"`) - the same identifier
+    /// `language_id` resolves to/from everywhere else in the backend, so
+    /// export/import doesn't need a BCP47 reconstruction step of its own.
+    pub language: String,
     pub trans_word: String,
     pub trans_dfn: Option<String>,
 }
@@ -114,6 +117,7 @@ pub async fn export_data(
 ) -> Result<Json<ExportData>, AppError> {
     let user_id = auth.0;
     info!("Exporting data for user_id: {}", user_id);
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     // Get settings
     let settings = get_user_settings(&pool, user_id).await?;
@@ -148,7 +152,7 @@ pub async fn export_data(
     let suppressed_cards: Vec<i64> = sqlx::query_scalar(
         r#"
         SELECT card_id
-        FROM user_card_flags
+        FROM users_card_flags
         WHERE user_id = ? AND suppressed = 1
         "#
     )
@@ -186,12 +190,14 @@ pub async fn export_data(
         .fetch_one(&pool)
         .await?;
 
-        // Get translations
+        // Get translations - joins languages.slug directly rather than a
+        // second per-row lookup.
         let translation_rows = sqlx::query(
             r#"
-            SELECT language_tag, trans_word, trans_dfn
-            FROM card_translations
-            WHERE card_id = ?
+            SELECT l.slug as language, trans_word, trans_dfn
+            FROM cards_translations ct
+            JOIN languages l ON l.id = ct.language_id
+            WHERE ct.card_id = ?
             "#
         )
         .bind(card_id)
@@ -200,7 +206,7 @@ pub async fn export_data(
 
         let translations: Vec<CardTranslationExport> = translation_rows.iter().map(|row| {
             CardTranslationExport {
-                language_tag: row.get("language_tag"),
+                language: row.get("language"),
                 trans_word: row.get("trans_word"),
                 trans_dfn: row.get("trans_dfn"),
             }
@@ -232,11 +238,16 @@ pub async fn export_data(
         for sentence_row in sentence_rows {
             let sentence_id: i64 = sentence_row.get("id");
 
-            // Get translation
+            // Get translation - sentences_translations now allows one row
+            // per (sentence_id, language_id) (migration 20240101000045);
+            // pick the eng row explicitly rather than an unqualified
+            // `WHERE sentence_id = ?`, which would now be ambiguous once a
+            // second language's row exists.
             let translation: Option<String> = sqlx::query_scalar(
-                "SELECT translation FROM sentence_translations WHERE sentence_id = ?"
+                "SELECT translation FROM sentences_translations WHERE sentence_id = ? AND language_id = ?"
             )
             .bind(sentence_id)
+            .bind(eng_id)
             .fetch_optional(&pool)
             .await?;
 
@@ -244,7 +255,7 @@ pub async fn export_data(
 
             // Get alternatives
             let alternatives: Vec<String> = sqlx::query_scalar(
-                "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?"
+                "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?"
             )
             .bind(sentence_id)
             .fetch_all(&pool)
@@ -295,7 +306,7 @@ pub async fn export_data(
     path = "/api/user/import",
     request_body = ImportDataRequest,
     responses(
-        (status = 200, description = "Data imported (card_states derived from imported review_history)", body = ImportDataResponse),
+        (status = 200, description = "Data imported (cards_states derived from imported review_history)", body = ImportDataResponse),
         (status = 400, description = "Unsupported export version or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
@@ -309,6 +320,7 @@ pub async fn import_data(
 ) -> Result<Json<ImportDataResponse>, AppError> {
     let user_id = auth.0;
     info!("Importing data for user_id: {} (overwrite: {})", user_id, payload.overwrite);
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     let data = payload.data;
 
@@ -329,12 +341,12 @@ pub async fn import_data(
             .execute(&mut *tx)
             .await?;
         
-        sqlx::query("DELETE FROM card_states WHERE user_id = ?")
+        sqlx::query("DELETE FROM cards_states WHERE user_id = ?")
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
         
-        sqlx::query("DELETE FROM user_card_flags WHERE user_id = ?")
+        sqlx::query("DELETE FROM users_card_flags WHERE user_id = ?")
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
@@ -362,7 +374,7 @@ pub async fn import_data(
         custom_cards_imported: 0,
     };
 
-    // Import custom cards first (so we have valid card_ids for card_states)
+    // Import custom cards first (so we have valid card_ids for cards_states)
     for custom_card in data.custom_cards {
         // Resolve enum slugs -> lookup table ids, auto-registering any slug that
         // doesn't already exist (e.g. from an older export) so import never fails
@@ -397,16 +409,28 @@ pub async fn import_data(
         .execute(&mut *tx)
         .await?;
 
-        // Insert translations
+        // Insert translations - an unrecognized language (e.g. from an
+        // export this app's `languages` catalog has no row for) is skipped
+        // rather than failing the whole import, same "stale/foreign value
+        // never fails import outright" policy as
+        // enum_lookup::resolve_or_create_id.
         for translation in custom_card.translations {
+            let Some(language_id): Option<i64> = sqlx::query_scalar("SELECT id FROM languages WHERE slug = ?")
+                .bind(&translation.language)
+                .fetch_optional(&mut *tx)
+                .await?
+            else {
+                warn!("Skipping translation with unrecognized language: {}", translation.language);
+                continue;
+            };
             sqlx::query(
                 r#"
-                INSERT INTO card_translations (card_id, language_tag, trans_word, trans_dfn)
+                INSERT INTO cards_translations (card_id, language_id, trans_word, trans_dfn)
                 VALUES (?, ?, ?, ?)
                 "#
             )
             .bind(card_id)
-            .bind(&translation.language_tag)
+            .bind(language_id)
             .bind(&translation.trans_word)
             .bind(&translation.trans_dfn)
             .execute(&mut *tx)
@@ -427,12 +451,17 @@ pub async fn import_data(
             .fetch_one(&mut *tx)
             .await?;
 
-            // Insert sentence translation if present
+            // Insert sentence translation if present - SentenceExport
+            // carries no language of its own (sentences_translations always
+            // assumed English, same as cards_translations did before it had
+            // a language column at all - see migration 20240101000045), so
+            // this is always the eng row.
             if let Some(translation) = sentence.translation {
                 sqlx::query(
-                    "INSERT INTO sentence_translations (sentence_id, translation) VALUES (?, ?)"
+                    "INSERT INTO sentences_translations (sentence_id, language_id, translation) VALUES (?, ?, ?)"
                 )
                 .bind(sentence_id)
+                .bind(eng_id)
                 .bind(&translation)
                 .execute(&mut *tx)
                 .await?;
@@ -465,7 +494,7 @@ pub async fn import_data(
                 let trimmed = alt.trim();
                 if !trimmed.is_empty() {
                     sqlx::query(
-                        "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
+                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                     )
                     .bind(sentence_id)
                     .bind(trimmed)
@@ -478,7 +507,7 @@ pub async fn import_data(
         stats.custom_cards_imported += 1;
     }
 
-    // Import review history (must come before card_states derivation)
+    // Import review history (must come before cards_states derivation)
     for review in data.review_history {
         // Check if card exists
         let card_exists: bool = sqlx::query_scalar(
@@ -514,10 +543,10 @@ pub async fn import_data(
         stats.reviews_imported += 1;
     }
 
-    // Derive card_states from the last review_history entry per card
+    // Derive cards_states from the last review_history entry per card
     let derived_result = sqlx::query(
         r#"
-        INSERT INTO card_states (card_id, user_id, stability, difficulty, last_review, state)
+        INSERT INTO cards_states (card_id, user_id, stability, difficulty, last_review, state)
         SELECT rh.card_id, ?, rh.stability, rh.difficulty, rh.reviewed_at, rh.state
         FROM review_history rh
         INNER JOIN (
@@ -559,7 +588,7 @@ pub async fn import_data(
 
         sqlx::query(
             r#"
-            INSERT INTO user_card_flags (user_id, card_id, suppressed)
+            INSERT INTO users_card_flags (user_id, card_id, suppressed)
             VALUES (?, ?, 1)
             ON CONFLICT(user_id, card_id) DO UPDATE SET suppressed = 1
             "#
@@ -575,7 +604,7 @@ pub async fn import_data(
     // Import settings
     sqlx::query(
         r#"
-        INSERT INTO user_settings (user_id, show_percentage, red_threshold, yellow_threshold,
+        INSERT INTO users_settings (user_id, show_percentage, red_threshold, yellow_threshold,
                                    day_boundary_hour, auto_progress_on_correct, auto_progress_delay,
                                    desired_retention, daily_new_card_limit,
                                    history_colorized_area, history_colored_dots, history_threshold_lines)
@@ -613,7 +642,7 @@ pub async fn import_data(
     if let Some(ref fsrs_params) = data.settings.fsrs_parameters {
         sqlx::query(
             r#"
-            INSERT INTO user_fsrs_parameters (user_id, parameters)
+            INSERT INTO users_fsrs_parameters (user_id, parameters)
             VALUES (?, ?)
             ON CONFLICT(user_id) DO UPDATE SET parameters = excluded.parameters
             "#
@@ -638,10 +667,10 @@ pub async fn import_data(
 
 // Helper function to get user settings
 async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettingsExport, AppError> {
-    // Ensure user_settings row exists
+    // Ensure users_settings row exists
     sqlx::query(
         r#"
-        INSERT INTO user_settings (user_id)
+        INSERT INTO users_settings (user_id)
         VALUES (?)
         ON CONFLICT(user_id) DO NOTHING
         "#
@@ -655,7 +684,7 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
         SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
                history_colorized_area, history_colored_dots, history_threshold_lines
-        FROM user_settings
+        FROM users_settings
         WHERE user_id = ?
         "#
     )
@@ -665,7 +694,7 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
 
     // Get FSRS parameters if they exist
     let fsrs_parameters: Option<String> = sqlx::query_scalar(
-        "SELECT parameters FROM user_fsrs_parameters WHERE user_id = ?"
+        "SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)

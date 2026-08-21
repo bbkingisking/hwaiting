@@ -75,7 +75,7 @@ pub async fn comment_on_card(
         return Err(AppError::NotFound);
     }
 
-    let id = sqlx::query("INSERT INTO card_comments (card_id, user_id, body) VALUES (?, ?, ?)")
+    let id = sqlx::query("INSERT INTO cards_comments (card_id, user_id, body) VALUES (?, ?, ?)")
         .bind(card_id)
         .bind(user_id)
         .bind(&payload.body)
@@ -110,10 +110,10 @@ pub async fn suppress_card(
     let user_id = auth.0;
     info!("Suppressing card for user_id: {}, card_id: {}", user_id, card_id);
 
-    // Insert or update user_card_flags to mark as suppressed
+    // Insert or update users_card_flags to mark as suppressed
     sqlx::query(
         r#"
-        INSERT INTO user_card_flags (user_id, card_id, suppressed)
+        INSERT INTO users_card_flags (user_id, card_id, suppressed)
         VALUES (?, ?, 1)
         ON CONFLICT(user_id, card_id) DO UPDATE SET
             suppressed = 1,
@@ -148,6 +148,7 @@ pub async fn list_suppressed_cards(
     let user_id = auth.0;
     info!("Listing suppressed cards for user_id: {}", user_id);
 
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
     let rows = sqlx::query(
         r#"
         SELECT
@@ -156,10 +157,10 @@ pub async fn list_suppressed_cards(
             s.text as sentence,
             st.translation as sentence_translation
         FROM cards c
-        INNER JOIN user_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+        INNER JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
+        INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
-        LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+        LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN grades g ON g.id = c.grade_id
         WHERE ucf.suppressed = 1
@@ -167,6 +168,8 @@ pub async fn list_suppressed_cards(
         "#,
     )
     .bind(user_id)
+    .bind(eng_id)
+    .bind(eng_id)
     .fetch_all(&pool)
     .await?;
 
@@ -207,7 +210,7 @@ pub async fn unsuppress_card(
 
     sqlx::query(
         r#"
-        UPDATE user_card_flags
+        UPDATE users_card_flags
         SET suppressed = 0
         WHERE user_id = ? AND card_id = ?
         "#,

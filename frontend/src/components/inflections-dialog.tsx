@@ -31,7 +31,7 @@ function groupByCategory(
   for (const { form_slug, form } of inflections) {
     const meta = inflectionForm[form_slug]
     if (!meta) continue // catalog hasn't loaded yet, or slug is stale
-    if (meta.verb_only && pos !== '동사') continue
+    if (meta.restricted_to_pos && meta.restricted_to_pos !== pos) continue
 
     if (!byCategory.has(meta.category_slug)) {
       byCategory.set(meta.category_slug, { label: meta.category_label_en, rows: [] })

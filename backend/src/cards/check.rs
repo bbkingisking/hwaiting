@@ -36,11 +36,11 @@ pub struct CardBack {
     pub alternatives: Vec<String>,
 }
 
-/// One resolved row from `card_inflections`, joined out to the catalog's
-/// `slug` rather than repeating its label/category (those are non-spoiling
-/// and already available from `list_field_values(fields=inflection_form)` -
-/// see `InflectionFormValue`). Only the conjugated `form` itself gives the
-/// answer away.
+/// One resolved row from `conjugation_matrix_cards`, joined out to the
+/// catalog's `slug` rather than repeating its label/category (those are
+/// non-spoiling and already available from
+/// `list_field_values(fields=inflection_form)` - see `InflectionFormValue`).
+/// Only the conjugated `form` itself gives the answer away.
 #[derive(Serialize, ToSchema)]
 pub struct CardInflection {
     pub form_slug: String,
@@ -65,12 +65,13 @@ pub struct CardReveal {
     /// travels with the reveal rather than in the pattern's public
     /// label/tooltip (see `list_field_values`, which admin/authoring
     /// surfaces still fetch endings from - that's a legitimately public use,
-    /// picking a pattern rather than guessing one card's answer).
-    pub grammar_pattern_endings: Option<String>,
-    /// This card's resolved `card_inflections` rows (empty if the card
-    /// hasn't been run through the inflection generator, or isn't a
-    /// 동사/형용사) - each `form` is exactly as spoiling as `target`, so
-    /// like `grammar_pattern_endings` this only ships with the reveal.
+    /// picking a pattern rather than guessing one card's answer). Empty if
+    /// the card has no grammar pattern.
+    pub grammar_pattern_endings: Vec<String>,
+    /// This card's resolved `conjugation_matrix_cards` rows (empty if the
+    /// card hasn't been run through the conjugation generator) - each
+    /// `form` is exactly as spoiling as `target`, so like
+    /// `grammar_pattern_endings` this only ships with the reveal.
     pub inflections: Vec<CardInflection>,
 }
 
@@ -106,15 +107,23 @@ pub async fn check_answer(
 
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
+    //
+    // grammar_pattern_endings folds grammar_patterns_endings' rows
+    // (migration 20240101000040 decomposed the old `gp.endings` string into
+    // one row per literal ending) into a JSON array in seed order - see
+    // field_values::fetch_field_values, which does the same thing for
+    // grammar_patterns' own public listing.
     let row = sqlx::query(
         r#"
         SELECT c.word, c.definition, c.hanja,
                s.id as sentence_id, s.text as sentence, tg.form as target,
-               gp.endings as grammar_pattern_endings
+               COALESCE((SELECT json_group_array(ending) FROM
+                (SELECT ending FROM grammar_patterns_endings
+                 WHERE grammar_pattern_id = tg.grammar_pattern_id ORDER BY id)
+               ), '[]') as grammar_pattern_endings_json
         FROM cards c
         INNER JOIN sentences s ON c.id = s.card_id
         INNER JOIN targets tg ON tg.sentence_id = s.id
-        LEFT JOIN grammar_patterns gp ON gp.id = c.grammar_pattern_id
         WHERE c.id = ?
         "#,
     )
@@ -129,10 +138,12 @@ pub async fn check_answer(
     let sentence_id: i64 = row.get("sentence_id");
     let sentence: String = row.get("sentence");
     let target: String = row.get("target");
-    let grammar_pattern_endings: Option<String> = row.get("grammar_pattern_endings");
+    let grammar_pattern_endings_json: String = row.get("grammar_pattern_endings_json");
+    let grammar_pattern_endings: Vec<String> =
+        serde_json::from_str(&grammar_pattern_endings_json).unwrap_or_default();
 
     let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?"
+        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?"
     )
     .bind(sentence_id)
     .fetch_all(&pool)
@@ -145,10 +156,10 @@ pub async fn check_answer(
 
     let inflections: Vec<CardInflection> = sqlx::query(
         r#"
-        SELECT f.slug as form_slug, ci.form
-        FROM card_inflections ci
-        JOIN inflection_forms f ON ci.inflection_form_id = f.id
-        WHERE ci.card_id = ?
+        SELECT f.slug as form_slug, cmc.form
+        FROM conjugation_matrix_cards cmc
+        JOIN conjugation_matrix_forms f ON cmc.form_id = f.id
+        WHERE cmc.card_id = ?
         ORDER BY f.sort_order
         "#,
     )
@@ -177,7 +188,7 @@ pub async fn check_answer(
     // Get existing card state if any
     let card_state_row = sqlx::query(
         "SELECT stability, difficulty, last_review
-         FROM card_states
+         FROM cards_states
          WHERE user_id = ? AND card_id = ?",
     )
     .bind(user_id)
@@ -187,7 +198,7 @@ pub async fn check_answer(
 
     // Load user's optimized FSRS parameters, or fall back to defaults
     let params_json: Option<String> = sqlx::query_scalar(
-        "SELECT parameters FROM user_fsrs_parameters WHERE user_id = ?"
+        "SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
@@ -202,7 +213,7 @@ pub async fn check_answer(
 
     // Fetch user's desired retention setting
     let desired_retention: f64 = sqlx::query_scalar(
-        "SELECT desired_retention FROM user_settings WHERE user_id = ?"
+        "SELECT desired_retention FROM users_settings WHERE user_id = ?"
     )
     .bind(user_id)
     .fetch_optional(&pool)
@@ -267,7 +278,7 @@ pub async fn check_answer(
     // Update or insert card state
     sqlx::query(
         r#"
-        INSERT INTO card_states (user_id, card_id, stability, difficulty, last_review, state)
+        INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, card_id) DO UPDATE SET
             stability = excluded.stability,

@@ -501,11 +501,11 @@ export interface components {
             trans_word: string;
         };
         /**
-         * @description One resolved row from `card_inflections`, joined out to the catalog's
-         *     `slug` rather than repeating its label/category (those are non-spoiling
-         *     and already available from `list_field_values(fields=inflection_form)` -
-         *     see `InflectionFormValue`). Only the conjugated `form` itself gives the
-         *     answer away.
+         * @description One resolved row from `conjugation_matrix_cards`, joined out to the
+         *     catalog's `slug` rather than repeating its label/category (those are
+         *     non-spoiling and already available from
+         *     `list_field_values(fields=inflection_form)` - see `InflectionFormValue`).
+         *     Only the conjugated `form` itself gives the answer away.
          */
         CardInflection: {
             form: string;
@@ -544,20 +544,26 @@ export interface components {
              *     travels with the reveal rather than in the pattern's public
              *     label/tooltip (see `list_field_values`, which admin/authoring
              *     surfaces still fetch endings from - that's a legitimately public use,
-             *     picking a pattern rather than guessing one card's answer).
+             *     picking a pattern rather than guessing one card's answer). Empty if
+             *     the card has no grammar pattern.
              */
-            grammar_pattern_endings?: string | null;
+            grammar_pattern_endings: string[];
             hanja_hints: components["schemas"]["HanjaHint"][];
             /**
-             * @description This card's resolved `card_inflections` rows (empty if the card
-             *     hasn't been run through the inflection generator, or isn't a
-             *     동사/형용사) - each `form` is exactly as spoiling as `target`, so
-             *     like `grammar_pattern_endings` this only ships with the reveal.
+             * @description This card's resolved `conjugation_matrix_cards` rows (empty if the
+             *     card hasn't been run through the conjugation generator) - each
+             *     `form` is exactly as spoiling as `target`, so like
+             *     `grammar_pattern_endings` this only ships with the reveal.
              */
             inflections: components["schemas"]["CardInflection"][];
         };
         CardTranslationExport: {
-            language_tag: string;
+            /**
+             * @description `languages.slug` (ISO 639-3, e.g. `"eng"`) - the same identifier
+             *     `language_id` resolves to/from everywhere else in the backend, so
+             *     export/import doesn't need a BCP47 reconstruction step of its own.
+             */
+            language: string;
             trans_dfn?: string | null;
             trans_word: string;
         };
@@ -670,7 +676,13 @@ export interface components {
          */
         FieldName: "pos" | "origin_type" | "grade" | "speech_level" | "tense" | "grammar_pattern" | "inflection_form";
         FieldValue: {
-            endings?: string | null;
+            /**
+             * @description A grammar pattern's literal conjugation endings (e.g. `["-네", "-네요",
+             *     "-군", "-군요"]`), one entry per `grammar_patterns_endings` row -
+             *     empty for every other field (which has no such concept at all) and
+             *     for a grammar pattern with none recorded yet.
+             */
+            endings: string[];
             label: string;
             /** Format: int64 */
             rank?: number | null;
@@ -761,7 +773,7 @@ export interface components {
          *     forms for one card (see `CardReveal::inflections` in check.rs, which is
          *     gated the same way `grammar_pattern_endings` is). Shaped for the review
          *     UI to build a table directly: group by `category_slug` in `sort_order`,
-         *     skip `verb_only` rows for 형용사 cards.
+         *     skip a row whose `restricted_to_pos` doesn't match the card's own `pos`.
          */
         InflectionFormValue: {
             category_label_en: string;
@@ -770,10 +782,18 @@ export interface components {
             ending_ko: string;
             label_en: string;
             label_ko: string;
+            /**
+             * @description The `parts_of_speech` slug this form is restricted to (e.g. `"verb"`
+             *     for `adnominal_present_verb`, `"adjective"` for
+             *     `adnominal_present_adj`), or `None` if every part of speech gets this
+             *     form - see migration 20240101000048, which replaced a single
+             *     `verb_only` boolean with this fk once a form needed the opposite
+             *     restriction direction.
+             */
+            restricted_to_pos?: string | null;
             slug: string;
             /** Format: int64 */
             sort_order: number;
-            verb_only: boolean;
         };
         /**
          * @description Read shape: a tagged sentence's hints once resolved from their
@@ -996,7 +1016,7 @@ export interface components {
             has_fsrs_parameters: boolean;
         };
         /**
-         * @description The `user_settings` row proper - every field shared verbatim between the
+         * @description The `users_settings` row proper - every field shared verbatim between the
          *     live API response (`UserSettings`, below) and data export/import
          *     (`export_import::UserSettingsExport`). Split out so both flatten this
          *     struct instead of hand-declaring the same 11 fields a second time: the
@@ -2076,7 +2096,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Data imported (card_states derived from imported review_history) */
+            /** @description Data imported (cards_states derived from imported review_history) */
             200: {
                 headers: {
                     [name: string]: unknown;

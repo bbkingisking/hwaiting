@@ -73,6 +73,9 @@ pub struct ListCustomCardsResponse {
 // their WHERE clause (all cards owned by the user vs. one by id) - keeping
 // the join/column list in one place means the two can't drift into
 // returning different shapes for what's supposed to be the same read model.
+// The two `language_id = ?` placeholders (ct, then st) must be bound first,
+// before whichever WHERE-clause params the caller appends - see
+// `crate::enum_lookup::eng_language_id`.
 const CUSTOM_CARD_SELECT: &str = r#"
     SELECT
         c.id,
@@ -95,10 +98,10 @@ const CUSTOM_CARD_SELECT: &str = r#"
         datetime(ccm.created_at) as created_at
     FROM cards c
     INNER JOIN custom_card_metadata ccm ON c.id = ccm.card_id
-    INNER JOIN card_translations ct ON c.id = ct.card_id AND ct.language_tag = 'en'
+    INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
     INNER JOIN sentences s ON c.id = s.card_id
     INNER JOIN targets tg ON tg.sentence_id = s.id
-    LEFT JOIN sentence_translations st ON s.id = st.sentence_id
+    LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
     LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
     LEFT JOIN grades g ON g.id = c.grade_id
     LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
@@ -116,7 +119,7 @@ async fn custom_card_from_row(
 ) -> Result<CustomCard, AppError> {
     let sentence_id: i64 = row.get("sentence_id");
     let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM target_alternatives WHERE sentence_id = ?",
+        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?",
     )
     .bind(sentence_id)
     .fetch_all(pool)
@@ -223,14 +226,16 @@ pub async fn create_custom_card(
     .execute(&mut *tx)
     .await?;
 
-    // Insert into card_translations
+    // Insert into cards_translations
+    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
     sqlx::query(
         r#"
-        INSERT INTO card_translations (card_id, language_tag, trans_word, trans_dfn)
-        VALUES (?, 'en', ?, ?)
+        INSERT INTO cards_translations (card_id, language_id, trans_word, trans_dfn)
+        VALUES (?, ?, ?, ?)
         "#
     )
     .bind(card_id)
+    .bind(eng_id)
     .bind(&payload.trans_word)
     .bind(&payload.trans_dfn)
     .execute(&mut *tx)
@@ -250,14 +255,15 @@ pub async fn create_custom_card(
 
     let sentence_id = sentence_result.last_insert_rowid();
 
-    // Insert into sentence_translations
+    // Insert into sentences_translations
     sqlx::query(
         r#"
-        INSERT INTO sentence_translations (sentence_id, translation)
-        VALUES (?, ?)
+        INSERT INTO sentences_translations (sentence_id, language_id, translation)
+        VALUES (?, ?, ?)
         "#
     )
     .bind(sentence_id)
+    .bind(eng_id)
     .bind(&payload.sentence_translation)
     .execute(&mut *tx)
     .await?;
@@ -285,7 +291,7 @@ pub async fn create_custom_card(
             let trimmed = alt.trim();
             if !trimmed.is_empty() {
                 sqlx::query(
-                    "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
+                    "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                 )
                 .bind(sentence_id)
                 .bind(trimmed)
@@ -327,9 +333,12 @@ pub async fn list_custom_cards(
     let user_id = auth.0;
     info!("Listing custom cards for user_id: {}", user_id);
 
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
     let rows = sqlx::query(&format!(
         "{CUSTOM_CARD_SELECT} WHERE ccm.user_id = ? ORDER BY ccm.created_at DESC"
     ))
+    .bind(eng_id)
+    .bind(eng_id)
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
@@ -410,7 +419,10 @@ pub async fn get_custom_card(
     let user_id = auth.0;
     info!("Getting custom card {} for user_id: {}", card_id, user_id);
 
+    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
     let row = sqlx::query(&format!("{CUSTOM_CARD_SELECT} WHERE c.id = ? AND ccm.user_id = ?"))
+        .bind(eng_id)
+        .bind(eng_id)
         .bind(card_id)
         .bind(user_id)
         .fetch_optional(&pool)
@@ -537,22 +549,25 @@ pub async fn update_custom_card(
             .await?;
     }
 
-    // Update card_translations
+    // Update cards_translations
+    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
     if let Some(trans_word) = &payload.trans_word {
         if trans_word.trim().is_empty() {
             return Err(AppError::BadRequest("Translation cannot be empty".to_string()));
         }
-        sqlx::query("UPDATE card_translations SET trans_word = ? WHERE card_id = ? AND language_tag = 'en'")
+        sqlx::query("UPDATE cards_translations SET trans_word = ? WHERE card_id = ? AND language_id = ?")
             .bind(trans_word)
             .bind(card_id)
+            .bind(eng_id)
             .execute(&mut *tx)
             .await?;
     }
 
     if payload.trans_dfn.is_some() {
-        sqlx::query("UPDATE card_translations SET trans_dfn = ? WHERE card_id = ? AND language_tag = 'en'")
+        sqlx::query("UPDATE cards_translations SET trans_dfn = ? WHERE card_id = ? AND language_id = ?")
             .bind(&payload.trans_dfn)
             .bind(card_id)
+            .bind(eng_id)
             .execute(&mut *tx)
             .await?;
     }
@@ -607,14 +622,15 @@ pub async fn update_custom_card(
             .await?;
     }
 
-    // Update sentence_translations
+    // Update sentences_translations
     if let Some(sentence_translation) = &payload.sentence_translation {
         if sentence_translation.trim().is_empty() {
             return Err(AppError::BadRequest("Sentence translation cannot be empty".to_string()));
         }
-        sqlx::query("UPDATE sentence_translations SET translation = ? WHERE sentence_id = ?")
+        sqlx::query("UPDATE sentences_translations SET translation = ? WHERE sentence_id = ? AND language_id = ?")
             .bind(sentence_translation)
             .bind(sentence_id)
+            .bind(eng_id)
             .execute(&mut *tx)
             .await?;
     }
@@ -670,7 +686,7 @@ pub async fn update_custom_card(
     // Update alternative targets
     if let Some(ref alts) = payload.alternatives {
         // Delete existing
-        sqlx::query("DELETE FROM target_alternatives WHERE sentence_id = ?")
+        sqlx::query("DELETE FROM targets_alternatives WHERE sentence_id = ?")
             .bind(sentence_id)
             .execute(&mut *tx)
             .await?;
@@ -680,7 +696,7 @@ pub async fn update_custom_card(
             let trimmed = alt.trim();
             if !trimmed.is_empty() {
                 sqlx::query(
-                    "INSERT INTO target_alternatives (sentence_id, alt_target) VALUES (?, ?)"
+                    "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
                 )
                 .bind(sentence_id)
                 .bind(trimmed)

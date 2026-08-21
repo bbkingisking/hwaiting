@@ -144,7 +144,7 @@ pub async fn optimize_fsrs(
 
     sqlx::query(
         r#"
-        INSERT INTO user_fsrs_parameters (user_id, parameters)
+        INSERT INTO users_fsrs_parameters (user_id, parameters)
         VALUES (?, ?)
         ON CONFLICT(user_id) DO UPDATE SET parameters = excluded.parameters
         "#,
@@ -181,7 +181,7 @@ pub async fn reset_fsrs_parameters(
     let user_id = auth.0;
     info!("Resetting FSRS parameters for user_id: {}", user_id);
 
-    sqlx::query("DELETE FROM user_fsrs_parameters WHERE user_id = ?")
+    sqlx::query("DELETE FROM users_fsrs_parameters WHERE user_id = ?")
         .bind(user_id)
         .execute(&pool)
         .await?;

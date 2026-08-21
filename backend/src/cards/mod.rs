@@ -89,18 +89,20 @@ async fn hanja_hints_for(
         return Ok(vec![]);
     }
 
+    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
     let other_hanja_rows = sqlx::query(
         r#"
         SELECT DISTINCT c.hanja, c.word, ct.trans_word
-        FROM card_states cs
+        FROM cards_states cs
         INNER JOIN cards c ON c.id = cs.card_id
-        INNER JOIN card_translations ct ON ct.card_id = c.id AND ct.language_tag = 'en'
+        INNER JOIN cards_translations ct ON ct.card_id = c.id AND ct.language_id = ?
         WHERE cs.user_id = ?
           AND cs.card_id != ?
           AND c.hanja IS NOT NULL
           AND c.hanja != ''
         "#
     )
+    .bind(eng_id)
     .bind(user_id)
     .bind(card_id)
     .fetch_all(pool)
