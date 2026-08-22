@@ -10,7 +10,13 @@ import { useAuth } from '@/components/auth-provider'
 // aria-hidden: this is developer/admin chrome, not part of the review
 // card's own accessibility contract (see CLAUDE.md) - nothing here should
 // show up in a read of the page.
-export function DebugStatusBar({ lastCheckMs }: { lastCheckMs: number | null }) {
+export function DebugStatusBar({
+  lastCheckMs,
+  cardId,
+}: {
+  lastCheckMs: number | null
+  cardId: number | null
+}) {
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
 
@@ -21,7 +27,7 @@ export function DebugStatusBar({ lastCheckMs }: { lastCheckMs: number | null }) 
       aria-hidden
       className="fixed bottom-4 left-4 text-xs text-muted-foreground/50 font-mono select-none"
     >
-      check: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'}
+      card: {cardId ?? '—'} · check: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'}
     </div>
   )
 }
