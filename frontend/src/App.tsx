@@ -316,7 +316,9 @@ function AppContent() {
         )}
       </main>
       {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
-      {isAuthenticated && <DebugStatusBar lastCheckMs={lastCheckMs} />}
+      {isAuthenticated && (
+        <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
+      )}
     </>
   )
 }
