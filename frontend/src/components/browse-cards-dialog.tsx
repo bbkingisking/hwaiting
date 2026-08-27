@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Loader2 } from 'lucide-react'
-import { searchCardsByTarget, ApiError, type AdminCard } from '@/lib/api'
+import { type AdminCard } from '@/lib/api'
+import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface BrowseCardsDialogProps {
   open: boolean
@@ -17,60 +18,9 @@ interface BrowseCardsDialogProps {
 }
 
 export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps) {
-  const [query, setQuery] = useState('')
-  const [cards, setCards] = useState<AdminCard[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [hasSearched, setHasSearched] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { query, setQuery, cards, setCards, isLoading, hasSearched, error } = useDebouncedCardSearch(open)
   const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
   const [editOpen, setEditOpen] = useState(false)
-
-  // Reset state when the dialog opens
-  useEffect(() => {
-    if (open) {
-      setQuery('')
-      setCards([])
-      setError(null)
-      setHasSearched(false)
-    }
-  }, [open])
-
-  // Debounced search on query change
-  useEffect(() => {
-    if (!open) return
-
-    const trimmed = query.trim()
-    if (trimmed === '') {
-      setCards([])
-      setHasSearched(false)
-      setIsLoading(false)
-      return
-    }
-
-    // Set inside the timer, not before it: flagging "loading" during the
-    // debounce window advertises a request that hasn't been made yet.
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      setIsLoading(true)
-      searchCardsByTarget(trimmed, controller.signal)
-        .then(response => {
-          setCards(response.cards)
-          setHasSearched(true)
-          setError(null)
-          setIsLoading(false)
-        })
-        .catch(err => {
-          if (controller.signal.aborted) return
-          setError(err instanceof ApiError ? err.message : 'Search failed')
-          setIsLoading(false)
-        })
-    }, 300)
-
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [open, query])
 
   const handleCardClick = (card: AdminCard) => {
     setSelectedCard(card)
