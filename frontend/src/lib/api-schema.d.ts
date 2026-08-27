@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cards/hanja-drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_hanja_drill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cards/history": {
         parameters: {
             query?: never;
@@ -730,6 +746,15 @@ export interface components {
         };
         GeneratedInvite: {
             code: string;
+        };
+        HanjaDrill: {
+            hanja: string;
+            trans_dfn?: string | null;
+            trans_word: string;
+            word: string;
+        };
+        HanjaDrillResponse: {
+            drill?: null | components["schemas"]["HanjaDrill"];
         };
         HanjaHint: {
             hanja: string;
@@ -1593,6 +1618,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_hanja_drill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A random hanja drawn from the user's mastered cards, or null if none exist yet */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HanjaDrillResponse"];
+                };
             };
             /** @description Missing/invalid JWT */
             401: {

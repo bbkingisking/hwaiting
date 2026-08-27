@@ -7,6 +7,7 @@
 mod check;
 mod field_values;
 mod fsrs_admin;
+mod hanja_drill;
 mod moderation;
 mod next;
 mod stats;
@@ -23,6 +24,7 @@ mod time;
 pub(crate) use check::*;
 pub(crate) use field_values::*;
 pub(crate) use fsrs_admin::*;
+pub(crate) use hanja_drill::*;
 pub(crate) use moderation::*;
 pub(crate) use next::*;
 pub(crate) use stats::*;
@@ -32,6 +34,14 @@ use sqlx::{Row, Sqlite, SqlitePool};
 use utoipa::ToSchema;
 
 use crate::error::AppError;
+
+/// The `cards_states.state` value marking a card as mastered - past initial
+/// learning/relearning, in FSRS's long-interval review phase. Shared by
+/// `stats::query_summary`'s "Mastered" stat and `hanja_drill::get_hanja_drill`'s
+/// eligible-card pool, so the two can't silently drift apart on what counts
+/// as mastered - the same must-agree concern `cards/time.rs`'s
+/// `COUNTED_REVIEW_SQL`/`CORRECT_REVIEW_SQL` document for accuracy stats.
+pub(crate) const MASTERED_STATE: &str = "review";
 
 #[derive(Serialize, Clone, ToSchema)]
 pub struct HanjaHint {

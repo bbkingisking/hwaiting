@@ -14,7 +14,8 @@ import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
 import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
-import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search, Table } from 'lucide-react'
+import { HanjaDrillsDialog } from '@/components/hanja-drills-dialog'
+import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search, Table, Shuffle } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
@@ -29,6 +30,7 @@ export function AppHeader() {
   const [conjugationTablesOpen, setConjugationTablesOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [hanjaDrillsOpen, setHanjaDrillsOpen] = useState(false)
   const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
 
   const checkSuppressedCards = () => {
@@ -68,6 +70,10 @@ export function AppHeader() {
             <DropdownMenuItem onClick={() => setCustomCardsOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Custom Cards
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setHanjaDrillsOpen(true)}>
+              <Shuffle className="mr-2 h-4 w-4" />
+              Hanja Drills
             </DropdownMenuItem>
             {isAdmin && (
               <DropdownMenuItem onClick={() => setBrowseCardsOpen(true)}>
@@ -122,6 +128,7 @@ export function AppHeader() {
         <ConjugationTablesDialog open={conjugationTablesOpen} onOpenChange={setConjugationTablesOpen} />
       )}
       <ReviewHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
+      <HanjaDrillsDialog open={hanjaDrillsOpen} onOpenChange={setHanjaDrillsOpen} />
       <SuppressedCardsDialog 
         open={suppressedCardsOpen} 
         onOpenChange={(open) => {

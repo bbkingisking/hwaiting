@@ -70,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/cards/{card_id}/comment", post(cards::comment_on_card))
         .route("/cards/{card_id}/suppress", put(cards::suppress_card))
         .route("/cards/suppressed", get(cards::list_suppressed_cards))
+        .route("/cards/hanja-drill", get(cards::get_hanja_drill))
         .route("/cards/{card_id}/unsuppress", put(cards::unsuppress_card))
         .route("/cards/stats", get(cards::get_stats))
         .route("/cards/history", get(cards::get_history))

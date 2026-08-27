@@ -15,6 +15,7 @@ use super::time::{
     accuracy_percentage, logical_day_shift, logical_today_start, parse_flexible_datetime,
     sqlite_datetime, CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL,
 };
+use super::MASTERED_STATE;
 
 #[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
@@ -375,7 +376,7 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
         let cnt: i64 = row.get("cnt");
         match state.as_str() {
             "learning" => cards_learning = cnt,
-            "review" => cards_review = cnt,
+            MASTERED_STATE => cards_review = cnt,
             "relearning" => cards_relearning = cnt,
             _ => {}
         }
