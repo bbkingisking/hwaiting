@@ -28,7 +28,7 @@ pub(crate) use next::*;
 pub(crate) use stats::*;
 
 use serde::Serialize;
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, Sqlite, SqlitePool};
 use utoipa::ToSchema;
 
 use crate::error::AppError;
@@ -80,7 +80,18 @@ pub struct Card {
 /// exactly these rows without going through the review-grading flow).
 /// `pub(crate)`, unlike `hanja_hints_for` below, because `admin` is a sibling
 /// module rather than a submodule of `cards` and can't otherwise reach it.
-pub(crate) async fn inflections_for(pool: &SqlitePool, card_id: i64) -> Result<Vec<CardInflection>, AppError> {
+///
+/// Generic over the executor (rather than fixed to `&SqlitePool`, following
+/// `enum_lookup`'s `eng_language_id`/`resolve_optional_id`) so
+/// `admin::get_card_inflections` can run this inside the same transaction as
+/// its existence check - closing the window a card deleted between two
+/// separate pool queries used to open, where the delete would land between
+/// the check and this fetch and the endpoint would return 200 with an empty
+/// list instead of 404.
+pub(crate) async fn inflections_for<'e, E>(executor: E, card_id: i64) -> Result<Vec<CardInflection>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     Ok(sqlx::query(
         r#"
         SELECT f.slug as form_slug, cmc.form
@@ -91,7 +102,7 @@ pub(crate) async fn inflections_for(pool: &SqlitePool, card_id: i64) -> Result<V
         "#,
     )
     .bind(card_id)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?
     .iter()
     .map(|row| CardInflection {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { InflectionsDialog } from '@/components/inflections-dialog'
 import { Loader2 } from 'lucide-react'
-import { searchCardsByTarget, getCardInflections, ApiError, type AdminCard, type CardInflection } from '@/lib/api'
+import { getCardInflections, ApiError, type AdminCard, type CardInflection } from '@/lib/api'
+import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface ConjugationTablesDialogProps {
   open: boolean
@@ -20,62 +21,22 @@ interface ConjugationTablesDialogProps {
 // read-only InflectionsDialog (the conjugation matrix) instead of
 // EditCardDialog.
 export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTablesDialogProps) {
-  const [query, setQuery] = useState('')
-  const [cards, setCards] = useState<AdminCard[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [hasSearched, setHasSearched] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { query, setQuery, cards, isLoading, hasSearched, error, setError } = useDebouncedCardSearch(open)
   const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
   const [inflections, setInflections] = useState<CardInflection[]>([])
   const [inflectionsOpen, setInflectionsOpen] = useState(false)
   const [inflectionsLoading, setInflectionsLoading] = useState(false)
+  const inflectionsAbortRef = useRef<AbortController | null>(null)
 
-  // Reset state when the dialog opens
+  // Cancel any in-flight inflections fetch when the dialog closes, so a late
+  // response can't pop InflectionsDialog open after the admin has already
+  // moved on - it stays mounted (gated on `selectedCard`, not on this
+  // dialog's own `open`), so nothing else would stop that from happening.
   useEffect(() => {
-    if (open) {
-      setQuery('')
-      setCards([])
-      setError(null)
-      setHasSearched(false)
+    if (!open) {
+      inflectionsAbortRef.current?.abort()
     }
   }, [open])
-
-  // Debounced search on query change
-  useEffect(() => {
-    if (!open) return
-
-    const trimmed = query.trim()
-    if (trimmed === '') {
-      setCards([])
-      setHasSearched(false)
-      setIsLoading(false)
-      return
-    }
-
-    // Set inside the timer, not before it: flagging "loading" during the
-    // debounce window advertises a request that hasn't been made yet.
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      setIsLoading(true)
-      searchCardsByTarget(trimmed, controller.signal)
-        .then(response => {
-          setCards(response.cards)
-          setHasSearched(true)
-          setError(null)
-          setIsLoading(false)
-        })
-        .catch(err => {
-          if (controller.signal.aborted) return
-          setError(err instanceof ApiError ? err.message : 'Search failed')
-          setIsLoading(false)
-        })
-    }, 300)
-
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [open, query])
 
   const handleCardClick = (card: AdminCard) => {
     // InflectionsDialog groups rows by `restricted_to_pos`, which needs a
@@ -89,15 +50,24 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
     setError(null)
     setSelectedCard(card)
     setInflectionsLoading(true)
-    getCardInflections(card.card_id)
+
+    inflectionsAbortRef.current?.abort()
+    const controller = new AbortController()
+    inflectionsAbortRef.current = controller
+
+    getCardInflections(card.card_id, controller.signal)
       .then(response => {
+        if (controller.signal.aborted) return
         setInflections(response.inflections)
         setInflectionsOpen(true)
       })
       .catch(err => {
+        if (controller.signal.aborted) return
         setError(err instanceof ApiError ? err.message : 'Failed to load conjugation table')
       })
-      .finally(() => setInflectionsLoading(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setInflectionsLoading(false)
+      })
   }
 
   return (

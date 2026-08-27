@@ -273,9 +273,9 @@ type CardInflectionsResponse = Schemas['CardInflectionsResponse']
 // than via checkAnswer's CardReveal - admin browsing already discloses
 // target/word/sentence up front (see SearchCardsResponse), so there's no
 // review-flow secrecy left to preserve here.
-export async function getCardInflections(cardId: number): Promise<CardInflectionsResponse> {
+export async function getCardInflections(cardId: number, signal?: AbortSignal): Promise<CardInflectionsResponse> {
   const url = `${window.location.origin}/api/admin/cards/${cardId}/inflections`
-  return fetchWithAuth(url)
+  return fetchWithAuth(url, { signal })
 }
 
 export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {

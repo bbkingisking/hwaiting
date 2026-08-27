@@ -394,16 +394,24 @@ pub async fn get_card_inflections(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
 ) -> Result<Json<CardInflectionsResponse>, AppError> {
+    // Existence check and inflections fetch share one transaction so a
+    // concurrent delete of this card can't land between them - two separate
+    // pool queries could otherwise see the card exist, have it deleted, then
+    // fetch zero inflection rows and return 200 with an empty list instead
+    // of the 404 the deletion should now produce.
+    let mut tx = pool.begin().await?;
+
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)")
         .bind(card_id)
-        .fetch_one(&pool)
+        .fetch_one(&mut *tx)
         .await?;
 
     if !exists {
         return Err(AppError::NotFound);
     }
 
-    let inflections = crate::cards::inflections_for(&pool, card_id).await?;
+    let inflections = crate::cards::inflections_for(&mut *tx, card_id).await?;
+    tx.commit().await?;
 
     Ok(Json(CardInflectionsResponse { inflections }))
 }
