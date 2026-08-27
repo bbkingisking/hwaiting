@@ -13,7 +13,8 @@ import { CustomCardsDialog } from '@/components/custom-cards-dialog'
 import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
-import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search } from 'lucide-react'
+import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
+import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search, Table } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
@@ -25,6 +26,7 @@ export function AppHeader() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [customCardsOpen, setCustomCardsOpen] = useState(false)
   const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
+  const [conjugationTablesOpen, setConjugationTablesOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
@@ -73,6 +75,12 @@ export function AppHeader() {
                 Browse Cards
               </DropdownMenuItem>
             )}
+            {isAdmin && (
+              <DropdownMenuItem onClick={() => setConjugationTablesOpen(true)}>
+                <Table className="mr-2 h-4 w-4" />
+                Conjugation Tables
+              </DropdownMenuItem>
+            )}
             {hasSuppressedCards && (
               <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
                 <EyeOff className="mr-2 h-4 w-4" />
@@ -109,6 +117,9 @@ export function AppHeader() {
       <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
       {isAdmin && (
         <BrowseCardsDialog open={browseCardsOpen} onOpenChange={setBrowseCardsOpen} />
+      )}
+      {isAdmin && (
+        <ConjugationTablesDialog open={conjugationTablesOpen} onOpenChange={setConjugationTablesOpen} />
       )}
       <ReviewHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <SuppressedCardsDialog 

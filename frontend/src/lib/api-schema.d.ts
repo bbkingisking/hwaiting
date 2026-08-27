@@ -36,6 +36,22 @@ export interface paths {
         patch: operations["edit_card"];
         trace?: never;
     };
+    "/api/admin/cards/{card_id}/inflections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_card_inflections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/invites": {
         parameters: {
             query?: never;
@@ -510,6 +526,9 @@ export interface components {
         CardInflection: {
             form: string;
             form_slug: string;
+        };
+        CardInflectionsResponse: {
+            inflections: components["schemas"]["CardInflection"][];
         };
         /**
          * @description Everything the client may see before it has attempted an answer:
@@ -1142,6 +1161,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Valid JWT but not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Card doesn't exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_card_inflections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card ID */
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description This card's resolved conjugation-matrix rows (empty if it hasn't been run through the conjugation generator) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardInflectionsResponse"];
                 };
             };
             /** @description Missing/invalid JWT */

@@ -73,6 +73,34 @@ pub struct Card {
     pub back: CardBack,
 }
 
+/// This card's resolved `conjugation_matrix_cards` rows, joined out to the
+/// catalog's `slug` - shared by `check_answer` (`CardReveal::inflections`,
+/// which needs it alongside the rest of a graded reveal) and admin's
+/// standalone per-card lookup (`admin::get_card_inflections`, which needs
+/// exactly these rows without going through the review-grading flow).
+/// `pub(crate)`, unlike `hanja_hints_for` below, because `admin` is a sibling
+/// module rather than a submodule of `cards` and can't otherwise reach it.
+pub(crate) async fn inflections_for(pool: &SqlitePool, card_id: i64) -> Result<Vec<CardInflection>, AppError> {
+    Ok(sqlx::query(
+        r#"
+        SELECT f.slug as form_slug, cmc.form
+        FROM conjugation_matrix_cards cmc
+        JOIN conjugation_matrix_forms f ON cmc.form_id = f.id
+        WHERE cmc.card_id = ?
+        ORDER BY f.sort_order
+        "#,
+    )
+    .bind(card_id)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|row| CardInflection {
+        form_slug: row.get("form_slug"),
+        form: row.get("form"),
+    })
+    .collect())
+}
+
 /// Hanja hints for `card_id`: hanja from other cards the user has already
 /// reviewed that share at least one character with `hanja`. Shared by
 /// `get_next_card` (which only needs the characters - see

@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::auth::AdminUser;
-use crate::cards::{Card, CardBack, CardFront};
+use crate::cards::{Card, CardBack, CardFront, CardInflection};
 use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 /// Distinguishes "key absent" (`None`, don't touch the column) from "key
@@ -369,6 +369,43 @@ pub async fn search_cards(
     }
 
     Ok(Json(SearchCardsResponse { cards }))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CardInflectionsResponse {
+    pub inflections: Vec<CardInflection>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/cards/{card_id}/inflections",
+    params(("card_id" = i64, Path, description = "Card ID")),
+    responses(
+        (status = 200, description = "This card's resolved conjugation-matrix rows (empty if it hasn't been run through the conjugation generator)", body = CardInflectionsResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+        (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
+pub async fn get_card_inflections(
+    _admin: AdminUser,
+    State(pool): State<SqlitePool>,
+    AppPath(card_id): AppPath<i64>,
+) -> Result<Json<CardInflectionsResponse>, AppError> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)")
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await?;
+
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+
+    let inflections = crate::cards::inflections_for(&pool, card_id).await?;
+
+    Ok(Json(CardInflectionsResponse { inflections }))
 }
 
 /// Partial card edit. Any field left out of the JSON body is untouched;

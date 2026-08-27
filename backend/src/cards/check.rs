@@ -154,24 +154,7 @@ pub async fn check_answer(
 
     let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
 
-    let inflections: Vec<CardInflection> = sqlx::query(
-        r#"
-        SELECT f.slug as form_slug, cmc.form
-        FROM conjugation_matrix_cards cmc
-        JOIN conjugation_matrix_forms f ON cmc.form_id = f.id
-        WHERE cmc.card_id = ?
-        ORDER BY f.sort_order
-        "#,
-    )
-    .bind(card_id)
-    .fetch_all(&pool)
-    .await?
-    .iter()
-    .map(|row| CardInflection {
-        form_slug: row.get("form_slug"),
-        form: row.get("form"),
-    })
-    .collect();
+    let inflections = super::inflections_for(&pool, card_id).await?;
 
     info!(
         "Checking answer for user_id: {}, card_id: {}, correct: {}",

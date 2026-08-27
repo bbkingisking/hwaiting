@@ -267,6 +267,17 @@ export async function editCard(cardId: number, updates: EditCardRequest): Promis
   })
 }
 
+type CardInflectionsResponse = Schemas['CardInflectionsResponse']
+
+// This card's resolved conjugation-matrix rows, fetched standalone rather
+// than via checkAnswer's CardReveal - admin browsing already discloses
+// target/word/sentence up front (see SearchCardsResponse), so there's no
+// review-flow secrecy left to preserve here.
+export async function getCardInflections(cardId: number): Promise<CardInflectionsResponse> {
+  const url = `${window.location.origin}/api/admin/cards/${cardId}/inflections`
+  return fetchWithAuth(url)
+}
+
 export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {
   const url = `${window.location.origin}/api/custom-cards/${cardId}`
   return fetchWithAuth(url, {
@@ -318,4 +329,5 @@ export type {
   SuppressedCardsResponse,
   AdminCard,
   SearchCardsResponse,
+  CardInflectionsResponse,
 }
