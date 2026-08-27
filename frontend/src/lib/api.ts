@@ -118,6 +118,17 @@ export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
   })
 }
 
+type HanjaDrill = Schemas['HanjaDrill']
+type HanjaDrillResponse = Schemas['HanjaDrillResponse']
+
+// Not part of the review flow: a random hanja from a card the user has
+// already mastered, for free-form recall practice. Never grades the answer
+// and never touches FSRS state - see backend cards/hanja_drill.rs.
+export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillResponse> {
+  const url = `${window.location.origin}/api/cards/hanja-drill`
+  return fetchWithAuth(url, { signal })
+}
+
 export async function getUserProfile(): Promise<UserProfile> {
   const url = `${window.location.origin}/api/user/me`
   return fetchWithAuth(url)
@@ -327,6 +338,8 @@ export type {
   DeleteCustomCardResponse,
   SuppressedCard,
   SuppressedCardsResponse,
+  HanjaDrill,
+  HanjaDrillResponse,
   AdminCard,
   SearchCardsResponse,
   CardInflectionsResponse,
