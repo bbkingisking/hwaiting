@@ -325,7 +325,7 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
             COALESCE(
                 CAST(SUM(CASE WHEN {COUNTED_REVIEW_SQL} AND {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS REAL)
                 / NULLIF(SUM(CASE WHEN {COUNTED_REVIEW_SQL} THEN 1 ELSE 0 END), 0) * 100,
-                0
+                0.0
             ) AS total_accuracy,
             MIN(reviewed_at) AS first_review_date,
             COUNT(DISTINCT date(reviewed_at)) AS distinct_days
