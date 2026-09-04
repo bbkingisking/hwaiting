@@ -423,10 +423,10 @@ pub async fn get_card_inflections(
 /// the column — that's why they're typed `Option<Option<_>>` rather than
 /// `Option<_>`, so "omitted" and "explicit null" deserialize differently.
 /// Enum-backed fields are sent as slugs, resolved server-side to
-/// lookup-table row IDs. `is_honorific`/`is_humble` aren't flattened from
-/// `inflection_hints::InflectionHintWrite` the way `custom_cards`' create/
-/// update requests are, because that struct's fields don't distinguish
-/// omitted from explicit-null the way this struct's do throughout.
+/// lookup-table row IDs. `is_honorific`/`is_humble` are declared here
+/// directly rather than flattened from a shared write-shape struct, because
+/// this struct's fields need to distinguish omitted from explicit-null
+/// throughout (see the double-option pattern above).
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateCardRequest {
     pub word: Option<String>,
@@ -600,10 +600,9 @@ pub async fn edit_card(
 
     if let Some(sid) = sentence_id {
         // Validate that target still appears in the sentence once both
-        // sides of this edit are applied - same invariant
-        // custom_cards::update_custom_card enforces, missing here because
-        // this handler grew as a freeform partial update and never
-        // re-checked it. Without this, a typo in either field produces a
+        // sides of this edit are applied - this handler grew as a freeform
+        // partial update and used not to re-check it. Without this, a typo
+        // in either field produces a
         // card that silently renders with no blank (see
         // cards::split_sentence's fallback). text and target live on
         // separate tables (sentences.text / targets.form - see migration

@@ -125,11 +125,9 @@ pub async fn get_stats(
         r#"
         SELECT COUNT(*)
         FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND (cs.last_review IS NULL)
+        WHERE (cs.last_review IS NULL)
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#
     };
@@ -142,7 +140,6 @@ pub async fn get_stats(
         sqlx::query_scalar(new_count_query)
             .bind(user_id)
             .bind(user_id)
-            .bind(user_id)
             .fetch_one(&pool)
             .await?
     };
@@ -152,16 +149,13 @@ pub async fn get_stats(
         r#"
         SELECT COUNT(*)
         FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND cs.last_review IS NOT NULL
+        WHERE cs.last_review IS NOT NULL
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
         "#,
     )
-    .bind(user_id)
     .bind(user_id)
     .bind(user_id)
     .fetch_one(&pool)
@@ -205,15 +199,12 @@ pub async fn get_stats(
         r#"
         SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
         FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
+        WHERE datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#,
     )
-    .bind(user_id)
     .bind(user_id)
     .bind(user_id)
     .fetch_one(&pool)
@@ -388,15 +379,12 @@ async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary
         r#"
         SELECT COUNT(*)
         FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-        AND (cs.last_review IS NULL)
+        WHERE (cs.last_review IS NULL)
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#,
     )
-    .bind(user_id)
     .bind(user_id)
     .bind(user_id)
     .fetch_one(pool)

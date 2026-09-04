@@ -9,13 +9,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { CustomCardsDialog } from '@/components/custom-cards-dialog'
 import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
 import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
 import { HanjaDrillsDialog } from '@/components/hanja-drills-dialog'
-import { Settings, Moon, Sun, LogOut, Plus, EyeOff, BarChart2, Search, Table, Shuffle } from 'lucide-react'
+import { Settings, Moon, Sun, LogOut, EyeOff, BarChart2, Search, Table, Shuffle } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
@@ -25,7 +24,6 @@ export function AppHeader() {
   const { theme, setTheme } = useTheme()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [customCardsOpen, setCustomCardsOpen] = useState(false)
   const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
   const [conjugationTablesOpen, setConjugationTablesOpen] = useState(false)
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
@@ -66,10 +64,6 @@ export function AppHeader() {
             <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
               <BarChart2 className="mr-2 h-4 w-4" />
               Review History
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCustomCardsOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Custom Cards
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setHanjaDrillsOpen(true)}>
               <Shuffle className="mr-2 h-4 w-4" />
@@ -120,7 +114,6 @@ export function AppHeader() {
       </header>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <CustomCardsDialog open={customCardsOpen} onOpenChange={setCustomCardsOpen} />
       {isAdmin && (
         <BrowseCardsDialog open={browseCardsOpen} onOpenChange={setBrowseCardsOpen} />
       )}

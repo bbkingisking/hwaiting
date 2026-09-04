@@ -30,8 +30,7 @@ use super::time::{logical_today_start, sqlite_datetime};
 #[derive(Serialize, ToSchema)]
 pub struct CardFront {
     pub card_id: i64,
-    /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
-    /// for user-created custom cards, which have no upstream dictionary entry.
+    /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
     pub krdict_id: Option<i64>,
     pub pos: Option<String>,
     pub origin_type: Option<String>,
@@ -74,9 +73,8 @@ pub struct CardPrompt {
 /// site used to redo `sentence.indexOf(target)` itself (and disagreed, in
 /// one case silently, about what to do when `target` isn't found).
 ///
-/// `target` is expected to be a literal substring of `sentence` - both
-/// `custom_cards::create_custom_card`/`update_custom_card` and
-/// `admin::edit_card` enforce that on write. If it somehow isn't (e.g. a
+/// `target` is expected to be a literal substring of `sentence` -
+/// `admin::edit_card` enforces that on write. If it somehow isn't (e.g. a
 /// pre-validation row), fall back to the whole sentence with no blank rather
 /// than panicking or hiding the sentence.
 pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
@@ -257,7 +255,6 @@ pub async fn get_next_card(
             gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability
         FROM cards c
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
         INNER JOIN targets tg ON tg.sentence_id = s.id
@@ -270,9 +267,8 @@ pub async fn get_next_card(
         LEFT JOIN grammar_patterns gp ON gp.id = tg.grammar_pattern_id
         LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
+        WHERE (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         {}
-        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         {}
         AND (
             cs.last_review IS NULL
@@ -291,7 +287,6 @@ pub async fn get_next_card(
     let mut query_builder = sqlx::query(&query)
         .bind(eng_id)
         .bind(eng_id)
-        .bind(user_id)
         .bind(user_id)
         .bind(user_id);
 
@@ -325,15 +320,12 @@ pub async fn get_next_card(
             r#"
             SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
             FROM cards c
-            LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
             INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
             LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-            WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-            AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
+            WHERE datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
             AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
             "#,
         )
-        .bind(user_id)
         .bind(user_id)
         .bind(user_id)
         .fetch_one(&pool)
@@ -344,16 +336,13 @@ pub async fn get_next_card(
                 r#"
                 SELECT EXISTS (
                     SELECT 1 FROM cards c
-                    LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
                     LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
                     LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-                    WHERE (ccm.card_id IS NULL OR ccm.user_id = ?)
-                    AND cs.last_review IS NULL
+                    WHERE cs.last_review IS NULL
                     AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
                 )
                 "#,
             )
-            .bind(user_id)
             .bind(user_id)
             .bind(user_id)
             .fetch_one(&pool)

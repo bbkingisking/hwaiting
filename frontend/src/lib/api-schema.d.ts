@@ -308,38 +308,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/custom-cards": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_custom_cards"];
-        put?: never;
-        post: operations["create_custom_card"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/custom-cards/{card_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_custom_card"];
-        put?: never;
-        post?: never;
-        delete: operations["delete_custom_card"];
-        options?: never;
-        head?: never;
-        patch: operations["update_custom_card"];
-        trace?: never;
-    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -513,8 +481,7 @@ export interface components {
             hanja?: string | null;
             /**
              * Format: int64
-             * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT. `None`
-             *     for user-created custom cards, which have no upstream dictionary entry.
+             * @description KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
              */
             krdict_id?: number | null;
             origin_type?: string | null;
@@ -592,16 +559,6 @@ export interface components {
              */
             inflections: components["schemas"]["CardInflection"][];
         };
-        CardTranslationExport: {
-            /**
-             * @description `languages.slug` (ISO 639-3, e.g. `"eng"`) - the same identifier
-             *     `language_id` resolves to/from everywhere else in the backend, so
-             *     export/import doesn't need a BCP47 reconstruction step of its own.
-             */
-            language: string;
-            trans_dfn?: string | null;
-            trans_word: string;
-        };
         CheckRequest: {
             answer: string;
         };
@@ -614,63 +571,6 @@ export interface components {
         CommentResponse: {
             /** Format: int64 */
             id: number;
-        };
-        CreateCustomCardRequest: components["schemas"]["InflectionHintWrite"] & {
-            alternatives?: string[] | null;
-            definition?: string | null;
-            grade?: string | null;
-            hanja?: string | null;
-            origin_type?: string | null;
-            pos?: string | null;
-            sentence: string;
-            sentence_translation: string;
-            target: string;
-            trans_dfn?: string | null;
-            trans_word: string;
-            word: string;
-        };
-        CreateCustomCardResponse: {
-            /** Format: int64 */
-            id: number;
-            success: boolean;
-        };
-        CustomCard: components["schemas"]["InflectionHint"] & {
-            /**
-             * @description Was missing here until this field was added: `CreateCustomCardRequest`,
-             *     `UpdateCustomCardRequest`, and export/import's `SentenceExport` all
-             *     accept/carry a card's alternative accepted answers, but this read
-             *     shape - what `GET /api/custom-cards` and `GET /api/custom-cards/{id}`
-             *     actually return - silently dropped them, so there was no way to see
-             *     (or build an edit form around) alternatives you'd already set outside
-             *     of a full data export. Same class of bug as `cards::Card` drifting
-             *     from `CardPrompt`/`CardReveal` - independently hand-declared shapes
-             *     of "the same card" agreeing on every field but one.
-             */
-            alternatives: string[];
-            created_at: string;
-            definition?: string | null;
-            grade?: string | null;
-            hanja?: string | null;
-            /** Format: int64 */
-            id: number;
-            origin_type?: string | null;
-            pos?: string | null;
-            sentence: string;
-            sentence_translation: string;
-            target: string;
-            trans_dfn?: string | null;
-            trans_word: string;
-            word: string;
-        };
-        CustomCardExport: {
-            definition?: string | null;
-            grade?: string | null;
-            hanja?: string | null;
-            origin_type?: string | null;
-            pos?: string | null;
-            sentences: components["schemas"]["SentenceExport"][];
-            translations: components["schemas"]["CardTranslationExport"][];
-            word: string;
         };
         DayHistory: {
             /** Format: int64 */
@@ -695,7 +595,6 @@ export interface components {
             error: string;
         };
         ExportData: {
-            custom_cards: components["schemas"]["CustomCardExport"][];
             exported_at: string;
             review_history: components["schemas"]["ReviewHistoryExport"][];
             settings: components["schemas"]["UserSettingsExport"];
@@ -807,7 +706,6 @@ export interface components {
         };
         ImportStats: {
             card_states_derived: number;
-            custom_cards_imported: number;
             reviews_imported: number;
             suppressed_cards_imported: number;
         };
@@ -844,8 +742,7 @@ export interface components {
          *     lookup-table ids back to slugs. `#[serde(flatten)]`ed into every
          *     response that carries a sentence's hints, so the wire shape (four flat
          *     top-level fields) is unchanged from before `is_honorific`/`is_humble`
-         *     existed. Also used directly (nested, not flattened) as
-         *     `export_import::SentenceExport::inflection_hint`.
+         *     existed.
          */
         InflectionHint: {
             /**
@@ -863,29 +760,11 @@ export interface components {
             speech_level?: string | null;
             tense?: string | null;
         };
-        /**
-         * @description Write shape: what a create/update request carries for a sentence's
-         *     hints, when the endpoint doesn't need to distinguish "omit" from
-         *     "explicit null" (contrast `admin::UpdateCardRequest`, which does and so
-         *     declares its own four fields with the double-option pattern instead of
-         *     flattening this). Shared by `custom_cards::CreateCustomCardRequest` and
-         *     `custom_cards::UpdateCustomCardRequest`, which already agreed on this
-         *     exact shape before `is_honorific`/`is_humble` existed.
-         */
-        InflectionHintWrite: {
-            is_honorific?: boolean | null;
-            is_humble?: boolean | null;
-            speech_level?: string | null;
-            tense?: string | null;
-        };
         InviteCode: {
             code: string;
             created_at: string;
             used_at?: string | null;
             used_by_username?: string | null;
-        };
-        ListCustomCardsResponse: {
-            cards: components["schemas"]["CustomCard"][];
         };
         ListInvitesResponse: {
             codes: components["schemas"]["InviteCode"][];
@@ -935,13 +814,6 @@ export interface components {
         SearchCardsResponse: {
             cards: components["schemas"]["Card"][];
         };
-        SentenceExport: {
-            alternatives?: string[];
-            inflection_hint?: null | components["schemas"]["InflectionHint"];
-            target: string;
-            text: string;
-            translation?: string | null;
-        };
         SignupRequest: {
             invite_code: string;
             password: string;
@@ -983,10 +855,10 @@ export interface components {
          *     the column — that's why they're typed `Option<Option<_>>` rather than
          *     `Option<_>`, so "omitted" and "explicit null" deserialize differently.
          *     Enum-backed fields are sent as slugs, resolved server-side to
-         *     lookup-table row IDs. `is_honorific`/`is_humble` aren't flattened from
-         *     `inflection_hints::InflectionHintWrite` the way `custom_cards`' create/
-         *     update requests are, because that struct's fields don't distinguish
-         *     omitted from explicit-null the way this struct's do throughout.
+         *     lookup-table row IDs. `is_honorific`/`is_humble` are declared here
+         *     directly rather than flattened from a shared write-shape struct, because
+         *     this struct's fields need to distinguish omitted from explicit-null
+         *     throughout (see the double-option pattern above).
          */
         UpdateCardRequest: {
             alternatives?: string[] | null;
@@ -1006,23 +878,6 @@ export interface components {
             trans_dfn?: string | null;
             trans_word?: string | null;
             word?: string | null;
-        };
-        UpdateCustomCardRequest: components["schemas"]["InflectionHintWrite"] & {
-            alternatives?: string[] | null;
-            definition?: string | null;
-            grade?: string | null;
-            hanja?: string | null;
-            origin_type?: string | null;
-            pos?: string | null;
-            sentence?: string | null;
-            sentence_translation?: string | null;
-            target?: string | null;
-            trans_dfn?: string | null;
-            trans_word?: string | null;
-            word?: string | null;
-        };
-        UpdateCustomCardResponse: {
-            success: boolean;
         };
         UpdateSettingsRequest: {
             /** Format: int64 */
@@ -1952,211 +1807,6 @@ export interface operations {
             };
         };
     };
-    list_custom_cards: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description All custom cards owned by the caller */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListCustomCardsResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    create_custom_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomCardRequest"];
-            };
-        };
-        responses: {
-            /** @description Custom card created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateCustomCardResponse"];
-                };
-            };
-            /** @description Empty required field or target not in sentence */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_custom_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Custom card ID */
-                card_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Single custom card */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomCard"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not found, or not owned by caller */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    delete_custom_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Custom card ID */
-                card_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom card deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not found, or not owned by caller */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    update_custom_card: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Custom card ID */
-                card_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCustomCardRequest"];
-            };
-        };
-        responses: {
-            /** @description Custom card updated (partial update) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UpdateCustomCardResponse"];
-                };
-            };
-            /** @description Empty field or target not in sentence */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not found, or not owned by caller */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     health_check: {
         parameters: {
             query?: never;
@@ -2186,7 +1836,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Full data export: settings, review history, suppressed cards, custom cards */
+            /** @description Full data export: settings, review history, suppressed cards */
             200: {
                 headers: {
                     [name: string]: unknown;
