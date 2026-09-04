@@ -19,7 +19,6 @@ pub struct ExportData {
     pub settings: UserSettingsExport,
     pub review_history: Vec<ReviewHistoryExport>,
     pub suppressed_cards: Vec<i64>,
-    pub custom_cards: Vec<CustomCardExport>,
 }
 
 // UserSettingsCore (user.rs) is the `users_settings` row proper, flattened
@@ -47,38 +46,6 @@ pub struct ReviewHistoryExport {
     pub state: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct CustomCardExport {
-    pub word: String,
-    pub definition: Option<String>,
-    pub pos: Option<String>,
-    pub origin_type: Option<String>,
-    pub hanja: Option<String>,
-    pub grade: Option<String>,
-    pub translations: Vec<CardTranslationExport>,
-    pub sentences: Vec<SentenceExport>,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct CardTranslationExport {
-    /// `languages.slug` (ISO 639-3, e.g. `"eng"`) - the same identifier
-    /// `language_id` resolves to/from everywhere else in the backend, so
-    /// export/import doesn't need a BCP47 reconstruction step of its own.
-    pub language: String,
-    pub trans_word: String,
-    pub trans_dfn: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SentenceExport {
-    pub text: String,
-    pub target: String,
-    #[serde(default)]
-    pub alternatives: Vec<String>,
-    pub translation: Option<String>,
-    pub inflection_hint: Option<crate::inflection_hints::InflectionHint>,
-}
-
 #[derive(Deserialize, ToSchema)]
 pub struct ImportDataRequest {
     pub data: ExportData,
@@ -97,7 +64,6 @@ pub struct ImportStats {
     pub card_states_derived: usize,
     pub reviews_imported: usize,
     pub suppressed_cards_imported: usize,
-    pub custom_cards_imported: usize,
 }
 
 // Export user data
@@ -105,7 +71,7 @@ pub struct ImportStats {
     get,
     path = "/api/user/export",
     responses(
-        (status = 200, description = "Full data export: settings, review history, suppressed cards, custom cards", body = ExportData),
+        (status = 200, description = "Full data export: settings, review history, suppressed cards", body = ExportData),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -117,7 +83,6 @@ pub async fn export_data(
 ) -> Result<Json<ExportData>, AppError> {
     let user_id = auth.0;
     info!("Exporting data for user_id: {}", user_id);
-    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     // Get settings
     let settings = get_user_settings(&pool, user_id).await?;
@@ -160,141 +125,17 @@ pub async fn export_data(
     .fetch_all(&pool)
     .await?;
 
-    // Get custom cards
-    let custom_card_ids: Vec<i64> = sqlx::query_scalar(
-        r#"
-        SELECT card_id
-        FROM custom_card_metadata
-        WHERE user_id = ?
-        "#
-    )
-    .bind(user_id)
-    .fetch_all(&pool)
-    .await?;
-
-    let mut custom_cards = Vec::new();
-    for card_id in custom_card_ids {
-        // Get card info
-        let card_row = sqlx::query(
-            r#"
-            SELECT c.word, c.definition, pop.slug as pos, ot.slug as origin_type,
-                   c.hanja, g.slug as grade
-            FROM cards c
-            LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
-            LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
-            LEFT JOIN grades g ON g.id = c.grade_id
-            WHERE c.id = ?
-            "#
-        )
-        .bind(card_id)
-        .fetch_one(&pool)
-        .await?;
-
-        // Get translations - joins languages.slug directly rather than a
-        // second per-row lookup.
-        let translation_rows = sqlx::query(
-            r#"
-            SELECT l.slug as language, trans_word, trans_dfn
-            FROM cards_translations ct
-            JOIN languages l ON l.id = ct.language_id
-            WHERE ct.card_id = ?
-            "#
-        )
-        .bind(card_id)
-        .fetch_all(&pool)
-        .await?;
-
-        let translations: Vec<CardTranslationExport> = translation_rows.iter().map(|row| {
-            CardTranslationExport {
-                language: row.get("language"),
-                trans_word: row.get("trans_word"),
-                trans_dfn: row.get("trans_dfn"),
-            }
-        }).collect();
-
-        // Get sentences
-        // One row per sentence, its target (and target-scoped hints) joined
-        // in directly - unlike before migration 20240101000026, a `targets`
-        // row is now guaranteed to exist for every sentence (its `form` is
-        // NOT NULL), so this no longer needs a separate per-sentence hint
-        // query that might come back empty.
-        let sentence_rows = sqlx::query(
-            r#"
-            SELECT s.id, s.text, tg.form as target,
-                   sl.slug as speech_level, tn.slug as tense,
-                   tg.is_honorific, tg.is_humble
-            FROM sentences s
-            INNER JOIN targets tg ON tg.sentence_id = s.id
-            LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
-            LEFT JOIN tenses tn ON tn.id = tg.tense_id
-            WHERE s.card_id = ?
-            "#
-        )
-        .bind(card_id)
-        .fetch_all(&pool)
-        .await?;
-
-        let mut sentences = Vec::new();
-        for sentence_row in sentence_rows {
-            let sentence_id: i64 = sentence_row.get("id");
-
-            // Get translation - sentences_translations now allows one row
-            // per (sentence_id, language_id) (migration 20240101000045);
-            // pick the eng row explicitly rather than an unqualified
-            // `WHERE sentence_id = ?`, which would now be ambiguous once a
-            // second language's row exists.
-            let translation: Option<String> = sqlx::query_scalar(
-                "SELECT translation FROM sentences_translations WHERE sentence_id = ? AND language_id = ?"
-            )
-            .bind(sentence_id)
-            .bind(eng_id)
-            .fetch_optional(&pool)
-            .await?;
-
-            let inflection_hint = Some(crate::inflection_hints::InflectionHint::from_row(&sentence_row));
-
-            // Get alternatives
-            let alternatives: Vec<String> = sqlx::query_scalar(
-                "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?"
-            )
-            .bind(sentence_id)
-            .fetch_all(&pool)
-            .await?;
-
-            sentences.push(SentenceExport {
-                text: sentence_row.get("text"),
-                target: sentence_row.get("target"),
-                alternatives,
-                translation,
-                inflection_hint,
-            });
-        }
-
-        custom_cards.push(CustomCardExport {
-            word: card_row.get("word"),
-            definition: card_row.get("definition"),
-            pos: card_row.get("pos"),
-            origin_type: card_row.get("origin_type"),
-            hanja: card_row.get("hanja"),
-            grade: card_row.get("grade"),
-            translations,
-            sentences,
-        });
-    }
-
     let export_data = ExportData {
         version: "1.0".to_string(),
         exported_at: chrono::Utc::now().to_rfc3339(),
         settings,
         review_history,
         suppressed_cards,
-        custom_cards,
     };
 
-    info!("Export complete: {} reviews, {} suppressed cards, {} custom cards",
+    info!("Export complete: {} reviews, {} suppressed cards",
         export_data.review_history.len(),
         export_data.suppressed_cards.len(),
-        export_data.custom_cards.len()
     );
 
     Ok(Json(export_data))
@@ -320,7 +161,6 @@ pub async fn import_data(
 ) -> Result<Json<ImportDataResponse>, AppError> {
     let user_id = auth.0;
     info!("Importing data for user_id: {} (overwrite: {})", user_id, payload.overwrite);
-    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     let data = payload.data;
 
@@ -350,162 +190,13 @@ pub async fn import_data(
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
-
-        // Delete custom cards (cascade will handle related tables)
-        let custom_card_ids: Vec<i64> = sqlx::query_scalar(
-            "SELECT card_id FROM custom_card_metadata WHERE user_id = ?"
-        )
-        .bind(user_id)
-        .fetch_all(&mut *tx)
-        .await?;
-
-        for card_id in custom_card_ids {
-            sqlx::query("DELETE FROM cards WHERE id = ?")
-                .bind(card_id)
-                .execute(&mut *tx)
-                .await?;
-        }
     }
 
     let mut stats = ImportStats {
         card_states_derived: 0,
         reviews_imported: 0,
         suppressed_cards_imported: 0,
-        custom_cards_imported: 0,
     };
-
-    // Import custom cards first (so we have valid card_ids for cards_states)
-    for custom_card in data.custom_cards {
-        // Resolve enum slugs -> lookup table ids, auto-registering any slug that
-        // doesn't already exist (e.g. from an older export) so import never fails
-        // just because of a stale/unknown enum value.
-        let pos_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "parts_of_speech", custom_card.pos.clone()).await?;
-        let origin_type_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "origin_types", custom_card.origin_type.clone()).await?;
-        let grade_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "grades", custom_card.grade.clone()).await?;
-
-        // Insert card
-        let card_id = sqlx::query_scalar::<_, i64>(
-            r#"
-            INSERT INTO cards (word, definition, pos_id, origin_type_id, hanja, grade_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id
-            "#
-        )
-        .bind(&custom_card.word)
-        .bind(&custom_card.definition)
-        .bind(pos_id)
-        .bind(origin_type_id)
-        .bind(&custom_card.hanja)
-        .bind(grade_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        // Insert custom_card_metadata
-        sqlx::query(
-            "INSERT INTO custom_card_metadata (card_id, user_id) VALUES (?, ?)"
-        )
-        .bind(card_id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
-
-        // Insert translations - an unrecognized language (e.g. from an
-        // export this app's `languages` catalog has no row for) is skipped
-        // rather than failing the whole import, same "stale/foreign value
-        // never fails import outright" policy as
-        // enum_lookup::resolve_or_create_id.
-        for translation in custom_card.translations {
-            let Some(language_id): Option<i64> = sqlx::query_scalar("SELECT id FROM languages WHERE slug = ?")
-                .bind(&translation.language)
-                .fetch_optional(&mut *tx)
-                .await?
-            else {
-                warn!("Skipping translation with unrecognized language: {}", translation.language);
-                continue;
-            };
-            sqlx::query(
-                r#"
-                INSERT INTO cards_translations (card_id, language_id, trans_word, trans_dfn)
-                VALUES (?, ?, ?, ?)
-                "#
-            )
-            .bind(card_id)
-            .bind(language_id)
-            .bind(&translation.trans_word)
-            .bind(&translation.trans_dfn)
-            .execute(&mut *tx)
-            .await?;
-        }
-
-        // Insert sentences
-        for sentence in custom_card.sentences {
-            let sentence_id = sqlx::query_scalar::<_, i64>(
-                r#"
-                INSERT INTO sentences (card_id, text)
-                VALUES (?, ?)
-                RETURNING id
-                "#
-            )
-            .bind(card_id)
-            .bind(&sentence.text)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            // Insert sentence translation if present - SentenceExport
-            // carries no language of its own (sentences_translations always
-            // assumed English, same as cards_translations did before it had
-            // a language column at all - see migration 20240101000045), so
-            // this is always the eng row.
-            if let Some(translation) = sentence.translation {
-                sqlx::query(
-                    "INSERT INTO sentences_translations (sentence_id, language_id, translation) VALUES (?, ?, ?)"
-                )
-                .bind(sentence_id)
-                .bind(eng_id)
-                .bind(&translation)
-                .execute(&mut *tx)
-                .await?;
-            }
-
-            // Insert into targets - unconditional (form is required on
-            // every sentence); older exports with no inflection_hint at all
-            // just get a row with unset hints, same as a freshly-created
-            // untagged card.
-            let hint = sentence.inflection_hint.unwrap_or_default();
-            let speech_level_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "speech_levels", hint.speech_level).await?;
-            let tense_id = crate::enum_lookup::resolve_or_create_id(&mut tx, "tenses", hint.tense).await?;
-            sqlx::query(
-                r#"
-                INSERT INTO targets (sentence_id, form, speech_level_id, tense_id, is_honorific, is_humble)
-                VALUES (?, ?, ?, ?, ?, ?)
-                "#
-            )
-            .bind(sentence_id)
-            .bind(&sentence.target)
-            .bind(speech_level_id)
-            .bind(tense_id)
-            .bind(hint.is_honorific)
-            .bind(hint.is_humble)
-            .execute(&mut *tx)
-            .await?;
-
-            // Insert alternatives
-            for alt in &sentence.alternatives {
-                let trimmed = alt.trim();
-                if !trimmed.is_empty() {
-                    sqlx::query(
-                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
-                    )
-                    .bind(sentence_id)
-                    .bind(trimmed)
-                    .execute(&mut *tx)
-                    .await?;
-                }
-            }
-        }
-
-        stats.custom_cards_imported += 1;
-    }
 
     // Import review history (must come before cards_states derivation)
     for review in data.review_history {

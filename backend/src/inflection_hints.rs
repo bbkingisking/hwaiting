@@ -2,12 +2,11 @@
 //! surface that reads or writes the `targets` table (see migration
 //! 20240101000026 - `speech_level_id`/`tense_id`/`is_honorific`/
 //! `is_humble` all live on that table, alongside the target's own `form`).
-//! Previously hand-declared per-struct at each of `cards::CardFront`,
-//! `custom_cards::CustomCard`, and export_import's now-deleted
-//! `InflectionHintExport` (and independently again as request fields on the
-//! create/update side) -- the exact "same shape, agreeing on every field
-//! until one drifts" risk `custom_cards::CustomCard`'s own doc comment
-//! already flags for a sibling field. `is_honorific`/`is_humble` (added by
+//! Previously hand-declared per-struct at each of `cards::CardFront` and
+//! export_import's now-deleted `InflectionHintExport` (and independently
+//! again as request fields on the create/update side) -- the exact "same
+//! shape, agreeing on every field until one drifts" risk this module exists
+//! to avoid. `is_honorific`/`is_humble` (added by
 //! migration 20240101000025) are the two fields most likely to repeat that
 //! history if left to be added separately at each call site, so they're
 //! introduced here once instead.
@@ -19,8 +18,7 @@ use utoipa::ToSchema;
 /// lookup-table ids back to slugs. `#[serde(flatten)]`ed into every
 /// response that carries a sentence's hints, so the wire shape (four flat
 /// top-level fields) is unchanged from before `is_honorific`/`is_humble`
-/// existed. Also used directly (nested, not flattened) as
-/// `export_import::SentenceExport::inflection_hint`.
+/// existed.
 #[derive(Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct InflectionHint {
     pub speech_level: Option<String>,
@@ -55,19 +53,4 @@ impl InflectionHint {
             is_humble: row.get("is_humble"),
         }
     }
-}
-
-/// Write shape: what a create/update request carries for a sentence's
-/// hints, when the endpoint doesn't need to distinguish "omit" from
-/// "explicit null" (contrast `admin::UpdateCardRequest`, which does and so
-/// declares its own four fields with the double-option pattern instead of
-/// flattening this). Shared by `custom_cards::CreateCustomCardRequest` and
-/// `custom_cards::UpdateCustomCardRequest`, which already agreed on this
-/// exact shape before `is_honorific`/`is_humble` existed.
-#[derive(Deserialize, Clone, Default, ToSchema)]
-pub struct InflectionHintWrite {
-    pub speech_level: Option<String>,
-    pub tense: Option<String>,
-    pub is_honorific: Option<bool>,
-    pub is_humble: Option<bool>,
 }

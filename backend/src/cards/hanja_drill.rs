@@ -54,10 +54,8 @@ pub async fn get_hanja_drill(
         FROM cards c
         INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ? AND cs.state = ?
         INNER JOIN cards_translations ct ON ct.card_id = c.id AND ct.language_id = ?
-        LEFT JOIN custom_card_metadata ccm ON c.id = ccm.card_id
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE c.hanja IS NOT NULL AND c.hanja != ''
-          AND (ccm.card_id IS NULL OR ccm.user_id = ?)
           AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         ORDER BY RANDOM()
         LIMIT 1
@@ -66,7 +64,6 @@ pub async fn get_hanja_drill(
     .bind(user_id)
     .bind(MASTERED_STATE)
     .bind(eng_id)
-    .bind(user_id)
     .bind(user_id)
     .fetch_optional(&pool)
     .await?;

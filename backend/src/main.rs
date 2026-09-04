@@ -18,7 +18,6 @@ mod admin;
 mod auth;
 mod cards;
 mod credentials;
-mod custom_cards;
 mod db;
 mod enum_lookup;
 mod error;
@@ -88,11 +87,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/cards/search", get(admin::search_cards))
         .route("/admin/cards/{card_id}", patch(admin::edit_card))
         .route("/admin/cards/{card_id}/inflections", get(admin::get_card_inflections))
-        .route("/custom-cards", get(custom_cards::list_custom_cards))
-        .route("/custom-cards", post(custom_cards::create_custom_card))
-        .route("/custom-cards/{card_id}", get(custom_cards::get_custom_card))
-        .route("/custom-cards/{card_id}", patch(custom_cards::update_custom_card))
-        .route("/custom-cards/{card_id}", delete(custom_cards::delete_custom_card))
         .route("/health", get(health_check))
         .with_state(pool);
 

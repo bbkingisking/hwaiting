@@ -202,47 +202,6 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
   })
 }
 
-// Custom Cards API
-
-type CustomCard = Schemas['CustomCard']
-type CreateCustomCardRequest = Schemas['CreateCustomCardRequest']
-type CreateCustomCardResponse = Schemas['CreateCustomCardResponse']
-type ListCustomCardsResponse = Schemas['ListCustomCardsResponse']
-type UpdateCustomCardRequest = Schemas['UpdateCustomCardRequest']
-type UpdateCustomCardResponse = Schemas['UpdateCustomCardResponse']
-
-// custom_cards::delete_custom_card returns 204 No Content - no response body,
-// no backend schema. fetchWithAuth synthesizes { success: true } for any 204.
-interface DeleteCustomCardResponse {
-  success: boolean
-}
-
-export async function createCustomCard(card: CreateCustomCardRequest): Promise<CreateCustomCardResponse> {
-  const url = `${window.location.origin}/api/custom-cards`
-  return fetchWithAuth(url, {
-    method: 'POST',
-    body: JSON.stringify(card),
-  })
-}
-
-export async function listCustomCards(): Promise<ListCustomCardsResponse> {
-  const url = `${window.location.origin}/api/custom-cards`
-  return fetchWithAuth(url)
-}
-
-export async function getCustomCard(cardId: number): Promise<CustomCard> {
-  const url = `${window.location.origin}/api/custom-cards/${cardId}`
-  return fetchWithAuth(url)
-}
-
-export async function updateCustomCard(cardId: number, updates: UpdateCustomCardRequest): Promise<UpdateCustomCardResponse> {
-  const url = `${window.location.origin}/api/custom-cards/${cardId}`
-  return fetchWithAuth(url, {
-    method: 'PATCH',
-    body: JSON.stringify(updates),
-  })
-}
-
 // Backend's admin::AdminCard and cards::NextCardResponse used to be two
 // independently hand-declared structs that happened to agree on most
 // fields - now unified into one schema, cards::Card, reused by both.
@@ -289,13 +248,6 @@ export async function getCardInflections(cardId: number, signal?: AbortSignal): 
   return fetchWithAuth(url, { signal })
 }
 
-export async function deleteCustomCard(cardId: number): Promise<DeleteCustomCardResponse> {
-  const url = `${window.location.origin}/api/custom-cards/${cardId}`
-  return fetchWithAuth(url, {
-    method: 'DELETE',
-  })
-}
-
 // FSRS Parameter Optimization
 
 type OptimizeFsrsResponse = Schemas['OptimizeFsrsResponse']
@@ -329,13 +281,6 @@ export type {
   StatsResponse,
   UserSettings,
   UpdateSettingsRequest,
-  CustomCard,
-  CreateCustomCardRequest,
-  CreateCustomCardResponse,
-  ListCustomCardsResponse,
-  UpdateCustomCardRequest,
-  UpdateCustomCardResponse,
-  DeleteCustomCardResponse,
   SuppressedCard,
   SuppressedCardsResponse,
   HanjaDrill,

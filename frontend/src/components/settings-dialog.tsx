@@ -157,7 +157,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const result: ImportResponse = await importUserData(pendingImportFile, true)
       setImportMessage({
         type: 'success',
-        text: `Successfully imported ${result.stats.card_states_derived} card states, ${result.stats.reviews_imported} reviews, ${result.stats.suppressed_cards_imported} suppressed cards, and ${result.stats.custom_cards_imported} custom cards`
+        text: `Successfully imported ${result.stats.card_states_derived} card states, ${result.stats.reviews_imported} reviews, and ${result.stats.suppressed_cards_imported} suppressed cards`
       })
     } catch (error) {
       console.error('Failed to import data:', error)
@@ -645,7 +645,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <li>Card states (FSRS stability, difficulty, due dates)</li>
               <li>Review history (all past review records)</li>
               <li>Suppressed cards</li>
-              <li>Custom cards (if any)</li>
               <li>Settings (preferences)</li>
             </ul>
             <p className="text-sm font-semibold">
