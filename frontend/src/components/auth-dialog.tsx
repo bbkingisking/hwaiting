@@ -175,9 +175,6 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
               </form>
             ) : (
               <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">
-                  Sign in with a passkey already registered on this device.
-                </p>
                 {passkeyError && (
                   <p role="alert" className="text-sm text-destructive">{passkeyError}</p>
                 )}
