@@ -24,6 +24,7 @@ mod error;
 mod export_import;
 mod inflection_hints;
 mod openapi;
+mod passkey;
 mod user;
 
 #[tokio::main]
@@ -59,10 +60,20 @@ async fn main() -> anyhow::Result<()> {
     // Initialize database
     let pool = db::init().await?;
 
+    // Router state: wraps the pool plus the WebAuthn passkey machinery
+    // (RP config, in-memory ceremony table). Every handler outside
+    // `passkey.rs` still declares `State<SqlitePool>` unchanged - see
+    // `passkey::AppState`'s `FromRef<AppState> for SqlitePool` impl.
+    let state = passkey::AppState::new(pool);
+
     // Build API routes
     let api_routes = Router::new()
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
+        .route("/auth/passkey/register/start", post(passkey::register_start))
+        .route("/auth/passkey/register/finish", post(passkey::register_finish))
+        .route("/auth/passkey/login/start", post(passkey::login_start))
+        .route("/auth/passkey/login/finish", post(passkey::login_finish))
         .route("/cards/next", get(cards::get_next_card))
         .route("/cards/field-values", get(cards::list_field_values))
         .route("/cards/{card_id}/check", post(cards::check_answer))
@@ -80,6 +91,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/user/settings", patch(user::update_settings))
         .route("/user/export", get(export_import::export_data))
         .route("/user/import", post(export_import::import_data))
+        .route("/user/passkeys", get(passkey::list_passkeys))
+        .route("/user/passkeys/register/start", post(passkey::add_passkey_start))
+        .route("/user/passkeys/register/finish", post(passkey::add_passkey_finish))
+        .route("/user/passkeys/{passkey_id}", delete(passkey::delete_passkey))
         .route("/admin/users", get(admin::list_users))
         .route("/admin/invites", get(admin::list_invites))
         .route("/admin/invites", post(admin::generate_invites))
@@ -88,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/cards/{card_id}", patch(admin::edit_card))
         .route("/admin/cards/{card_id}/inflections", get(admin::get_card_inflections))
         .route("/health", get(health_check))
-        .with_state(pool);
+        .with_state(state);
 
     // Combine routes - API takes precedence over static files
     let mut app = Router::new()

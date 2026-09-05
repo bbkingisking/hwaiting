@@ -14,13 +14,13 @@ import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
 import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
 import { HanjaDrillsDialog } from '@/components/hanja-drills-dialog'
-import { Settings, Moon, Sun, LogOut, EyeOff, BarChart2, Search, Table, Shuffle } from 'lucide-react'
+import { Settings, Moon, Sun, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 
 
 
 export function AppHeader() {
-  const { username, isAuthenticated, isAdmin, logout } = useAuth()
+  const { isAuthenticated, isAdmin, logout } = useAuth()
   const { theme, setTheme } = useTheme()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -49,7 +49,7 @@ export function AppHeader() {
     setTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
-  if (!isAuthenticated || !username) {
+  if (!isAuthenticated) {
     return null
   }
 
@@ -57,8 +57,8 @@ export function AppHeader() {
     <>
       <header className="fixed top-4 right-4 z-50 flex items-center gap-3">
         <DropdownMenu>
-          <DropdownMenuTrigger aria-label={`User menu for ${username}`} className="px-3 py-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="text-sm font-medium">{username}</span>
+          <DropdownMenuTrigger aria-label="Account menu" className="p-2 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <User className="h-4 w-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => setHistoryOpen(true)}>

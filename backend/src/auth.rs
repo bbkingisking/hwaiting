@@ -1,5 +1,5 @@
 use axum::{
-    extract::{State, FromRequestParts},
+    extract::{State, FromRef, FromRequestParts},
     http::{request::Parts, StatusCode},
     Json,
 };
@@ -9,6 +9,7 @@ use argon2::{
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
 use std::env;
@@ -33,7 +34,9 @@ pub struct SignupRequest {
 #[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
     pub token: String,
-    pub username: String,
+    /// `None` for an account created via passkey, which has no username -
+    /// see [`crate::passkey`].
+    pub username: Option<String>,
     pub is_admin: bool,
 }
 
@@ -71,8 +74,15 @@ pub async fn login(
 
             let user_id: i64 = row.get("id");
             let stored_username: String = row.get("username");
-            let password_hash: String = row.get("password_hash");
+            let password_hash: Option<String> = row.get("password_hash");
             let is_admin: bool = row.get("is_admin");
+
+            // A passkey-only account has no password_hash to check against -
+            // password login for it is correctly impossible, not just unset.
+            let Some(password_hash) = password_hash else {
+                warn!("Password login attempt for passkey-only account: {}", username);
+                return Err(AppError::InvalidCredentials);
+            };
 
             // Parse the stored hash
             let parsed_hash = PasswordHash::new(&password_hash)?;
@@ -88,7 +98,7 @@ pub async fn login(
                 let token = generate_token(user_id)?;
                 Ok(Json(AuthResponse {
                     token,
-                    username: stored_username,
+                    username: Some(stored_username),
                     is_admin,
                 }))
             } else {
@@ -164,9 +174,15 @@ pub async fn signup(
         .hash_password(password.as_bytes(), &salt)?
         .to_string();
 
-    let result = sqlx::query("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+    // `handle` is the WebAuthn user handle (see migration 20260904000000)
+    // and is NOT NULL with no default, so every account needs one even
+    // when created through this password path rather than passkey signup.
+    let handle: [u8; 16] = rand::rng().random();
+
+    let result = sqlx::query("INSERT INTO users (username, password_hash, handle) VALUES (?, ?, ?)")
         .bind(username)
         .bind(&password_hash)
+        .bind(handle.as_slice())
         .execute(&pool)
         .await?;
 
@@ -190,7 +206,7 @@ pub async fn signup(
 
     Ok((StatusCode::CREATED, Json(AuthResponse {
         token,
-        username: username.to_string(),
+        username: Some(username.to_string()),
         is_admin,
     })))
 }
@@ -214,7 +230,11 @@ fn jwt_ttl_seconds() -> Option<i64> {
     (secs > 0).then_some(secs)
 }
 
-fn generate_token(user_id: i64) -> Result<String, AppError> {
+/// Crate-visible (not just this module's) since [`crate::passkey`]'s
+/// login/register-finish handlers issue the exact same JWT this
+/// username/password path does - passkey auth is just another way to reach
+/// this function, not a separate token scheme.
+pub(crate) fn generate_token(user_id: i64) -> Result<String, AppError> {
     use jsonwebtoken::{encode, EncodingKey, Header};
 
     let jwt_secret = crate::credentials::jwt_secret();
@@ -301,20 +321,24 @@ where
 #[allow(dead_code)]
 pub struct AdminUser(pub i64);
 
-impl FromRequestParts<SqlitePool> for AdminUser
+impl<S> FromRequestParts<S> for AdminUser
+where
+    S: Send + Sync,
+    SqlitePool: FromRef<S>,
 {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &SqlitePool) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         // First, extract the user using AuthUser
         let AuthUser(user_id) = AuthUser::from_request_parts(parts, state).await?;
+        let pool = SqlitePool::from_ref(state);
 
         // Check if user is admin
         let is_admin: bool = sqlx::query_scalar(
             "SELECT is_admin FROM users WHERE id = ?"
         )
         .bind(user_id)
-        .fetch_optional(state)
+        .fetch_optional(&pool)
         .await?
         .unwrap_or(false);
 
