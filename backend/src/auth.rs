@@ -134,32 +134,19 @@ pub async fn signup(
 
     info!("Signup attempt for user: {}", username);
 
-    // Validate invite code
-    let invite = sqlx::query(
-        "SELECT id, used_at FROM invite_codes WHERE code = ?"
-    )
-    .bind(invite_code)
-    .fetch_optional(&pool)
-    .await?;
+    // One transaction for the whole thing: checking the invite code,
+    // creating the user, and consuming the code all need to see (and
+    // commit) a consistent view, or a concurrent signup could slip in
+    // between the check and the consume and end up sharing the same code -
+    // see `check_invite_code`'s doc comment.
+    let mut tx = pool.begin().await?;
 
-    match invite {
-        Some(row) => {
-            let used_at: Option<String> = row.get("used_at");
-            if used_at.is_some() {
-                warn!("Signup attempt with already used invite code");
-                return Err(AppError::InvalidInviteCode);
-            }
-        }
-        None => {
-            warn!("Signup attempt with invalid invite code");
-            return Err(AppError::InvalidInviteCode);
-        }
-    }
+    check_invite_code(&mut *tx, invite_code).await?;
 
     // Check if username already exists
     let existing_user = sqlx::query("SELECT id FROM users WHERE username = ?")
         .bind(username)
-        .fetch_optional(&pool)
+        .fetch_optional(&mut *tx)
         .await?;
 
     if existing_user.is_some() {
@@ -183,7 +170,7 @@ pub async fn signup(
         .bind(username)
         .bind(&password_hash)
         .bind(handle.as_slice())
-        .execute(&pool)
+        .execute(&mut *tx)
         .await?;
 
     let user_id = result.last_insert_rowid();
@@ -192,14 +179,8 @@ pub async fn signup(
     // New users are not admins by default
     let is_admin = false;
 
-    // Mark invite code as used
-    sqlx::query("UPDATE invite_codes SET used_at = CURRENT_TIMESTAMP, used_by_user_id = ? WHERE code = ?")
-        .bind(user_id)
-        .bind(invite_code)
-        .execute(&pool)
-        .await?;
-
-    info!("Invite code marked as used");
+    consume_invite_code(&mut *tx, invite_code, user_id).await?;
+    tx.commit().await?;
 
     // Generate JWT token
     let token = generate_token(user_id)?;
@@ -209,6 +190,66 @@ pub async fn signup(
         username: Some(username.to_string()),
         is_admin,
     })))
+}
+
+/// Checks that `code` names an unused invite code, without consuming it.
+/// Generic over `SqlitePool` and `Transaction` (see `enum_lookup.rs` for
+/// the same pattern) so a caller running inside a transaction - as
+/// `signup` above and [`crate::passkey`]'s public registration ceremony
+/// both do, to keep "code still valid" and "code now consumed" atomic with
+/// the user insert between them - can pass `&mut *tx`.
+pub(crate) async fn check_invite_code<'e, E>(executor: E, code: &str) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let invite = sqlx::query("SELECT id, used_at FROM invite_codes WHERE code = ?")
+        .bind(code)
+        .fetch_optional(executor)
+        .await?;
+
+    match invite {
+        Some(row) => {
+            let used_at: Option<String> = row.get("used_at");
+            if used_at.is_some() {
+                warn!("Signup attempt with already used invite code");
+                Err(AppError::InvalidInviteCode)
+            } else {
+                Ok(())
+            }
+        }
+        None => {
+            warn!("Signup attempt with invalid invite code");
+            Err(AppError::InvalidInviteCode)
+        }
+    }
+}
+
+/// Marks `code` used by `user_id`. Only ever called immediately after
+/// [`check_invite_code`] on the same connection/transaction, so the
+/// `used_at IS NULL` guard here is belt-and-suspenders (nothing else could
+/// have raced it within one transaction) rather than the sole protection -
+/// see `check_invite_code`'s doc comment on why callers open a transaction
+/// at all.
+pub(crate) async fn consume_invite_code<'e, E>(executor: E, code: &str, user_id: i64) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let result = sqlx::query(
+        "UPDATE invite_codes SET used_at = CURRENT_TIMESTAMP, used_by_user_id = ? \
+         WHERE code = ? AND used_at IS NULL"
+    )
+    .bind(user_id)
+    .bind(code)
+    .execute(executor)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        warn!("Invite code consumed by a concurrent request before user_id={user_id} could claim it");
+        return Err(AppError::InvalidInviteCode);
+    }
+
+    info!("Invite code marked as used");
+    Ok(())
 }
 
 /// TTL for newly issued JWTs, in seconds, from `JWT_EXPIRY_SECONDS`. Unset or

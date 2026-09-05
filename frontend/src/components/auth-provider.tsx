@@ -5,16 +5,22 @@ import { apiBase, assertionToJson, attestationToJson, describeCeremonyError, toC
 interface AuthContextType {
   token: string | null
   isAdmin: boolean
+  // Username/password login against an existing account.
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
+  // Username/password sign-up. Gated on the same invite codes as
+  // `passkeyRegister` below - see backend `auth::check_invite_code`.
+  signup: (username: string, password: string, inviteCode: string) => Promise<{ success: boolean; error?: string }>
   // Passkey sign-in: a discoverable-credential assertion against an
-  // account that already exists. Takes no arguments - see [[hwaiting
-  // passkey plan]] for why: no username, email, or any other identifier is
-  // ever collected.
-  login: () => Promise<{ success: boolean; error?: string }>
+  // account that already exists. Takes no arguments - the passkey itself,
+  // not any identifier the user types, is how the account is found.
+  passkeyLogin: () => Promise<{ success: boolean; error?: string }>
   // Passkey sign-up: registers a new passkey and creates the account it
-  // belongs to in the same ceremony. A deliberately separate action from
-  // `login`, not a fallback tried after it fails - see this feature's
-  // design notes for why an automatic try-then-fallback flow was dropped.
-  register: () => Promise<{ success: boolean; error?: string }>
+  // belongs to in the same ceremony, gated on the same invite code
+  // `signup` above requires. A deliberately separate action from
+  // `passkeyLogin`, not a fallback tried after it fails - see this
+  // feature's design notes for why an automatic try-then-fallback flow
+  // was dropped.
+  passkeyRegister: (inviteCode: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -69,20 +75,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(TOKEN_KEY, data.token)
   }
 
-  // Shared shape of both ceremonies: POST start (no body), run the
-  // matching navigator.credentials.* call, POST finish with the result.
-  // `runCeremony` and `finish` are async so callers still get one
+  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    let response
+    try {
+      response = await fetch(`${apiBase()}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+    } catch (error) {
+      return { success: false, error: 'Network error - could not connect to server' }
+    }
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Authentication failed' }
+    }
+    applySession(data)
+    return { success: true }
+  }
+
+  const signup = async (
+    username: string,
+    password: string,
+    inviteCode: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    let response
+    try {
+      response = await fetch(`${apiBase()}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, invite_code: inviteCode }),
+      })
+    } catch (error) {
+      return { success: false, error: 'Network error - could not connect to server' }
+    }
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Signup failed' }
+    }
+    applySession(data)
+    return { success: true }
+  }
+
+  // Shared shape of both passkey ceremonies: POST start (with `startBody`,
+  // if any), run the matching navigator.credentials.* call, POST finish
+  // with the result. `runCeremony` is async so callers still get one
   // `{ success, error }` result whether the failure came from the network,
   // the browser, or the server.
   const runCeremony = async (
     kind: 'login' | 'register',
+    startBody: object | undefined,
     getCredential: (publicKey: any) => Promise<PublicKeyCredential | null>,
     toJson: (cred: PublicKeyCredential) => unknown
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       requireWebAuthnSupport()
 
-      const startResponse = await fetch(`${apiBase()}/api/auth/passkey/${kind}/start`, { method: 'POST' })
+      const startResponse = await fetch(`${apiBase()}/api/auth/passkey/${kind}/start`, {
+        method: 'POST',
+        ...(startBody && {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(startBody),
+        }),
+      })
       const startData = await startResponse.json().catch(() => ({}))
       if (!startResponse.ok) {
         return { success: false, error: startData.error || `Could not start ${kind}` }
@@ -116,16 +173,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const login = () =>
+  const passkeyLogin = () =>
     runCeremony(
       'login',
+      undefined,
       (publicKey) => navigator.credentials.get({ publicKey: toRequestOptions(publicKey) }) as Promise<PublicKeyCredential | null>,
       assertionToJson
     )
 
-  const register = () =>
+  const passkeyRegister = (inviteCode: string) =>
     runCeremony(
       'register',
+      { invite_code: inviteCode },
       (publicKey) => navigator.credentials.create({ publicKey: toCreationOptions(publicKey) }) as Promise<PublicKeyCredential | null>,
       attestationToJson
     )
@@ -142,7 +201,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isAdmin,
         login,
-        register,
+        signup,
+        passkeyLogin,
+        passkeyRegister,
         logout,
         isAuthenticated: !!token && !loading,
       }}

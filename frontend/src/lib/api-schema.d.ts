@@ -929,6 +929,9 @@ export interface components {
             review_count: number;
             success: boolean;
         };
+        PasskeyRegisterStartRequest: {
+            invite_code: string;
+        };
         PasskeySummary: {
             created_at: string;
             /** Format: int64 */
@@ -1566,7 +1569,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthResponse"];
                 };
             };
-            /** @description Ceremony verification failed, or unknown ceremony id */
+            /** @description Ceremony verification failed, unknown ceremony id, or the invite code it was started with got used up by someone else in the meantime */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1593,7 +1596,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRegisterStartRequest"];
+            };
+        };
         responses: {
             /** @description WebAuthn creation options for a new passkey account. Opaque to OpenAPI - pass straight to navigator.credentials.create() after base64url-decoding challenge/user.id. */
             200: {
@@ -1601,6 +1608,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Invalid/used invite code, or malformed request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };

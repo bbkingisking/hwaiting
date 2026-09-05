@@ -70,6 +70,7 @@ impl Modify for SecurityAddon {
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,
+        crate::passkey::PasskeyRegisterStartRequest,
         crate::passkey::PasskeySummary,
         crate::passkey::ListPasskeysResponse,
         crate::cards::FieldValues,
@@ -107,8 +108,9 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "auth", description = "Invite code-gated username/password sign-up and login, \
-            plus passkey (WebAuthn) sign-up and login - two independent ways to reach the same JWT"),
+        (name = "auth", description = "Invite code-gated sign-up and login, via either username/password \
+            or passkey (WebAuthn) - two independent ways to reach the same JWT, both gated on the same \
+            invite codes"),
         (name = "cards", description = "Review flow, FSRS scheduling, stats"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),
