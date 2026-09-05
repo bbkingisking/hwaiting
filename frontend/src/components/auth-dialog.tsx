@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/components/auth-provider'
 
@@ -11,18 +12,21 @@ interface AuthDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// Password and passkey are two independent ways to reach the same account
-// system, both gated on the same invite codes (see backend
-// auth::check_invite_code / passkey.rs's module doc) - this dialog's outer
-// tabs pick the method, not "login" vs "signup" (that split lives one
-// level down, inside each method, since it means something different for
-// each: a password account's credentials are typed in either way, while a
-// passkey sign-up registers a brand new credential and sign-in reuses one
-// already on the device).
-type PasskeyAction = 'login' | 'register'
+// Login/Sign Up (what the user is trying to do) is the primary, tab-shaped
+// choice. Password/Passkey (how) is secondary and binary, so it's a Switch,
+// not a second row of tabs - nesting a full tablist inside a tab panel reads
+// oddly and is a shaky ARIA pattern for something that's really just an
+// on/off. The method is one piece of state shared across both tabs (not
+// reset when switching Login <-> Sign Up): it answers "how do I
+// authenticate", which doesn't change depending on what the user is doing
+// this moment. Both methods are gated on the same invite codes - see
+// backend auth::check_invite_code / passkey.rs's module doc.
+type Method = 'password' | 'passkey'
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const { login, signup, passkeyLogin, passkeyRegister } = useAuth()
+
+  const [method, setMethod] = useState<Method>('password')
 
   // Password method state
   const [loginWho, setLoginWho] = useState('')
@@ -37,7 +41,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
   // Passkey method state
   const [passkeyInviteCode, setPasskeyInviteCode] = useState('')
-  const [passkeyBusy, setPasskeyBusy] = useState<PasskeyAction | null>(null)
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [passkeyError, setPasskeyError] = useState('')
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -77,18 +81,46 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     setIsSignupLoading(false)
   }
 
-  const runPasskeyAction = async (action: PasskeyAction) => {
+  const runPasskeyLogin = async () => {
     setPasskeyError('')
-    setPasskeyBusy(action)
-    const result = await (action === 'login' ? passkeyLogin() : passkeyRegister(passkeyInviteCode))
+    setPasskeyBusy(true)
+    const result = await passkeyLogin()
+    if (result.success) {
+      onOpenChange(false)
+    } else {
+      setPasskeyError(result.error || 'Sign-in failed')
+    }
+    setPasskeyBusy(false)
+  }
+
+  const runPasskeyRegister = async () => {
+    setPasskeyError('')
+    setPasskeyBusy(true)
+    const result = await passkeyRegister(passkeyInviteCode)
     if (result.success) {
       onOpenChange(false)
       setPasskeyInviteCode('')
     } else {
-      setPasskeyError(result.error || (action === 'login' ? 'Sign-in failed' : 'Account creation failed'))
+      setPasskeyError(result.error || 'Account creation failed')
     }
-    setPasskeyBusy(null)
+    setPasskeyBusy(false)
   }
+
+  const methodToggle = (
+    <div className="flex items-center justify-center gap-3 pb-2">
+      <Label htmlFor="auth-method" className={method === 'password' ? '' : 'text-muted-foreground font-normal'}>
+        Password
+      </Label>
+      <Switch
+        id="auth-method"
+        checked={method === 'passkey'}
+        onCheckedChange={(checked) => setMethod(checked ? 'passkey' : 'password')}
+      />
+      <Label htmlFor="auth-method" className={method === 'passkey' ? '' : 'text-muted-foreground font-normal'}>
+        Passkey
+      </Label>
+    </div>
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -96,137 +128,125 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         <DialogHeader>
           <DialogTitle>Welcome</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue="password" className="w-full">
+        <Tabs defaultValue="login" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="password">Password</TabsTrigger>
-            <TabsTrigger value="passkey">Passkey</TabsTrigger>
+            <TabsTrigger value="login">Login</TabsTrigger>
+            <TabsTrigger value="signup">Sign Up</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="password">
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
-              <TabsContent value="login">
-                <form onSubmit={handleLoginSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-who">who?</Label>
-                    <Input
-                      id="login-who"
-                      type="text"
-                      aria-label="Username (who?)"
-                      aria-invalid={loginError !== ''}
-                      value={loginWho}
-                      onChange={(e) => setLoginWho(e.target.value)}
-                      placeholder="username"
-                      autoComplete="username"
-                      disabled={isLoginLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-really">really?</Label>
-                    <Input
-                      id="login-really"
-                      type="password"
-                      aria-label="Password (really?)"
-                      aria-invalid={loginError !== ''}
-                      value={loginReally}
-                      onChange={(e) => setLoginReally(e.target.value)}
-                      placeholder="password"
-                      autoComplete="current-password"
-                      disabled={isLoginLoading}
-                    />
-                  </div>
-                  {loginError && (
-                    <p role="alert" className="text-sm text-destructive">{loginError}</p>
-                  )}
-                  <Button type="submit" className="w-full" disabled={isLoginLoading || !loginWho || !loginReally}>
-                    {isLoginLoading ? 'Authenticating...' : 'Enter'}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="signup">
-                <form onSubmit={handleSignupSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-who">who?</Label>
-                    <Input
-                      id="signup-who"
-                      type="text"
-                      aria-label="Username (who?)"
-                      aria-invalid={signupError !== ''}
-                      value={signupWho}
-                      onChange={(e) => setSignupWho(e.target.value)}
-                      placeholder="username"
-                      autoComplete="username"
-                      disabled={isSignupLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-really">really?</Label>
-                    <Input
-                      id="signup-really"
-                      type="password"
-                      aria-label="Password (really?)"
-                      aria-invalid={signupError !== ''}
-                      value={signupReally}
-                      onChange={(e) => setSignupReally(e.target.value)}
-                      placeholder="password"
-                      autoComplete="new-password"
-                      disabled={isSignupLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-invite-code">invite code</Label>
-                    <Input
-                      id="signup-invite-code"
-                      type="text"
-                      aria-label="Invite code"
-                      aria-invalid={signupError !== ''}
-                      value={signupInviteCode}
-                      onChange={(e) => setSignupInviteCode(e.target.value)}
-                      placeholder="your invite code"
-                      autoComplete="off"
-                      disabled={isSignupLoading}
-                    />
-                  </div>
-                  {signupError && (
-                    <p role="alert" className="text-sm text-destructive">{signupError}</p>
-                  )}
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={isSignupLoading || !signupWho || !signupReally || !signupInviteCode}
-                  >
-                    {isSignupLoading ? 'Creating account...' : 'Sign Up'}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-
-          <TabsContent value="passkey">
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
-              <TabsContent value="login" className="space-y-4">
+          <TabsContent value="login" className="space-y-4">
+            {methodToggle}
+            {method === 'password' ? (
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-who">who?</Label>
+                  <Input
+                    id="login-who"
+                    type="text"
+                    aria-label="Username (who?)"
+                    aria-invalid={loginError !== ''}
+                    value={loginWho}
+                    onChange={(e) => setLoginWho(e.target.value)}
+                    placeholder="username"
+                    autoComplete="username"
+                    disabled={isLoginLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="login-really">really?</Label>
+                  <Input
+                    id="login-really"
+                    type="password"
+                    aria-label="Password (really?)"
+                    aria-invalid={loginError !== ''}
+                    value={loginReally}
+                    onChange={(e) => setLoginReally(e.target.value)}
+                    placeholder="password"
+                    autoComplete="current-password"
+                    disabled={isLoginLoading}
+                  />
+                </div>
+                {loginError && (
+                  <p role="alert" className="text-sm text-destructive">{loginError}</p>
+                )}
+                <Button type="submit" className="w-full" disabled={isLoginLoading || !loginWho || !loginReally}>
+                  {isLoginLoading ? 'Authenticating...' : 'Enter'}
+                </Button>
+              </form>
+            ) : (
+              <div className="space-y-4">
                 <p className="text-xs text-muted-foreground">
                   Sign in with a passkey already registered on this device.
                 </p>
                 {passkeyError && (
                   <p role="alert" className="text-sm text-destructive">{passkeyError}</p>
                 )}
-                <Button
-                  onClick={() => runPasskeyAction('login')}
-                  disabled={passkeyBusy !== null}
-                  className="w-full"
-                >
-                  {passkeyBusy === 'login' ? 'Waiting for passkey…' : 'Sign in'}
+                <Button onClick={runPasskeyLogin} disabled={passkeyBusy} className="w-full">
+                  {passkeyBusy ? 'Waiting for passkey…' : 'Sign in'}
                 </Button>
-              </TabsContent>
-              <TabsContent value="signup" className="space-y-4">
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="signup" className="space-y-4">
+            {methodToggle}
+            {method === 'password' ? (
+              <form onSubmit={handleSignupSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-who">who?</Label>
+                  <Input
+                    id="signup-who"
+                    type="text"
+                    aria-label="Username (who?)"
+                    aria-invalid={signupError !== ''}
+                    value={signupWho}
+                    onChange={(e) => setSignupWho(e.target.value)}
+                    placeholder="username"
+                    autoComplete="username"
+                    disabled={isSignupLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-really">really?</Label>
+                  <Input
+                    id="signup-really"
+                    type="password"
+                    aria-label="Password (really?)"
+                    aria-invalid={signupError !== ''}
+                    value={signupReally}
+                    onChange={(e) => setSignupReally(e.target.value)}
+                    placeholder="password"
+                    autoComplete="new-password"
+                    disabled={isSignupLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-invite-code">invite code</Label>
+                  <Input
+                    id="signup-invite-code"
+                    type="text"
+                    aria-label="Invite code"
+                    aria-invalid={signupError !== ''}
+                    value={signupInviteCode}
+                    onChange={(e) => setSignupInviteCode(e.target.value)}
+                    placeholder="your invite code"
+                    autoComplete="off"
+                    disabled={isSignupLoading}
+                  />
+                </div>
+                {signupError && (
+                  <p role="alert" className="text-sm text-destructive">{signupError}</p>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isSignupLoading || !signupWho || !signupReally || !signupInviteCode}
+                >
+                  {isSignupLoading ? 'Creating account...' : 'Sign Up'}
+                </Button>
+              </form>
+            ) : (
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="passkey-invite-code">invite code</Label>
                   <Input
@@ -238,21 +258,17 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                     onChange={(e) => setPasskeyInviteCode(e.target.value)}
                     placeholder="your invite code"
                     autoComplete="off"
-                    disabled={passkeyBusy !== null}
+                    disabled={passkeyBusy}
                   />
                 </div>
                 {passkeyError && (
                   <p role="alert" className="text-sm text-destructive">{passkeyError}</p>
                 )}
-                <Button
-                  onClick={() => runPasskeyAction('register')}
-                  disabled={passkeyBusy !== null || !passkeyInviteCode}
-                  className="w-full"
-                >
-                  {passkeyBusy === 'register' ? 'Waiting for passkey…' : 'Create account'}
+                <Button onClick={runPasskeyRegister} disabled={passkeyBusy || !passkeyInviteCode} className="w-full">
+                  {passkeyBusy ? 'Waiting for passkey…' : 'Create account'}
                 </Button>
-              </TabsContent>
-            </Tabs>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
