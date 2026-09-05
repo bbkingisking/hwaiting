@@ -7,6 +7,7 @@
 // card_states_imported/card_states_derived mismatch).
 
 import type { components } from './api-schema'
+import { apiBase, attestationToJson, describeCeremonyError, toCreationOptions } from './webauthn'
 
 type Schemas = components['schemas']
 
@@ -70,7 +71,7 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
     params.set('exclude', options.excludeCardIds.join(','))
   }
   const qs = params.toString()
-  const url = `${window.location.origin}/api/cards/next${qs ? `?${qs}` : ''}`
+  const url = `${apiBase()}/api/cards/next${qs ? `?${qs}` : ''}`
   return fetchWithAuth(url, { signal: options.signal })
 }
 
@@ -80,7 +81,7 @@ export type InflectionFormValue = Schemas['InflectionFormValue']
 export type CardInflection = Schemas['CardInflection']
 
 export async function getFieldValues(): Promise<FieldValues> {
-  const url = `${window.location.origin}/api/cards/field-values`
+  const url = `${apiBase()}/api/cards/field-values`
   return fetchWithAuth(url)
 }
 
@@ -88,7 +89,7 @@ export async function getFieldValues(): Promise<FieldValues> {
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
 export async function checkAnswer(cardId: number, answer: string): Promise<CheckResponse> {
-  const url = `${window.location.origin}/api/cards/${cardId}/check`
+  const url = `${apiBase()}/api/cards/${cardId}/check`
   const body: CheckRequest = { answer }
   return fetchWithAuth(url, {
     method: 'POST',
@@ -97,7 +98,7 @@ export async function checkAnswer(cardId: number, answer: string): Promise<Check
 }
 
 export async function suppressCard(cardId: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${cardId}/suppress`
+  const url = `${apiBase()}/api/cards/${cardId}/suppress`
   return fetchWithAuth(url, {
     method: 'PUT',
   })
@@ -107,12 +108,12 @@ type SuppressedCard = Schemas['SuppressedCard']
 type SuppressedCardsResponse = Schemas['SuppressedCardsResponse']
 
 export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
-  const url = `${window.location.origin}/api/cards/suppressed`
+  const url = `${apiBase()}/api/cards/suppressed`
   return fetchWithAuth(url)
 }
 
 export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
-  const url = `${window.location.origin}/api/cards/${cardId}/unsuppress`
+  const url = `${apiBase()}/api/cards/${cardId}/unsuppress`
   return fetchWithAuth(url, {
     method: 'PUT',
   })
@@ -125,13 +126,54 @@ type HanjaDrillResponse = Schemas['HanjaDrillResponse']
 // already mastered, for free-form recall practice. Never grades the answer
 // and never touches FSRS state - see backend cards/hanja_drill.rs.
 export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillResponse> {
-  const url = `${window.location.origin}/api/cards/hanja-drill`
+  const url = `${apiBase()}/api/cards/hanja-drill`
   return fetchWithAuth(url, { signal })
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
-  const url = `${window.location.origin}/api/user/me`
+  const url = `${apiBase()}/api/user/me`
   return fetchWithAuth(url)
+}
+
+type PasskeySummary = Schemas['PasskeySummary']
+type ListPasskeysResponse = Schemas['ListPasskeysResponse']
+
+export async function listPasskeys(): Promise<ListPasskeysResponse> {
+  const url = `${apiBase()}/api/user/passkeys`
+  return fetchWithAuth(url)
+}
+
+export async function deletePasskey(id: number): Promise<{ success: boolean }> {
+  const url = `${apiBase()}/api/user/passkeys/${id}`
+  return fetchWithAuth(url, { method: 'DELETE' })
+}
+
+// Registers a new passkey and attaches it to the signed-in account - the
+// authenticated counterpart to AuthProvider's public `register()`, which
+// creates the account itself. Runs the full ceremony (start -> browser ->
+// finish) in one call since callers never need the ceremony id mid-flight.
+export async function addPasskey(): Promise<PasskeySummary> {
+  if (!window.PublicKeyCredential) {
+    throw new Error('This browser does not support passkeys.')
+  }
+
+  const { ceremony_id, options } = await fetchWithAuth(`${apiBase()}/api/user/passkeys/register/start`, {
+    method: 'POST',
+  })
+
+  let attestation: PublicKeyCredential
+  try {
+    attestation = (await navigator.credentials.create({
+      publicKey: toCreationOptions(options.publicKey),
+    })) as PublicKeyCredential
+  } catch (e) {
+    throw new Error(describeCeremonyError(e, 'Adding a passkey'))
+  }
+
+  return fetchWithAuth(`${apiBase()}/api/user/passkeys/register/finish`, {
+    method: 'POST',
+    body: JSON.stringify({ ceremony_id, credential: attestationToJson(attestation) }),
+  })
 }
 
 type ImportStats = Schemas['ImportStats']
@@ -141,7 +183,7 @@ export async function importUserData(file: File, overwrite: boolean = false): Pr
   const text = await file.text()
   const data = JSON.parse(text)
 
-  const url = `${window.location.origin}/api/user/import`
+  const url = `${apiBase()}/api/user/import`
   return fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify({ data, overwrite }),
@@ -149,7 +191,7 @@ export async function importUserData(file: File, overwrite: boolean = false): Pr
 }
 
 export async function exportUserData(): Promise<void> {
-  const url = `${window.location.origin}/api/user/export`
+  const url = `${apiBase()}/api/user/export`
   const data = await fetchWithAuth(url)
 
   // Create a blob and download it
@@ -176,12 +218,12 @@ export type HistoryResponse = Schemas['HistoryResponse']
 // getHistoryBreakdown) for data the stats page always fetched together;
 // the backend now runs all three queries concurrently behind one endpoint.
 export async function getHistory(): Promise<HistoryResponse> {
-  const url = `${window.location.origin}/api/cards/history`
+  const url = `${apiBase()}/api/cards/history`
   return fetchWithAuth(url)
 }
 
 export async function getStats(): Promise<StatsResponse> {
-  const url = `${window.location.origin}/api/cards/stats`
+  const url = `${apiBase()}/api/cards/stats`
   return fetchWithAuth(url)
 }
 
@@ -190,12 +232,12 @@ type UpdateSettingsRequest = Schemas['UpdateSettingsRequest']
 type UpdateSettingsResponse = Schemas['UpdateSettingsResponse']
 
 export async function getUserSettings(): Promise<UserSettings> {
-  const url = `${window.location.origin}/api/user/settings`
+  const url = `${apiBase()}/api/user/settings`
   return fetchWithAuth(url)
 }
 
 export async function updateUserSettings(settings: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
-  const url = `${window.location.origin}/api/user/settings`
+  const url = `${apiBase()}/api/user/settings`
   return fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(settings),
@@ -225,12 +267,12 @@ export const CARD_BACK_FIELDS = new Set(['word', 'definition', 'sentence', 'targ
 type SearchCardsResponse = Schemas['SearchCardsResponse']
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
-  const url = `${window.location.origin}/api/admin/cards/search?q=${encodeURIComponent(query)}`
+  const url = `${apiBase()}/api/admin/cards/search?q=${encodeURIComponent(query)}`
   return fetchWithAuth(url, { signal })
 }
 
 export async function editCard(cardId: number, updates: EditCardRequest): Promise<EditCardResponse> {
-  const url = `${window.location.origin}/api/admin/cards/${cardId}`
+  const url = `${apiBase()}/api/admin/cards/${cardId}`
   return fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(updates),
@@ -244,7 +286,7 @@ type CardInflectionsResponse = Schemas['CardInflectionsResponse']
 // target/word/sentence up front (see SearchCardsResponse), so there's no
 // review-flow secrecy left to preserve here.
 export async function getCardInflections(cardId: number, signal?: AbortSignal): Promise<CardInflectionsResponse> {
-  const url = `${window.location.origin}/api/admin/cards/${cardId}/inflections`
+  const url = `${apiBase()}/api/admin/cards/${cardId}/inflections`
   return fetchWithAuth(url, { signal })
 }
 
@@ -253,14 +295,14 @@ export async function getCardInflections(cardId: number, signal?: AbortSignal): 
 type OptimizeFsrsResponse = Schemas['OptimizeFsrsResponse']
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
-  const url = `${window.location.origin}/api/cards/fsrs-parameters`
+  const url = `${apiBase()}/api/cards/fsrs-parameters`
   return fetchWithAuth(url, {
     method: 'POST',
   })
 }
 
 export async function resetFsrsParameters(): Promise<{ success: boolean }> {
-  const url = `${window.location.origin}/api/cards/fsrs-parameters`
+  const url = `${apiBase()}/api/cards/fsrs-parameters`
   return fetchWithAuth(url, {
     method: 'DELETE',
   })
@@ -288,4 +330,6 @@ export type {
   AdminCard,
   SearchCardsResponse,
   CardInflectionsResponse,
+  PasskeySummary,
+  ListPasskeysResponse,
 }

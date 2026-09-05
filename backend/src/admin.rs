@@ -190,7 +190,8 @@ pub struct ListUsersQuery {
 #[derive(Serialize, ToSchema)]
 pub struct AdminUserSummary {
     pub id: i64,
-    pub username: String,
+    /// `None` for an account created via passkey, which has no username.
+    pub username: Option<String>,
     pub is_admin: bool,
     pub created_at: String,
 }

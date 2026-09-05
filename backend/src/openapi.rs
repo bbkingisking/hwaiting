@@ -31,6 +31,14 @@ impl Modify for SecurityAddon {
     paths(
         crate::auth::login,
         crate::auth::signup,
+        crate::passkey::register_start,
+        crate::passkey::register_finish,
+        crate::passkey::login_start,
+        crate::passkey::login_finish,
+        crate::passkey::list_passkeys,
+        crate::passkey::add_passkey_start,
+        crate::passkey::add_passkey_finish,
+        crate::passkey::delete_passkey,
         crate::cards::get_next_card,
         crate::cards::list_field_values,
         crate::cards::check_answer,
@@ -62,6 +70,8 @@ impl Modify for SecurityAddon {
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,
+        crate::passkey::PasskeySummary,
+        crate::passkey::ListPasskeysResponse,
         crate::cards::FieldValues,
         crate::cards::FieldName,
         crate::cards::NextCardEnvelope,
@@ -97,7 +107,8 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "auth", description = "Invite code-gated sign-up and simple login"),
+        (name = "auth", description = "Invite code-gated username/password sign-up and login, \
+            plus passkey (WebAuthn) sign-up and login - two independent ways to reach the same JWT"),
         (name = "cards", description = "Review flow, FSRS scheduling, stats"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),

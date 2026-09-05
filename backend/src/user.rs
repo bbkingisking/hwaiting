@@ -12,7 +12,12 @@ use crate::auth::AuthUser;
 
 #[derive(Serialize, ToSchema)]
 pub struct UserProfile {
-    pub username: String,
+    /// `None` for an account created via passkey, which has no username.
+    pub username: Option<String>,
+    /// The frontend has no other way to learn this once the password
+    /// login form (and its localStorage-cached `is_admin`) is gone - it's
+    /// read from here on app load instead.
+    pub is_admin: bool,
 }
 
 /// The `users_settings` row proper - every field shared verbatim between the
@@ -95,14 +100,14 @@ pub async fn get_profile(
     let user_id = auth.0;
     info!("Getting profile for user_id: {}", user_id);
 
-    let username: String = sqlx::query_scalar(
-        "SELECT username FROM users WHERE id = ?"
+    let (username, is_admin): (Option<String>, bool) = sqlx::query_as(
+        "SELECT username, is_admin FROM users WHERE id = ?"
     )
     .bind(user_id)
     .fetch_one(&pool)
     .await?;
 
-    Ok(Json(UserProfile { username }))
+    Ok(Json(UserProfile { username, is_admin }))
 }
 
 // Get user settings

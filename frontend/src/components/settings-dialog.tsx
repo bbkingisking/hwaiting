@@ -22,7 +22,7 @@ import { useAuth } from '@/components/auth-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
 import { CARD_THEMES } from '@/lib/card-themes'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
-import { exportUserData, importUserData, optimizeFsrs, resetFsrsParameters, type ImportResponse } from '@/lib/api'
+import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface InviteCode {
@@ -51,7 +51,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [optimizeMessage, setOptimizeMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [showImportAlert, setShowImportAlert] = useState(false)
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
-  
+  const [passkeys, setPasskeys] = useState<PasskeySummary[]>([])
+  const [isLoadingPasskeys, setIsLoadingPasskeys] = useState(false)
+  const [isAddingPasskey, setIsAddingPasskey] = useState(false)
+  const [passkeyMessage, setPasskeyMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
   // Track user's preferred limit when they toggle suppress on/off
   const [preferredLimit, setPreferredLimit] = useState(20)
 
@@ -114,6 +118,50 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       }
     } catch (error) {
       console.error('Failed to delete invite code:', error)
+    }
+  }
+
+  const fetchPasskeys = async () => {
+    if (!token) return
+
+    setIsLoadingPasskeys(true)
+    try {
+      const response = await listPasskeys()
+      setPasskeys(response.passkeys)
+    } catch (error) {
+      console.error('Failed to fetch passkeys:', error)
+    } finally {
+      setIsLoadingPasskeys(false)
+    }
+  }
+
+  const handleAddPasskey = async () => {
+    setIsAddingPasskey(true)
+    setPasskeyMessage(null)
+    try {
+      await addPasskey()
+      setPasskeyMessage({ type: 'success', text: 'Passkey added' })
+      await fetchPasskeys()
+    } catch (error) {
+      setPasskeyMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to add passkey',
+      })
+    } finally {
+      setIsAddingPasskey(false)
+    }
+  }
+
+  const handleDeletePasskey = async (id: number) => {
+    setPasskeyMessage(null)
+    try {
+      await deletePasskey(id)
+      await fetchPasskeys()
+    } catch (error) {
+      setPasskeyMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to remove passkey',
+      })
     }
   }
 
@@ -222,6 +270,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       fetchInviteCodes()
     }
   }, [isAdmin])
+
+  useEffect(() => {
+    if (open) {
+      fetchPasskeys()
+    }
+  }, [open])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -536,6 +590,60 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   {importMessage.text}
                 </div>
               )}
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* Passkeys */}
+          <AccordionItem value="passkeys">
+            <AccordionTrigger>Passkeys</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
+              <p className="text-xs text-muted-foreground">
+                Add a passkey from another device to sign in there too. You need at least one at all times.
+              </p>
+              <Button
+                onClick={handleAddPasskey}
+                disabled={isAddingPasskey}
+                variant="outline"
+                className="self-start"
+              >
+                {isAddingPasskey ? 'Waiting for passkey…' : 'Add a passkey'}
+              </Button>
+              {passkeyMessage && (
+                <p className={`text-xs ${passkeyMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                  {passkeyMessage.text}
+                </p>
+              )}
+              <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                {isLoadingPasskeys ? (
+                  <p className="text-sm text-muted-foreground">Loading...</p>
+                ) : passkeys.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No passkeys yet</p>
+                ) : (
+                  passkeys.map((passkey) => (
+                    <div
+                      key={passkey.id}
+                      className="flex items-center justify-between p-2 border rounded-md"
+                    >
+                      <div className="flex-1 text-sm">
+                        <p>Added {new Date(passkey.created_at).toLocaleDateString()}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {passkey.last_used_at
+                            ? `Last used ${new Date(passkey.last_used_at).toLocaleDateString()}`
+                            : 'Never used'}
+                        </p>
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Remove this passkey"
+                        onClick={() => handleDeletePasskey(passkey.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
             </AccordionContent>
           </AccordionItem>
 

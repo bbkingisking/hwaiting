@@ -116,6 +116,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/passkey/login/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["login_finish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkey/login/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["login_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkey/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["register_finish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkey/register/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["register_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/signup": {
         parameters: {
             query?: never;
@@ -372,6 +436,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/user/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_passkeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/passkeys/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_passkey_finish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/passkeys/register/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_passkey_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/passkeys/{passkey_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_passkey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/user/settings": {
         parameters: {
             query?: never;
@@ -397,12 +525,17 @@ export interface components {
             /** Format: int64 */
             id: number;
             is_admin: boolean;
-            username: string;
+            /** @description `None` for an account created via passkey, which has no username. */
+            username?: string | null;
         };
         AuthResponse: {
             is_admin: boolean;
             token: string;
-            username: string;
+            /**
+             * @description `None` for an account created via passkey, which has no username -
+             *     see [`crate::passkey`].
+             */
+            username?: string | null;
         };
         BreakdownRow: {
             /** Format: double */
@@ -769,6 +902,9 @@ export interface components {
         ListInvitesResponse: {
             codes: components["schemas"]["InviteCode"][];
         };
+        ListPasskeysResponse: {
+            passkeys: components["schemas"]["PasskeySummary"][];
+        };
         ListUsersResponse: {
             users: components["schemas"]["AdminUserSummary"][];
         };
@@ -792,6 +928,12 @@ export interface components {
             parameters: number[];
             review_count: number;
             success: boolean;
+        };
+        PasskeySummary: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            last_used_at?: string | null;
         };
         ReviewHistoryExport: {
             /** Format: int64 */
@@ -902,7 +1044,14 @@ export interface components {
             success: boolean;
         };
         UserProfile: {
-            username: string;
+            /**
+             * @description The frontend has no other way to learn this once the password
+             *     login form (and its localStorage-cached `is_admin`) is gone - it's
+             *     read from here on app load instead.
+             */
+            is_admin: boolean;
+            /** @description `None` for an account created via passkey, which has no username. */
+            username?: string | null;
         };
         UserSettings: components["schemas"]["UserSettingsCore"] & {
             /**
@@ -1331,6 +1480,127 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+        };
+    };
+    login_finish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description Ceremony verification failed, or unknown ceremony id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No account matches that passkey */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ceremony expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    login_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebAuthn request options for a discoverable-credential sign-in (empty allowCredentials - the browser's own picker lists every passkey registered for this site). Opaque to OpenAPI. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    register_finish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account created from the verified passkey */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description Ceremony verification failed, or unknown ceremony id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ceremony expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    register_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebAuthn creation options for a new passkey account. Opaque to OpenAPI - pass straight to navigator.credentials.create() after base64url-decoding challenge/user.id. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -1918,6 +2188,163 @@ export interface operations {
             };
             /** @description Missing/invalid JWT */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_passkeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's registered passkeys */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPasskeysResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    add_passkey_finish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Passkey added to the caller's account */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeySummary"];
+                };
+            };
+            /** @description Ceremony verification failed, or unknown ceremony id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ceremony belongs to a different account */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ceremony expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    add_passkey_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebAuthn creation options for adding a passkey to the caller's existing account. Opaque to OpenAPI. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_passkey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Passkey removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description That passkey is the caller's only sign-in method */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing/invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such passkey on the caller's account */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

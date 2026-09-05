@@ -32,6 +32,32 @@ pub enum AppError {
     #[error("Invalid invite code")]
     InvalidInviteCode,
 
+    /// A `navigator.credentials.create()`/`.get()` ceremony failed
+    /// server-side verification (bad signature, origin/RP ID mismatch,
+    /// counter regression, and so on). Wraps whatever webauthn-rs-core
+    /// reports so it ends up in the server log; the client only ever sees
+    /// the generic 400 below.
+    #[error("Passkey ceremony failed: {0:?}")]
+    Webauthn(#[from] webauthn_rs_core::error::WebauthnError),
+
+    /// The ceremony id a `/finish` call named isn't in the in-memory
+    /// table - already consumed, or never existed (e.g. a stale tab).
+    #[error("Unknown or already-used passkey ceremony")]
+    CeremonyNotFound,
+
+    /// The ceremony id was found but its two-minute TTL had already
+    /// elapsed; distinct from `CeremonyNotFound` so the client can tell
+    /// "start over" from "that response was rejected".
+    #[error("Passkey ceremony expired")]
+    CeremonyExpired,
+
+    /// A `/login/finish` assertion carried a user handle or credential id
+    /// with no matching account - the passkey equivalent of a bad
+    /// username, kept separate from `InvalidCredentials` (which is about a
+    /// wrong *password*) so server logs distinguish the two auth methods.
+    #[error("No account for that passkey")]
+    UnknownPasskey,
+
     #[error("Username already exists")]
     UsernameExists,
 
@@ -70,6 +96,19 @@ impl IntoResponse for AppError {
             }
             AppError::InvalidInviteCode => {
                 (StatusCode::BAD_REQUEST, "Invalid or already used invite code".to_string())
+            }
+            AppError::Webauthn(ref e) => {
+                eprintln!("Passkey ceremony failed: {:?}", e);
+                (StatusCode::BAD_REQUEST, "Passkey ceremony failed".to_string())
+            }
+            AppError::CeremonyNotFound => {
+                (StatusCode::BAD_REQUEST, "Unknown or already-used passkey ceremony".to_string())
+            }
+            AppError::CeremonyExpired => {
+                (StatusCode::GONE, "Passkey ceremony expired, please try again".to_string())
+            }
+            AppError::UnknownPasskey => {
+                (StatusCode::UNAUTHORIZED, "No account for that passkey".to_string())
             }
             AppError::UsernameExists => {
                 (StatusCode::CONFLICT, "Username already exists".to_string())
