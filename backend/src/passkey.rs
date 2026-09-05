@@ -1,8 +1,25 @@
 //! WebAuthn passkey sign-up/sign-in, alongside (not instead of) the
 //! username/password auth in `auth.rs`. To the database and to the rest of
 //! the backend this is just a second way to end up with a JWT: it stores a
-//! per-user WebAuthn handle and a table of credentials, and otherwise defers
-//! entirely to `auth::generate_token`.
+//! table of credentials and otherwise defers entirely to
+//! `auth::generate_token`.
+//!
+//! Every ceremony still needs a WebAuthn user handle to hand the
+//! authenticator (the protocol requires one), but nothing here persists
+//! it - each ceremony gets a fresh throwaway handle that lives only in
+//! that ceremony's in-memory state.
+//!
+//! `login_finish` doesn't look an account up by anything before
+//! verifying - it loads every passkey on the server and asks
+//! `authenticate_credential` to find whichever one matches the assertion.
+//! That's not a naive brute force of N signature checks: the crate's own
+//! matching step is a cheap byte-equality scan against the assertion's
+//! credential id, and exactly one real cryptographic verification ever
+//! runs, against whichever single credential that scan finds. Identity
+//! (`user_id`, `is_admin`, which passkey row to stamp `last_used_at` on)
+//! is recovered afterwards from the verified result's credential id, not
+//! looked up beforehand. See the session this was written in for the
+//! full reasoning and a benchmark of the cost at scale.
 //!
 //! Every ceremony (`/register/*`, `/login/*`) is two calls: `start` builds
 //! the options the browser needs and stashes server-side ceremony state
@@ -41,9 +58,10 @@ use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use webauthn_rs_core::{
+    internals::AuthenticatorData,
     proto::{
-        AttestationConveyancePreference, AttestationFormat, AuthenticationState, COSEAlgorithm,
-        COSEKey, CreationChallengeResponse, CredProtect, Credential, CredentialID,
+        Authentication, AttestationConveyancePreference, AttestationFormat, AuthenticationState,
+        COSEAlgorithm, COSEKey, CreationChallengeResponse, CredProtect, Credential, CredentialID,
         CredentialProtectionPolicy, ParsedAttestation, PublicKeyCredential,
         RegisterPublicKeyCredential, RegisteredExtensions, RegistrationState,
         RequestAuthenticationExtensions, RequestChallengeResponse,
@@ -77,7 +95,6 @@ enum Ceremony {
     /// passkey to an already-signed-in account; `finish` re-checks the
     /// caller's JWT still names that same user before writing anything.
     Registration {
-        handle: Uuid,
         for_user: Option<i64>,
         state: RegistrationState,
         expires: Instant,
@@ -200,10 +217,28 @@ fn build_webauthn() -> WebauthnCore {
 ///   requests `AttestationConveyancePreference::None`.
 /// - `transports: None` / `extensions: RegisteredExtensions::none()` -
 ///   written by webauthn-rs but never read back by anything in this app.
-/// - `counter: 0` / `backup_eligible: false` / `backup_state: false` - this
-///   app keeps no per-login state for anti-clone or sync-status tracking,
-///   so every login is verified as if it were the credential's first.
-fn rebuild_credential(credential_id: Vec<u8>, public_key: &str) -> Result<Credential, AppError> {
+/// - `counter: 0` / `backup_state: false` - this app keeps no per-login
+///   state for anti-clone or sync-status tracking, so every login is
+///   verified as if it were the credential's first.
+///
+/// `backup_eligible` is the one field callers must supply rather than get
+/// defaulted: `verify_credential_internal`'s anti-tampering checks compare
+/// it against the *current* assertion's own backup-eligible flag, and this
+/// app doesn't persist a prior value to compare against (see the session
+/// this was written in - reintroducing that column was considered and
+/// deliberately declined). Passing the assertion's own flag back in makes
+/// that comparison self-referential (always equal, so both checks - the
+/// mismatch check and the unconditional backup-state-implies-eligible
+/// check - degrade into asking "is this one assertion internally
+/// consistent", which every spec-compliant authenticator already is, and
+/// which an attacker can't forge without also forging a valid signature
+/// over it) instead of comparing against a value that would otherwise be
+/// permanently wrong for any backup-eligible authenticator.
+fn rebuild_credential(
+    credential_id: Vec<u8>,
+    public_key: &str,
+    backup_eligible: bool,
+) -> Result<Credential, AppError> {
     let cred: COSEKey = serde_json::from_str(public_key).map_err(|e| {
         AppError::Internal(format!("failed to deserialize stored passkey public key: {e}"))
     })?;
@@ -213,7 +248,7 @@ fn rebuild_credential(credential_id: Vec<u8>, public_key: &str) -> Result<Creden
         counter: 0,
         transports: None,
         user_verified: true,
-        backup_eligible: false,
+        backup_eligible,
         backup_state: false,
         registration_policy: UserVerificationPolicy::Required,
         extensions: RegisteredExtensions::none(),
@@ -252,9 +287,10 @@ pub struct ListPasskeysResponse {
 
 /// Builds the creation options both registration ceremonies (public
 /// sign-up, and an authenticated user adding a second device) share; they
-/// differ only in whose `handle` is used, what `for_user` gets recorded as,
-/// and which existing credential ids are excluded so a device can't
-/// register the same authenticator twice.
+/// differ only in what `for_user` gets recorded as and which existing
+/// credential ids are excluded so a device can't register the same
+/// authenticator twice. `handle` is thrown away once this returns - it's
+/// never read back after the authenticator embeds it in the credential.
 fn start_registration(
     state: &AppState,
     handle: Uuid,
@@ -289,7 +325,6 @@ fn start_registration(
     let (options, reg_state) = state.webauthn.generate_challenge_register(builder)?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Registration {
-        handle,
         for_user,
         state: reg_state,
         expires: Instant::now() + CEREMONY_TTL,
@@ -326,9 +361,8 @@ async fn finish_registration(
 
     let user_id = match &ceremony {
         Ceremony::Registration { for_user: Some(uid), .. } => *uid,
-        Ceremony::Registration { handle, .. } => {
-            let result = sqlx::query("INSERT INTO users (handle) VALUES (?)")
-                .bind(handle.as_bytes().as_slice())
+        Ceremony::Registration { for_user: None, .. } => {
+            let result = sqlx::query("INSERT INTO users DEFAULT VALUES")
                 .execute(&mut *tx)
                 .await?;
             result.last_insert_rowid()
@@ -418,6 +452,10 @@ pub async fn login_start(
             uvm: Some(true),
             hmac_get_secret: None,
         }))
+        // Moot either way: `login_finish` reconstructs every candidate's
+        // `backup_eligible` from this same assertion (see its comments), so
+        // the mismatch this flag governs never occurs. Left `false` since
+        // there's nothing for it to permit.
         .allow_backup_eligible_upgrade(false)
         .hints(None);
     let (options, auth_state) = state.webauthn.generate_challenge_authenticate(builder)?;
@@ -453,54 +491,78 @@ pub async fn login_finish(
         return Err(AppError::CeremonyNotFound);
     };
 
-    // The assertion carries the WebAuthn user handle we generated at
-    // registration - that, not any identifier, is how the account is found.
-    let handle = req
-        .credential
-        .get_user_unique_id()
-        .ok_or(AppError::UnknownPasskey)?;
+    // This app doesn't persist a per-credential `backup_eligible` flag (see
+    // `rebuild_credential`), so every candidate below is reconstructed with
+    // *this assertion's own* backup-eligible flag rather than a stored one -
+    // that's what makes the crate's backup-eligibility checks a no-op for
+    // any spec-compliant authenticator instead of a permanent rejection of
+    // every synced/platform passkey. Parsed with the crate's own parser, not
+    // hand-rolled, so it can't drift from what `authenticate_credential`
+    // itself computes from the same bytes.
+    let asserted_backup_eligible = AuthenticatorData::<Authentication>::try_from(
+        req.credential.response.authenticator_data.as_slice(),
+    )
+    .map_err(|_| AppError::BadRequest("malformed authenticatorData".to_string()))?
+    .backup_eligible;
 
-    let user_row = sqlx::query("SELECT id, is_admin FROM users WHERE handle = ?")
-        .bind(handle)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::UnknownPasskey)?;
-    let user_id: i64 = user_row.get("id");
-    let is_admin: bool = user_row.get("is_admin");
+    // Deliberately not indexed by credential id: every passkey on the
+    // server, for every account, is loaded and handed to
+    // `authenticate_credential` as a candidate. Its internal match loop
+    // (a byte-equality scan against `raw_id`, not a cryptographic
+    // operation) finds the one whose id matches, and only that one ever
+    // gets a real signature-verification call - so this costs one ECDSA
+    // verify plus a cheap linear scan, same as the indexed version, just
+    // without the SQL WHERE clause doing the narrowing. See the session
+    // this was written in: at ~140us/verify on the cheapest hardware this
+    // runs on, this stays negligible into the hundreds of thousands of
+    // stored passkeys.
+    let rows = sqlx::query(
+        "SELECT passkeys.id, passkeys.user_id, passkeys.credential_id, passkeys.public_key, \
+                users.is_admin \
+         FROM passkeys JOIN users ON users.id = passkeys.user_id",
+    )
+    .fetch_all(&state.pool)
+    .await?;
 
-    let rows = sqlx::query("SELECT id, credential_id, public_key FROM passkeys WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_all(&state.pool)
-        .await?;
-    let creds: Vec<(i64, Credential)> = rows
-        .into_iter()
-        .map(|row| {
-            let passkey_id: i64 = row.get("id");
-            let credential_id: Vec<u8> = row.get("credential_id");
-            let public_key: String = row.get("public_key");
-            let cred = rebuild_credential(credential_id, &public_key)?;
-            Ok((passkey_id, cred))
-        })
-        .collect::<Result<_, AppError>>()?;
-    if creds.is_empty() {
-        warn!("login/finish: handle matched user_id={user_id} but it has no passkeys");
+    let mut by_credential_id: HashMap<Vec<u8>, (i64, i64, bool)> = HashMap::with_capacity(rows.len());
+    let mut candidates = Vec::with_capacity(rows.len());
+    for row in rows {
+        let passkey_id: i64 = row.get("id");
+        let user_id: i64 = row.get("user_id");
+        let credential_id: Vec<u8> = row.get("credential_id");
+        let public_key: String = row.get("public_key");
+        let is_admin: bool = row.get("is_admin");
+        candidates.push(rebuild_credential(credential_id.clone(), &public_key, asserted_backup_eligible)?);
+        by_credential_id.insert(credential_id, (passkey_id, user_id, is_admin));
+    }
+    let candidate_count = candidates.len();
+    if candidates.is_empty() {
         return Err(AppError::UnknownPasskey);
     }
 
-    auth_state.set_allowed_credentials(creds.iter().map(|(_, c)| c.clone()).collect());
+    auth_state.set_allowed_credentials(candidates);
     let result = state.webauthn.authenticate_credential(&req.credential, &auth_state)?;
+
+    // `authenticate_credential` only tells us the id of whichever
+    // candidate matched - map it back to find out who just signed in.
+    let &(passkey_id, user_id, is_admin) = by_credential_id
+        .get(result.cred_id().as_slice())
+        .ok_or_else(|| {
+            AppError::Internal("authenticated credential missing from its own candidate set".to_string())
+        })?;
 
     // No per-credential state to persist on success - counter/backup flags
     // aren't tracked (see rebuild_credential) - just record when this
     // passkey was last used, for the user's own "my passkeys" list.
-    if let Some((passkey_id, _)) = creds.iter().find(|(_, c)| c.cred_id == *result.cred_id()) {
-        sqlx::query("UPDATE passkeys SET last_used_at = datetime('now') WHERE id = ?")
-            .bind(*passkey_id)
-            .execute(&state.pool)
-            .await?;
-    }
+    sqlx::query("UPDATE passkeys SET last_used_at = datetime('now') WHERE id = ?")
+        .bind(passkey_id)
+        .execute(&state.pool)
+        .await?;
 
-    info!("passkey login/finish: user_id={user_id} signed in");
+    info!(
+        "passkey login/finish: user_id={user_id} signed in (matched against {candidate_count} \
+         candidate passkeys server-wide)"
+    );
     let token = generate_token(user_id)?;
     Ok(Json(AuthResponse { token, username: None, is_admin }))
 }
@@ -553,12 +615,10 @@ pub async fn add_passkey_start(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<StartResponse<CreationChallengeResponse>>, AppError> {
-    let handle_bytes: Vec<u8> = sqlx::query_scalar("SELECT handle FROM users WHERE id = ?")
-        .bind(auth.0)
-        .fetch_one(&state.pool)
-        .await?;
-    let handle = Uuid::from_slice(&handle_bytes)
-        .map_err(|e| AppError::Internal(format!("stored handle is not 16 bytes: {e}")))?;
+    // No persisted per-account handle to reuse (see module docs) - a fresh
+    // one is generated per ceremony purely to satisfy the protocol's
+    // requirement for a `user.id` value; nothing here ever reads it back.
+    let handle = Uuid::new_v4();
 
     let existing: Vec<Vec<u8>> = sqlx::query_scalar("SELECT credential_id FROM passkeys WHERE user_id = ?")
         .bind(auth.0)

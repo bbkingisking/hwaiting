@@ -9,7 +9,6 @@ use argon2::{
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
 use std::env;
@@ -156,15 +155,9 @@ pub async fn signup(
         .hash_password(password.as_bytes(), &salt)?
         .to_string();
 
-    // `handle` is the WebAuthn user handle (see migration 20260904000000)
-    // and is NOT NULL with no default, so every account needs one even
-    // when created through this password path rather than passkey signup.
-    let handle: [u8; 16] = rand::rng().random();
-
-    let result = sqlx::query("INSERT INTO users (username, password_hash, handle) VALUES (?, ?, ?)")
+    let result = sqlx::query("INSERT INTO users (username, password_hash) VALUES (?, ?)")
         .bind(username)
         .bind(&password_hash)
-        .bind(handle.as_slice())
         .execute(&mut *tx)
         .await?;
 

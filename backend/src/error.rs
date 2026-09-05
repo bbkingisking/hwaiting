@@ -48,10 +48,10 @@ pub enum AppError {
     #[error("Passkey ceremony expired")]
     CeremonyExpired,
 
-    /// A `/login/finish` assertion carried a user handle or credential id
-    /// with no matching account - the passkey equivalent of a bad
-    /// username, kept separate from `InvalidCredentials` (which is about a
-    /// wrong *password*) so server logs distinguish the two auth methods.
+    /// A `/login/finish` assertion carried a credential id with no
+    /// matching account - the passkey equivalent of a bad username, kept
+    /// separate from `InvalidCredentials` (which is about a wrong
+    /// *password*) so server logs distinguish the two auth methods.
     #[error("No account for that passkey")]
     UnknownPasskey,
 
