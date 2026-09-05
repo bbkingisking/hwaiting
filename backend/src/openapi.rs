@@ -57,9 +57,6 @@ impl Modify for SecurityAddon {
         crate::export_import::export_data,
         crate::export_import::import_data,
         crate::admin::list_users,
-        crate::admin::list_invites,
-        crate::admin::generate_invites,
-        crate::admin::delete_invite,
         crate::admin::search_cards,
         crate::admin::get_card_inflections,
         crate::admin::edit_card,
@@ -70,7 +67,6 @@ impl Modify for SecurityAddon {
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,
-        crate::passkey::PasskeyRegisterStartRequest,
         crate::passkey::PasskeySummary,
         crate::passkey::ListPasskeysResponse,
         crate::cards::FieldValues,
@@ -98,9 +94,6 @@ impl Modify for SecurityAddon {
         crate::export_import::ImportDataResponse,
         crate::admin::AdminUserSummary,
         crate::admin::ListUsersResponse,
-        crate::admin::GenerateInvitesRequest,
-        crate::admin::GenerateInvitesResponse,
-        crate::admin::ListInvitesResponse,
         crate::admin::SearchCardsResponse,
         crate::admin::CardInflectionsResponse,
         crate::admin::UpdateCardRequest,
@@ -108,9 +101,8 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "auth", description = "Invite code-gated sign-up and login, via either username/password \
-            or passkey (WebAuthn) - two independent ways to reach the same JWT, both gated on the same \
-            invite codes"),
+        (name = "auth", description = "Open sign-up and login, via either username/password \
+            or passkey (WebAuthn) - two independent ways to reach the same JWT"),
         (name = "cards", description = "Review flow, FSRS scheduling, stats"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),
@@ -118,7 +110,6 @@ impl Modify for SecurityAddon {
     )
 )]
 // Convention for every list-shaped response registered above (ListUsersResponse,
-// ListInvitesResponse, GenerateInvitesResponse,
 // SearchCardsResponse, SuppressedCardsResponse, ...): the collection lives in a
 // field named after the resource, plural - `users`, `codes`, `cards` - never a
 // generic `items`/`data` key. Keep new list endpoints consistent with that

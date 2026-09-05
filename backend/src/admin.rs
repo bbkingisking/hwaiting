@@ -1,9 +1,7 @@
 use axum::{
     extract::State,
-    http::StatusCode,
     Json,
 };
-use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
@@ -26,158 +24,6 @@ where
     T: serde::Deserialize<'de>,
 {
     Option::<T>::deserialize(deserializer).map(Some)
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct GenerateInvitesRequest {
-    /// Defaults to 1 if omitted from the body, or if the body is omitted
-    /// entirely (a POST with no `Content-Type` header at all).
-    #[serde(default = "default_invite_count")]
-    #[schema(default = 1)]
-    pub count: usize,
-}
-
-fn default_invite_count() -> usize {
-    1
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct GeneratedInvite {
-    pub code: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct GenerateInvitesResponse {
-    pub codes: Vec<GeneratedInvite>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct InviteCode {
-    pub code: String,
-    pub created_at: String,
-    pub used_at: Option<String>,
-    pub used_by_username: Option<String>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ListInvitesResponse {
-    pub codes: Vec<InviteCode>,
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/admin/invites",
-    request_body(content = Option<GenerateInvitesRequest>, description = "Optional; omit the body \
-        entirely (or omit `count` within it) to generate 1 code"),
-    responses(
-        (status = 201, description = "Invite codes generated (capped at 100 per request)", body = GenerateInvitesResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "admin"
-)]
-pub async fn generate_invites(
-    _admin: AdminUser,
-    State(pool): State<SqlitePool>,
-    payload: Option<AppJson<GenerateInvitesRequest>>,
-) -> Result<(StatusCode, Json<GenerateInvitesResponse>), AppError> {
-    let count = payload.map_or(1, |AppJson(req)| req.count).min(100); // Cap at 100 codes per request
-    
-    info!("Generating {} invite codes", count);
-    
-    let mut codes = Vec::new();
-    
-    for _ in 0..count {
-        let code = generate_code();
-        
-        sqlx::query("INSERT INTO invite_codes (code) VALUES (?)")
-            .bind(&code)
-            .execute(&pool)
-            .await?;
-        
-        codes.push(GeneratedInvite { code });
-    }
-    
-    info!("Successfully generated {} invite codes", codes.len());
-    
-    Ok((StatusCode::CREATED, Json(GenerateInvitesResponse { codes })))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/admin/invites",
-    responses(
-        (status = 200, description = "All invite codes, used and unused", body = ListInvitesResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "admin"
-)]
-pub async fn list_invites(
-    _admin: AdminUser,
-    State(pool): State<SqlitePool>,
-) -> Result<Json<ListInvitesResponse>, AppError> {
-    info!("Listing all invite codes");
-    
-    let rows = sqlx::query(
-        "SELECT 
-            ic.code, 
-            ic.created_at, 
-            ic.used_at,
-            u.username as used_by_username
-         FROM invite_codes ic
-         LEFT JOIN users u ON ic.used_by_user_id = u.id
-         ORDER BY ic.created_at DESC"
-    )
-    .fetch_all(&pool)
-    .await?;
-    
-    let codes = rows.into_iter().map(|row| {
-        InviteCode {
-            code: row.get("code"),
-            created_at: row.get("created_at"),
-            used_at: row.get("used_at"),
-            used_by_username: row.get("used_by_username"),
-        }
-    }).collect();
-    
-    Ok(Json(ListInvitesResponse { codes }))
-}
-
-#[utoipa::path(
-    delete,
-    path = "/api/admin/invites/{code}",
-    params(("code" = String, Path, description = "Invite code")),
-    responses(
-        (status = 204, description = "Invite code deleted"),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
-        (status = 404, description = "Code doesn't exist", body = crate::error::ErrorResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "admin"
-)]
-pub async fn delete_invite(
-    _admin: AdminUser,
-    State(pool): State<SqlitePool>,
-    AppPath(code): AppPath<String>,
-) -> Result<StatusCode, AppError> {
-    info!("Deleting invite code: {}", code);
-
-    let result = sqlx::query("DELETE FROM invite_codes WHERE code = ?")
-        .bind(&code)
-        .execute(&pool)
-        .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound);
-    }
-
-    info!("Invite code deleted: {}", code);
-
-    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -220,9 +66,9 @@ pub async fn list_users(
 ) -> Result<Json<ListUsersResponse>, AppError> {
     info!("Listing users (username filter: {:?})", params.username);
 
-    // No pagination: same call as list_invites makes for the same reason —
-    // this table is small enough that a hard LIMIT or offset scheme would be
-    // speculative complexity, not a fix for anything actually happening.
+    // No pagination: this table is small enough that a hard LIMIT or offset
+    // scheme would be speculative complexity, not a fix for anything
+    // actually happening.
     let rows = match &params.username {
         Some(username) => {
             sqlx::query("SELECT id, username, is_admin, created_at FROM users WHERE username = ?")
@@ -736,15 +582,3 @@ pub async fn edit_card(
     Ok(Json(EditCardResponse { success: true }))
 }
 
-
-fn generate_code() -> String {
-    const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let mut rng = rand::rng();
-    
-    (0..8)
-        .map(|_| {
-            let idx = rng.random_range(0..CHARS.len());
-            CHARS[idx] as char
-        })
-        .collect()
-}

@@ -7,20 +7,18 @@ interface AuthContextType {
   isAdmin: boolean
   // Username/password login against an existing account.
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
-  // Username/password sign-up. Gated on the same invite codes as
-  // `passkeyRegister` below - see backend `auth::check_invite_code`.
-  signup: (username: string, password: string, inviteCode: string) => Promise<{ success: boolean; error?: string }>
+  // Username/password sign-up.
+  signup: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
   // Passkey sign-in: a discoverable-credential assertion against an
   // account that already exists. Takes no arguments - the passkey itself,
   // not any identifier the user types, is how the account is found.
   passkeyLogin: () => Promise<{ success: boolean; error?: string }>
   // Passkey sign-up: registers a new passkey and creates the account it
-  // belongs to in the same ceremony, gated on the same invite code
-  // `signup` above requires. A deliberately separate action from
+  // belongs to in the same ceremony. A deliberately separate action from
   // `passkeyLogin`, not a fallback tried after it fails - see this
   // feature's design notes for why an automatic try-then-fallback flow
   // was dropped.
-  passkeyRegister: (inviteCode: string) => Promise<{ success: boolean; error?: string }>
+  passkeyRegister: () => Promise<{ success: boolean; error?: string }>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -97,15 +95,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (
     username: string,
-    password: string,
-    inviteCode: string
+    password: string
   ): Promise<{ success: boolean; error?: string }> => {
     let response
     try {
       response = await fetch(`${apiBase()}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, invite_code: inviteCode }),
+        body: JSON.stringify({ username, password }),
       })
     } catch (error) {
       return { success: false, error: 'Network error - could not connect to server' }
@@ -181,10 +178,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       assertionToJson
     )
 
-  const passkeyRegister = (inviteCode: string) =>
+  const passkeyRegister = () =>
     runCeremony(
       'register',
-      { invite_code: inviteCode },
+      undefined,
       (publicKey) => navigator.credentials.create({ publicKey: toCreationOptions(publicKey) }) as Promise<PublicKeyCredential | null>,
       attestationToJson
     )

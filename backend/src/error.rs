@@ -29,9 +29,6 @@ pub enum AppError {
     #[error("Invalid credentials")]
     InvalidCredentials,
 
-    #[error("Invalid invite code")]
-    InvalidInviteCode,
-
     /// A `navigator.credentials.create()`/`.get()` ceremony failed
     /// server-side verification (bad signature, origin/RP ID mismatch,
     /// counter regression, and so on). Wraps whatever webauthn-rs-core
@@ -93,9 +90,6 @@ impl IntoResponse for AppError {
             }
             AppError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
-            }
-            AppError::InvalidInviteCode => {
-                (StatusCode::BAD_REQUEST, "Invalid or already used invite code".to_string())
             }
             AppError::Webauthn(ref e) => {
                 eprintln!("Passkey ceremony failed: {:?}", e);
