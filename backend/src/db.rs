@@ -1,4 +1,3 @@
-use rand::RngExt;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 use std::env;
@@ -93,18 +92,11 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
-    // Create admin user. `handle` (the WebAuthn user handle - see migration
-    // 20260904000000) is NOT NULL with no default, so this password-only
-    // account needs one too even though it never runs a passkey ceremony;
-    // it's simply unused unless a passkey is later added via
-    // POST /api/user/passkeys/register/start.
-    let handle: [u8; 16] = rand::rng().random();
     sqlx::query(
-        "INSERT INTO users (username, password_hash, handle, is_admin) VALUES (?, ?, ?, 1)"
+        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)"
     )
     .bind(&admin_username)
     .bind(&password_hash)
-    .bind(handle.as_slice())
     .execute(pool)
     .await?;
 
