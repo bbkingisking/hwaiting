@@ -100,20 +100,23 @@ export function describeCeremonyError(e: unknown, label: string): string {
 
 const API_BASE_KEY = 'annyeong-api-base'
 
-// Same-origin by default - correct for the normal deployment, where this
-// binary serves both the API and the built frontend. Overridable via a
-// one-time `?api=<origin>` query param (persisted to localStorage) so a
-// separately-hosted build (e.g. a surge.sh preview) can point its API
-// calls at a real backend without a rebuild. This is independent of the
+// This build is deployed to hwaiting-demo.surge.sh, a static host with no
+// backend of its own - unlike the normal same-binary deployment, there is
+// no correct same-origin default here, so this constant stands in for it.
+// Still overridable via a one-time `?api=<origin>` query param (persisted
+// to localStorage), same mechanism the normal build uses for a one-off
+// preview pointed at a different backend. This is independent of the
 // backend's RP_ID/RP_ORIGINS config, which must match wherever *this page*
 // is served from (the surge domain), not wherever the API happens to live
 // - WebAuthn scopes the ceremony to the calling page's origin, not the
 // origin its fetch() calls go to.
+const DEMO_API_BASE = 'https://hwaiting-demo.92-237-86-93.sslip.io'
+
 export function apiBase(): string {
   const fromQuery = new URLSearchParams(window.location.search).get('api')
   if (fromQuery) {
     localStorage.setItem(API_BASE_KEY, fromQuery)
   }
-  const base = fromQuery || localStorage.getItem(API_BASE_KEY) || window.location.origin
+  const base = fromQuery || localStorage.getItem(API_BASE_KEY) || DEMO_API_BASE
   return base.replace(/\/$/, '')
 }
