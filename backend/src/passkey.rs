@@ -50,10 +50,11 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use webauthn_rs_core::{
     proto::{
-        AttestationConveyancePreference, AuthenticationState, COSEAlgorithm,
-        CreationChallengeResponse, CredProtect, Credential, CredentialID,
-        CredentialProtectionPolicy, PublicKeyCredential, RegisterPublicKeyCredential,
-        RegistrationState, RequestAuthenticationExtensions, RequestChallengeResponse,
+        AttestationConveyancePreference, AttestationFormat, AuthenticationState, COSEAlgorithm,
+        COSEKey, CreationChallengeResponse, CredProtect, Credential, CredentialID,
+        CredentialProtectionPolicy, ParsedAttestation, PublicKeyCredential,
+        RegisterPublicKeyCredential, RegisteredExtensions, RegistrationState,
+        RequestAuthenticationExtensions, RequestChallengeResponse,
         RequestRegistrationExtensions, UserVerificationPolicy,
     },
     WebauthnCore,
@@ -197,6 +198,45 @@ fn build_webauthn() -> WebauthnCore {
     )
 }
 
+/// Rebuilds the full `webauthn-rs` `Credential` that `authenticate_credential`
+/// expects from the two fields this app actually persists (`credential_id`,
+/// `public_key`) - see `20260905000000_slim_passkey_storage.sql` for why the
+/// rest of the struct isn't stored. The defaults below aren't guesses at
+/// "what a fresh credential looks like": they're the values that make each
+/// field a no-op given this app's fixed ceremony policy, so this reconstructs
+/// exactly the behaviour storing the whole struct would have had here.
+///
+/// - `registration_policy: Required` / `user_verified: true` - both
+///   `start_registration` and `login_start` hardcode
+///   `UserVerificationPolicy::Required` regardless of what's stored, so
+///   these never influenced the outcome even when persisted.
+/// - `attestation: ParsedAttestation::default()` / `attestation_format:
+///   AttestationFormat::None` - always empty anyway, since registration
+///   requests `AttestationConveyancePreference::None`.
+/// - `transports: None` / `extensions: RegisteredExtensions::none()` -
+///   written by webauthn-rs but never read back by anything in this app.
+/// - `counter: 0` / `backup_eligible: false` / `backup_state: false` - this
+///   app keeps no per-login state for anti-clone or sync-status tracking,
+///   so every login is verified as if it were the credential's first.
+fn rebuild_credential(credential_id: Vec<u8>, public_key: &str) -> Result<Credential, AppError> {
+    let cred: COSEKey = serde_json::from_str(public_key).map_err(|e| {
+        AppError::Internal(format!("failed to deserialize stored passkey public key: {e}"))
+    })?;
+    Ok(Credential {
+        cred_id: CredentialID::from(credential_id),
+        cred,
+        counter: 0,
+        transports: None,
+        user_verified: true,
+        backup_eligible: false,
+        backup_state: false,
+        registration_policy: UserVerificationPolicy::Required,
+        extensions: RegisteredExtensions::none(),
+        attestation: ParsedAttestation::default(),
+        attestation_format: AttestationFormat::None,
+    })
+}
+
 // ---------------------------------------------------------------- wire types
 
 #[derive(Serialize)]
@@ -329,12 +369,12 @@ async fn finish_registration(
         Ceremony::Authentication { .. } => unreachable!("take_ceremony returned the wrong variant"),
     };
 
-    let credential_json = serde_json::to_string(&cred)
-        .map_err(|e| AppError::Internal(format!("failed to serialize passkey credential: {e}")))?;
-    sqlx::query("INSERT INTO passkeys (user_id, credential_id, credential) VALUES (?, ?, ?)")
+    let public_key_json = serde_json::to_string(&cred.cred)
+        .map_err(|e| AppError::Internal(format!("failed to serialize passkey public key: {e}")))?;
+    sqlx::query("INSERT INTO passkeys (user_id, credential_id, public_key) VALUES (?, ?, ?)")
         .bind(user_id)
         .bind(cred.cred_id.as_slice())
-        .bind(credential_json)
+        .bind(public_key_json)
         .execute(&mut *tx)
         .await?;
 
@@ -472,18 +512,17 @@ pub async fn login_finish(
     let user_id: i64 = user_row.get("id");
     let is_admin: bool = user_row.get("is_admin");
 
-    let rows = sqlx::query("SELECT id, credential FROM passkeys WHERE user_id = ?")
+    let rows = sqlx::query("SELECT id, credential_id, public_key FROM passkeys WHERE user_id = ?")
         .bind(user_id)
         .fetch_all(&state.pool)
         .await?;
-    let mut creds: Vec<(i64, Credential)> = rows
+    let creds: Vec<(i64, Credential)> = rows
         .into_iter()
         .map(|row| {
             let passkey_id: i64 = row.get("id");
-            let credential_json: String = row.get("credential");
-            let cred: Credential = serde_json::from_str(&credential_json).map_err(|e| {
-                AppError::Internal(format!("failed to deserialize stored passkey credential: {e}"))
-            })?;
+            let credential_id: Vec<u8> = row.get("credential_id");
+            let public_key: String = row.get("public_key");
+            let cred = rebuild_credential(credential_id, &public_key)?;
             Ok((passkey_id, cred))
         })
         .collect::<Result<_, AppError>>()?;
@@ -495,21 +534,11 @@ pub async fn login_finish(
     auth_state.set_allowed_credentials(creds.iter().map(|(_, c)| c.clone()).collect());
     let result = state.webauthn.authenticate_credential(&req.credential, &auth_state)?;
 
-    // Persist the updated signature counter and backup flags - this is the
-    // clone-detection state webauthn-rs expects the relying party to keep.
-    if let Some((passkey_id, cred)) = creds.iter_mut().find(|(_, c)| c.cred_id == *result.cred_id()) {
-        if result.counter() > cred.counter {
-            cred.counter = result.counter();
-        }
-        cred.backup_state = result.backup_state();
-        if result.backup_eligible() {
-            cred.backup_eligible = true;
-        }
-        let credential_json = serde_json::to_string(cred).map_err(|e| {
-            AppError::Internal(format!("failed to serialize passkey credential: {e}"))
-        })?;
-        sqlx::query("UPDATE passkeys SET credential = ?, last_used_at = datetime('now') WHERE id = ?")
-            .bind(credential_json)
+    // No per-credential state to persist on success - counter/backup flags
+    // aren't tracked (see rebuild_credential) - just record when this
+    // passkey was last used, for the user's own "my passkeys" list.
+    if let Some((passkey_id, _)) = creds.iter().find(|(_, c)| c.cred_id == *result.cred_id()) {
+        sqlx::query("UPDATE passkeys SET last_used_at = datetime('now') WHERE id = ?")
             .bind(*passkey_id)
             .execute(&state.pool)
             .await?;
