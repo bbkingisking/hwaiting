@@ -25,7 +25,7 @@ type Method = 'password' | 'passkey'
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const { login, signup, passkeyLogin, passkeyRegister } = useAuth()
 
-  const [method, setMethod] = useState<Method>('password')
+  const [method, setMethod] = useState<Method>('passkey')
 
   // Password method state
   const [loginUsername, setLoginUsername] = useState('')
@@ -123,7 +123,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         <DialogHeader>
           <DialogTitle>Welcome</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue="login" className="w-full">
+        <Tabs defaultValue="signup" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
