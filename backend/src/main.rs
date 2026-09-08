@@ -208,7 +208,7 @@ async fn main() -> anyhow::Result<()> {
 /// process (and its own private network namespace) exists, so the service
 /// itself never calls `socket()`.
 fn systemd_activated_unix_socket() -> Option<std::os::unix::net::UnixListener> {
-    use std::os::fd::FromRawFd;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
     let listen_pid: u32 = env::var("LISTEN_PID").ok()?.parse().ok()?;
     if listen_pid != std::process::id() {
@@ -222,7 +222,29 @@ fn systemd_activated_unix_socket() -> Option<std::os::unix::net::UnixListener> {
     // SAFETY: LISTEN_PID matching our own pid confirms systemd handed fd 3
     // (SD_LISTEN_FDS_START) to this exact exec, and nothing earlier in this
     // process opens or closes low-numbered fds - so we're the sole owner.
-    let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(3) };
+    // OwnedFd first, rather than constructing the typed listener directly,
+    // so "take ownership of an externally-handed-over fd" and "what type
+    // is this" are two separate, individually narrow steps.
+    let fd = unsafe { OwnedFd::from_raw_fd(3) };
+
+    // systemd hands the fd over with FD_CLOEXEC *cleared* - it has to
+    // survive the exec() into this binary, and doesn't get re-set
+    // afterward. Left alone, any subprocess this process later spawns
+    // would silently inherit the listening socket too. Nothing here
+    // shells out today, so this isn't exploitable yet, but it's cheap
+    // enough to close off regardless of whether that stays true.
+    //
+    // SAFETY: fcntl(F_GETFD)/F_SETFD on a valid, owned fd we're not
+    // otherwise touching concurrently - both calls are just flag reads/
+    // writes, no memory safety involved.
+    unsafe {
+        let flags = libc::fcntl(fd.as_raw_fd(), libc::F_GETFD);
+        if flags >= 0 {
+            libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, flags | libc::FD_CLOEXEC);
+        }
+    }
+
+    let listener = std::os::unix::net::UnixListener::from(fd);
     listener.set_nonblocking(true).ok()?;
     Some(listener)
 }
