@@ -158,24 +158,73 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Read HOST and PORT from environment variables
-    let host = env::var("HOST")
-        .expect("HOST environment variable must be set");
-    let port: u16 = env::var("PORT")
-        .expect("PORT environment variable must be set")
-        .parse()
-        .expect("PORT must be a valid u16 number");
+    // Bind and serve. Three ways to get a listening socket, tried in order:
+    //
+    //  1. systemd socket activation (LISTEN_PID/LISTEN_FDS set): the socket
+    //     is already bound in the host's network namespace before this
+    //     process even starts, so the unit can run fully network-isolated
+    //     (PrivateNetwork=yes) and never has to call socket() itself.
+    //  2. UNIX_SOCKET=<path>: self-bind a Unix domain socket, for setups
+    //     that reverse-proxy over a local socket file without using
+    //     systemd socket activation.
+    //  3. HOST + PORT: the original TCP listener - unchanged, still what
+    //     prod uses.
+    if let Some(std_listener) = systemd_activated_unix_socket() {
+        let listener = tokio::net::UnixListener::from_std(std_listener)?;
+        tracing::info!("Backend listening on systemd-activated unix socket");
+        axum::serve(listener, app).await?;
+    } else if let Ok(path) = env::var("UNIX_SOCKET") {
+        // Remove a stale socket file left behind by an unclean previous exit.
+        let _ = std::fs::remove_file(&path);
+        let listener = tokio::net::UnixListener::bind(&path)?;
+        tracing::info!("Backend listening on unix socket {}", path);
+        axum::serve(listener, app).await?;
+    } else {
+        let host = env::var("HOST")
+            .expect("HOST environment variable must be set");
+        let port: u16 = env::var("PORT")
+            .expect("PORT environment variable must be set")
+            .parse()
+            .expect("PORT must be a valid u16 number");
 
-    let addr: SocketAddr = format!("{}:{}", host, port)
-        .parse()
-        .expect("Failed to parse HOST:PORT into SocketAddr");
+        let addr: SocketAddr = format!("{}:{}", host, port)
+            .parse()
+            .expect("Failed to parse HOST:PORT into SocketAddr");
 
-    tracing::info!("Backend listening on {}", addr);
+        tracing::info!("Backend listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
+    }
 
     Ok(())
+}
+
+/// Picks up a systemd socket-activated Unix listener passed in as fd 3
+/// (`SD_LISTEN_FDS_START`), if `LISTEN_PID`/`LISTEN_FDS` confirm one was
+/// handed to this exact process. This is what lets a unit set
+/// `PrivateNetwork=yes` and `RestrictAddressFamilies=AF_UNIX`: systemd
+/// creates and binds the socket in the host's network namespace before this
+/// process (and its own private network namespace) exists, so the service
+/// itself never calls `socket()`.
+fn systemd_activated_unix_socket() -> Option<std::os::unix::net::UnixListener> {
+    use std::os::fd::FromRawFd;
+
+    let listen_pid: u32 = env::var("LISTEN_PID").ok()?.parse().ok()?;
+    if listen_pid != std::process::id() {
+        return None;
+    }
+    let listen_fds: i32 = env::var("LISTEN_FDS").ok()?.parse().ok()?;
+    if listen_fds < 1 {
+        return None;
+    }
+
+    // SAFETY: LISTEN_PID matching our own pid confirms systemd handed fd 3
+    // (SD_LISTEN_FDS_START) to this exact exec, and nothing earlier in this
+    // process opens or closes low-numbered fds - so we're the sole owner.
+    let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(3) };
+    listener.set_nonblocking(true).ok()?;
+    Some(listener)
 }
 
 #[utoipa::path(
