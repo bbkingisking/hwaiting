@@ -101,19 +101,23 @@ export function describeCeremonyError(e: unknown, label: string): string {
 const API_BASE_KEY = 'annyeong-api-base'
 
 // Same-origin by default - correct for the normal deployment, where this
-// binary serves both the API and the built frontend. Overridable via a
-// one-time `?api=<origin>` query param (persisted to localStorage) so a
-// separately-hosted build (e.g. a surge.sh preview) can point its API
-// calls at a real backend without a rebuild. This is independent of the
+// binary serves both the API and the built frontend. VITE_API_BASE is
+// this build's own compiled-in override for the opposite case: a build
+// deployed to a static host with no backend of its own (e.g.
+// hwaiting-demo.surge.sh), baked in at `npm run build` time (see
+// hwaiting-demo's install.sh) since there's no server-side process there
+// to read an env var from at request time. Below that, `?api=<origin>`
+// (persisted to localStorage) remains the manual override for a one-off
+// preview pointed at a different backend. This is independent of the
 // backend's RP_ID/RP_ORIGINS config, which must match wherever *this page*
-// is served from (the surge domain), not wherever the API happens to live
-// - WebAuthn scopes the ceremony to the calling page's origin, not the
-// origin its fetch() calls go to.
+// is served from, not wherever the API happens to live - WebAuthn scopes
+// the ceremony to the calling page's origin, not the origin its fetch()
+// calls go to.
 export function apiBase(): string {
   const fromQuery = new URLSearchParams(window.location.search).get('api')
   if (fromQuery) {
     localStorage.setItem(API_BASE_KEY, fromQuery)
   }
-  const base = fromQuery || localStorage.getItem(API_BASE_KEY) || window.location.origin
+  const base = fromQuery || localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || window.location.origin
   return base.replace(/\/$/, '')
 }

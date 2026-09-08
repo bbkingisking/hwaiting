@@ -28,14 +28,6 @@
 //! authenticated "add a passkey to my account" ceremonies - attaches a
 //! credential to the caller's account.
 //!
-//! The public sign-up ceremony (`/api/auth/passkey/register/*`) is gated on
-//! the same invite codes as `auth::signup`, not a separate allowance for
-//! passkey accounts - see `auth::check_invite_code`/`consume_invite_code`.
-//! `register/start` checks the code eagerly so a bad one fails before the
-//! browser even shows the OS passkey picker; `register/finish` re-checks
-//! and consumes it atomically with creating the user, since the picker can
-//! take long enough for another signup to spend the same code in between.
-//!
 //! Two buttons, no identifiers: `register` and `login` are separate actions
 //! the frontend wires to separate buttons, not a single "enter" flow that
 //! tries one then falls back to the other (that was prototyped and felt
@@ -102,15 +94,8 @@ enum Ceremony {
     /// authenticated `/api/user/passkeys/register/*` ceremony adding a
     /// passkey to an already-signed-in account; `finish` re-checks the
     /// caller's JWT still names that same user before writing anything.
-    ///
-    /// `invite_code` is `Some` exactly when `for_user` is `None`: a public
-    /// signup ceremony carries the code it's gated on through to `finish`,
-    /// which re-validates and consumes it; an authenticated "add a
-    /// passkey" ceremony needs no invite code; the account it's attached
-    /// to already cleared that gate to exist.
     Registration {
         for_user: Option<i64>,
-        invite_code: Option<String>,
         state: RegistrationState,
         expires: Instant,
     },
@@ -298,25 +283,18 @@ pub struct ListPasskeysResponse {
     pub passkeys: Vec<PasskeySummary>,
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct PasskeyRegisterStartRequest {
-    pub invite_code: String,
-}
-
 // ---------------------------------------------------------------- shared registration logic
 
 /// Builds the creation options both registration ceremonies (public
 /// sign-up, and an authenticated user adding a second device) share; they
-/// differ only in what `for_user` gets recorded as, which invite code (if
-/// any) the ceremony is spending, and which existing credential ids are
-/// excluded so a device can't register the same authenticator twice.
-/// `handle` is thrown away once this returns - it's never read back after
-/// the authenticator embeds it in the credential.
+/// differ only in what `for_user` gets recorded as and which existing
+/// credential ids are excluded so a device can't register the same
+/// authenticator twice. `handle` is thrown away once this returns - it's
+/// never read back after the authenticator embeds it in the credential.
 fn start_registration(
     state: &AppState,
     handle: Uuid,
     for_user: Option<i64>,
-    invite_code: Option<String>,
     exclude_credentials: Option<Vec<CredentialID>>,
 ) -> Result<(Uuid, CreationChallengeResponse), AppError> {
     let extensions = RequestRegistrationExtensions {
@@ -348,7 +326,6 @@ fn start_registration(
 
     let ceremony_id = state.store_ceremony(Ceremony::Registration {
         for_user,
-        invite_code,
         state: reg_state,
         expires: Instant::now() + CEREMONY_TTL,
     });
@@ -377,28 +354,18 @@ async fn finish_registration(
 
     let cred = state.webauthn.register_credential(credential, reg_state, None)?;
 
-    // One transaction for account creation (or reuse), the invite code
-    // it's gated on, and the passkey row itself. Without this, a race
-    // between two signups spending the same code could leave a user (and
-    // now-orphaned passkey credential) behind for the loser, with nothing
-    // to show it was ever invited - see `auth::check_invite_code`.
+    // One transaction for account creation (or reuse) and the passkey row
+    // itself, so a failure partway through never leaves one without the
+    // other.
     let mut tx = state.pool.begin().await?;
 
     let user_id = match &ceremony {
         Ceremony::Registration { for_user: Some(uid), .. } => *uid,
-        Ceremony::Registration { for_user: None, invite_code, .. } => {
-            let invite_code = invite_code.as_ref().expect(
-                "a public registration ceremony (for_user: None) always carries an invite code - see register_start",
-            );
-            crate::auth::check_invite_code(&mut *tx, invite_code).await?;
-
+        Ceremony::Registration { for_user: None, .. } => {
             let result = sqlx::query("INSERT INTO users DEFAULT VALUES")
                 .execute(&mut *tx)
                 .await?;
-            let user_id = result.last_insert_rowid();
-
-            crate::auth::consume_invite_code(&mut *tx, invite_code, user_id).await?;
-            user_id
+            result.last_insert_rowid()
         }
         Ceremony::Authentication { .. } => unreachable!("take_ceremony returned the wrong variant"),
     };
@@ -422,28 +389,18 @@ async fn finish_registration(
 #[utoipa::path(
     post,
     path = "/api/auth/passkey/register/start",
-    request_body = PasskeyRegisterStartRequest,
     responses(
         (status = 200, description = "WebAuthn creation options for a new passkey account. \
             Opaque to OpenAPI - pass straight to navigator.credentials.create() after \
             base64url-decoding challenge/user.id."),
-        (status = 400, description = "Invalid/used invite code, or malformed request body", body = crate::error::ErrorResponse),
     ),
     tag = "auth"
 )]
 pub async fn register_start(
     State(state): State<AppState>,
-    AppJson(req): AppJson<PasskeyRegisterStartRequest>,
 ) -> Result<Json<StartResponse<CreationChallengeResponse>>, AppError> {
-    let invite_code = req.invite_code.trim().to_string();
-    // Fail before the browser ever shows the OS passkey picker if the code
-    // is already invalid. Re-checked, and actually consumed, atomically
-    // with the user insert in `finish_registration` - the picker can take
-    // long enough for another signup to spend this same code in between.
-    crate::auth::check_invite_code(&state.pool, &invite_code).await?;
-
     let handle = Uuid::new_v4();
-    let (ceremony_id, options) = start_registration(&state, handle, None, Some(invite_code), None)?;
+    let (ceremony_id, options) = start_registration(&state, handle, None, None)?;
     info!("passkey register/start: ceremony={ceremony_id}");
     Ok(Json(StartResponse { ceremony_id, options }))
 }
@@ -453,8 +410,7 @@ pub async fn register_start(
     path = "/api/auth/passkey/register/finish",
     responses(
         (status = 201, description = "Account created from the verified passkey", body = AuthResponse),
-        (status = 400, description = "Ceremony verification failed, unknown ceremony id, or the invite \
-            code it was started with got used up by someone else in the meantime", body = crate::error::ErrorResponse),
+        (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
     ),
     tag = "auth"
@@ -555,7 +511,7 @@ pub async fn login_finish(
     // (a byte-equality scan against `raw_id`, not a cryptographic
     // operation) finds the one whose id matches, and only that one ever
     // gets a real signature-verification call - so this costs one ECDSA
-    // verify plus a cheap linear scan, same as an indexed version, just
+    // verify plus a cheap linear scan, same as the indexed version, just
     // without the SQL WHERE clause doing the narrowing. See the session
     // this was written in: at ~140us/verify on the cheapest hardware this
     // runs on, this stays negligible into the hundreds of thousands of
@@ -671,7 +627,7 @@ pub async fn add_passkey_start(
     let exclude_credentials = (!existing.is_empty())
         .then(|| existing.into_iter().map(CredentialID::from).collect());
 
-    let (ceremony_id, options) = start_registration(&state, handle, Some(auth.0), None, exclude_credentials)?;
+    let (ceremony_id, options) = start_registration(&state, handle, Some(auth.0), exclude_credentials)?;
     info!("passkey add/start: user_id={} ceremony={ceremony_id}", auth.0);
     Ok(Json(StartResponse { ceremony_id, options }))
 }

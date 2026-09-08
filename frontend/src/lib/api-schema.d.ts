@@ -52,38 +52,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/invites": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_invites"];
-        put?: never;
-        post: operations["generate_invites"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/invites/{code}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_invite"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -765,20 +733,6 @@ export interface components {
             speech_level?: components["schemas"]["FieldValue"][] | null;
             tense?: components["schemas"]["FieldValue"][] | null;
         };
-        GenerateInvitesRequest: {
-            /**
-             * @description Defaults to 1 if omitted from the body, or if the body is omitted
-             *     entirely (a POST with no `Content-Type` header at all).
-             * @default 1
-             */
-            count: number;
-        };
-        GenerateInvitesResponse: {
-            codes: components["schemas"]["GeneratedInvite"][];
-        };
-        GeneratedInvite: {
-            code: string;
-        };
         HanjaDrill: {
             hanja: string;
             trans_dfn?: string | null;
@@ -893,15 +847,6 @@ export interface components {
             speech_level?: string | null;
             tense?: string | null;
         };
-        InviteCode: {
-            code: string;
-            created_at: string;
-            used_at?: string | null;
-            used_by_username?: string | null;
-        };
-        ListInvitesResponse: {
-            codes: components["schemas"]["InviteCode"][];
-        };
         ListPasskeysResponse: {
             passkeys: components["schemas"]["PasskeySummary"][];
         };
@@ -928,9 +873,6 @@ export interface components {
             parameters: number[];
             review_count: number;
             success: boolean;
-        };
-        PasskeyRegisterStartRequest: {
-            invite_code: string;
         };
         PasskeySummary: {
             created_at: string;
@@ -960,7 +902,6 @@ export interface components {
             cards: components["schemas"]["Card"][];
         };
         SignupRequest: {
-            invite_code: string;
             password: string;
             username: string;
         };
@@ -1274,135 +1215,6 @@ export interface operations {
             };
         };
     };
-    list_invites: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description All invite codes, used and unused */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListInvitesResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Valid JWT but not an admin */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    generate_invites: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Optional; omit the body entirely (or omit `count` within it) to generate 1 code */
-        requestBody?: {
-            content: {
-                "application/json": null | components["schemas"]["GenerateInvitesRequest"];
-            };
-        };
-        responses: {
-            /** @description Invite codes generated (capped at 100 per request) */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerateInvitesResponse"];
-                };
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Valid JWT but not an admin */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    delete_invite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Invite code */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Invite code deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing/invalid JWT */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Valid JWT but not an admin */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Code doesn't exist */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     list_users: {
         parameters: {
             query?: {
@@ -1569,7 +1381,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthResponse"];
                 };
             };
-            /** @description Ceremony verification failed, unknown ceremony id, or the invite code it was started with got used up by someone else in the meantime */
+            /** @description Ceremony verification failed, or unknown ceremony id */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1596,11 +1408,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasskeyRegisterStartRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description WebAuthn creation options for a new passkey account. Opaque to OpenAPI - pass straight to navigator.credentials.create() after base64url-decoding challenge/user.id. */
             200: {
@@ -1608,15 +1416,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Invalid/used invite code, or malformed request body */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
             };
         };
     };
@@ -1642,7 +1441,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthResponse"];
                 };
             };
-            /** @description Invalid/used invite code, or malformed request body */
+            /** @description Malformed request body */
             400: {
                 headers: {
                     [name: string]: unknown;
