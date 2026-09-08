@@ -1,4 +1,4 @@
-import { Trash2, Copy, Download, Upload } from 'lucide-react'
+import { Trash2, Download, Upload } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,13 +25,6 @@ import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTI
 import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-interface InviteCode {
-  code: string
-  created_at: string
-  used_at: string | null
-  used_by_username: string | null
-}
-
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -41,9 +34,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
   const { token, isAdmin } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
-  const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
-  const [isLoadingInvites, setIsLoadingInvites] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -58,68 +48,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   // Track user's preferred limit when they toggle suppress on/off
   const [preferredLimit, setPreferredLimit] = useState(20)
-
-  const fetchInviteCodes = async () => {
-    if (!isAdmin || !token) return
-
-    setIsLoadingInvites(true)
-    try {
-      const response = await fetch(`${window.location.origin}/api/admin/invites`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setInviteCodes(data.codes)
-      }
-    } catch (error) {
-      console.error('Failed to fetch invite codes:', error)
-    } finally {
-      setIsLoadingInvites(false)
-    }
-  }
-
-  const generateInvites = async () => {
-    if (!isAdmin || !token) return
-
-    setIsGenerating(true)
-    try {
-      const response = await fetch(`${window.location.origin}/api/admin/invites`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ count: 1 }),
-      })
-      if (response.ok) {
-        await fetchInviteCodes()
-      }
-    } catch (error) {
-      console.error('Failed to generate invite codes:', error)
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const deleteInvite = async (code: string) => {
-    if (!isAdmin || !token) return
-
-    try {
-      const response = await fetch(`${window.location.origin}/api/admin/invites/${code}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      if (response.ok) {
-        await fetchInviteCodes()
-      }
-    } catch (error) {
-      console.error('Failed to delete invite code:', error)
-    }
-  }
 
   const fetchPasskeys = async () => {
     if (!token) return
@@ -162,14 +90,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         type: 'error',
         text: error instanceof Error ? error.message : 'Failed to remove passkey',
       })
-    }
-  }
-
-  const copyToClipboard = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(code)
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error)
     }
   }
 
@@ -264,12 +184,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setPreferredLimit(settings.dailyNewCardLimit)
     }
   }, [])
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchInviteCodes()
-    }
-  }, [isAdmin])
 
   useEffect(() => {
     if (open) {
@@ -666,69 +580,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <p className="text-xs text-muted-foreground">
                     Show the last answer-check round-trip time, bottom left. Saved to this browser only.
                   </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={generateInvites}
-                    disabled={isGenerating}
-                    variant="outline"
-                  >
-                    {isGenerating ? 'Generating...' : 'Generate Invite'}
-                  </Button>
-                  <Button
-                    onClick={fetchInviteCodes}
-                    disabled={isLoadingInvites}
-                    variant="outline"
-                  >
-                    Refresh
-                  </Button>
-                </div>
-
-                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
-                  {isLoadingInvites ? (
-                    <p className="text-sm text-muted-foreground">Loading...</p>
-                  ) : inviteCodes.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No invite codes yet</p>
-                  ) : (
-                    inviteCodes.map((invite) => (
-                      <div
-                        key={invite.code}
-                        className="flex items-center justify-between p-2 border rounded-md"
-                      >
-                        <div className="flex-1">
-                          <code className="font-mono text-sm">{invite.code}</code>
-                          {invite.used_at ? (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              (used by {invite.used_by_username})
-                            </span>
-                          ) : (
-                            <span className="ml-2 text-xs text-green-600">
-                              available
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Copy invite code ${invite.code}`}
-                            onClick={() => copyToClipboard(invite.code)}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Delete invite code ${invite.code}`}
-                            onClick={() => deleteInvite(invite.code)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
               </AccordionContent>
             </AccordionItem>
