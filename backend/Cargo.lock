@@ -2407,6 +2407,7 @@ dependencies = [
  "dotenvy",
  "fsrs",
  "jsonwebtoken",
+ "libc",
  "openssl",
  "serde",
  "serde_json",
