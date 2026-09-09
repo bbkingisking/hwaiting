@@ -29,11 +29,14 @@ mod user;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Static OpenAPI export: `PRINT_OPENAPI=1 ./hwaiting` prints the spec to
+    // Static OpenAPI export: `./hwaiting --print-openapi` prints the spec to
     // stdout and exits, without touching the DB, credentials, or anything
     // else - used to feed frontend type generation from CI/local builds
-    // without needing a running server.
-    if env::var("PRINT_OPENAPI").is_ok() {
+    // without needing a running server. A CLI flag rather than an env var:
+    // this isn't a deployment setting that belongs alongside
+    // credentials.rs's config surface, it's a one-off "run in a different
+    // mode this one time" instruction, and argv is the channel for that.
+    if env::args().any(|arg| arg == "--print-openapi") {
         println!("{}", openapi::ApiDoc::openapi().to_pretty_json()?);
         return Ok(());
     }
@@ -107,8 +110,8 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api", api_routes)
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", openapi::ApiDoc::openapi()));
 
-    // Serve static files from STATIC_DIR, if set. Unset means API-only mode:
-    // no fallback service, unmatched paths just 404.
+    // Serve static files from HWAITING_STATIC_DIR, if set. Unset means
+    // API-only mode: no fallback service, unmatched paths just 404.
     match credentials::static_dir().filter(|s| !s.trim().is_empty()) {
         Some(static_dir) => {
             tracing::info!("Serving static files from {}", static_dir);
@@ -118,14 +121,14 @@ async fn main() -> anyhow::Result<()> {
             app = app.fallback_service(serve_dir);
         }
         None => {
-            tracing::info!("STATIC_DIR not set - running in API-only mode (no static file serving)");
+            tracing::info!("HWAITING_STATIC_DIR not set - running in API-only mode (no static file serving)");
         }
     }
 
     // CORS: only add the layer if origins are explicitly configured. Unset
     // means same-origin only, enforced by the browser for free - the
-    // correct default when STATIC_DIR is serving the frontend from this
-    // same binary.
+    // correct default when HWAITING_STATIC_DIR is serving the frontend from
+    // this same binary.
     match credentials::cors_allowed_origins().filter(|s| !s.trim().is_empty()) {
         Some(origins) => {
             let allowed_origins: Vec<HeaderValue> = origins
@@ -134,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
                 .filter(|s| !s.is_empty())
                 .map(|s| {
                     s.parse::<HeaderValue>()
-                        .unwrap_or_else(|e| panic!("Invalid origin '{}' in CORS_ALLOWED_ORIGINS: {}", s, e))
+                        .unwrap_or_else(|e| panic!("Invalid origin '{}' in HWAITING_CORS_ALLOWED_ORIGINS: {}", s, e))
                 })
                 .collect();
 
@@ -154,7 +157,7 @@ async fn main() -> anyhow::Result<()> {
             app = app.layer(cors);
         }
         None => {
-            tracing::info!("CORS_ALLOWED_ORIGINS not set - no CORS layer added (same-origin only)");
+            tracing::info!("HWAITING_CORS_ALLOWED_ORIGINS not set - no CORS layer added (same-origin only)");
         }
     }
 
@@ -164,13 +167,14 @@ async fn main() -> anyhow::Result<()> {
     //     is already bound in the host's network namespace before this
     //     process even starts, so the unit can run fully network-isolated
     //     (PrivateNetwork=yes) and never has to call socket() itself.
-    //  2. UNIX_SOCKET=<path>: self-bind a Unix domain socket, for setups
-    //     that reverse-proxy over a local socket file without using
+    //  2. HWAITING_UNIX_SOCKET=<path>: self-bind a Unix domain socket, for
+    //     setups that reverse-proxy over a local socket file without using
     //     systemd socket activation.
-    //  3. HOST + PORT: the original TCP listener - unchanged, still what
-    //     prod uses. Defaults to 127.0.0.1:3000 when unset, since neither
-    //     value is a secret or deployment-specific in a way that makes a
-    //     default unsafe - unlike RP_ID/RP_ORIGINS, which have none.
+    //  3. HWAITING_HOST + HWAITING_PORT: the original TCP listener -
+    //     unchanged, still what prod uses. Defaults to 127.0.0.1:3000 when
+    //     unset, since neither value is a secret or deployment-specific in a
+    //     way that makes a default unsafe - unlike HWAITING_RP_ID/HWAITING_RP_ORIGINS, which
+    //     have none.
     if let Some(std_listener) = systemd_activated_unix_socket() {
         let listener = tokio::net::UnixListener::from_std(std_listener)?;
         tracing::info!("Backend listening on systemd-activated unix socket");
@@ -185,11 +189,11 @@ async fn main() -> anyhow::Result<()> {
         let host = credentials::host();
         let port: u16 = credentials::port()
             .parse()
-            .expect("PORT must be a valid u16 number");
+            .expect("HWAITING_PORT must be a valid u16 number");
 
         let addr: SocketAddr = format!("{}:{}", host, port)
             .parse()
-            .expect("Failed to parse HOST:PORT into SocketAddr");
+            .expect("Failed to parse HWAITING_HOST:HWAITING_PORT into SocketAddr");
 
         tracing::info!("Backend listening on {}", addr);
 

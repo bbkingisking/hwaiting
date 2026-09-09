@@ -2,8 +2,8 @@ name: OpenAPI contract
 
 # Keeps hwaitingapi.surge.sh (the Scalar-rendered API reference) in sync with
 # the backend's actual OpenAPI contract. The spec is generated the same way
-# frontend/scripts/generate-api-types.sh does it - `PRINT_OPENAPI=1 cargo
-# run` prints it to stdout and exits before touching the DB or any other
+# frontend/scripts/generate-api-types.sh does it - `cargo run -- --print-openapi`
+# prints it to stdout and exits before touching the DB or any other
 # config, so this job needs no services or secrets beyond the surge.sh ones.
 on:
   push:
@@ -34,7 +34,7 @@ jobs:
 
       - name: Generate OpenAPI spec
         working-directory: backend
-        run: PRINT_OPENAPI=1 cargo run --quiet > openapi/openapi.json
+        run: cargo run --quiet -- --print-openapi > openapi/openapi.json
 
       - name: Upload spec artifact
         uses: actions/upload-artifact@v4

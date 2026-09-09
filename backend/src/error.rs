@@ -56,8 +56,8 @@ pub enum AppError {
     UnknownPasskey,
 
     /// Passkey sign-in is a genuinely optional feature (see
-    /// `passkey::build_webauthn`) - this deployment has no `RP_ID`/
-    /// `RP_ORIGINS` configured, so every passkey endpoint that would need
+    /// `passkey::build_webauthn`) - this deployment has no `HWAITING_RP_ID`/
+    /// `HWAITING_RP_ORIGINS` configured, so every passkey endpoint that would need
     /// the WebAuthn machinery returns this instead of panicking or
     /// pretending to work.
     #[error("Passkey sign-in is not configured on this server")]

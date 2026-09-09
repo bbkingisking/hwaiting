@@ -2,53 +2,67 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Read a config value from a systemd credential, falling back to an env
-/// var. In production, systemd sets CREDENTIALS_DIRECTORY and places
-/// decrypted credential files there (`LoadCredential=`/`SetCredential=`);
-/// the env var covers dev builds and any deployment that isn't using
-/// systemd credentials at all. Every config option in this app is readable
-/// through both - env vars are visible in `/proc/PID/environ`,
-/// `systemctl show`, and get inherited by anything the process spawns, so
-/// operators who'd rather keep all their config (not just secrets) out of
-/// the environment and in one place can.
-fn read_config(cred_name: &str, env_name: &str) -> Option<String> {
-    if let Ok(cred_dir) = env::var("CREDENTIALS_DIRECTORY") {
-        let path = Path::new(&cred_dir).join(cred_name);
-        if path.exists() {
-            return Some(
-                fs::read_to_string(&path)
-                    .unwrap_or_else(|e| panic!("Failed to read credential {}: {}", cred_name, e))
-                    .trim_end_matches('\n')
-                    .to_string(),
-            );
-        }
+/// Every backend config option is readable two ways that are kept in
+/// lockstep by construction, not by two independently-typed names living
+/// next to each other: an env var `HWAITING_KEY_NAME`, or a plain-text file
+/// at `$CREDENTIALS_DIRECTORY/hwaiting-key-name` - systemd's
+/// `LoadCredential=`/`SetCredential=`/`LoadCredentialEncrypted=` all place
+/// the credential's decrypted content there as a plain file, in a
+/// per-service tmpfs directory systemd sets up (and points
+/// `CREDENTIALS_DIRECTORY` at) before the service starts. The env var wins
+/// when both are set: it's the one visible in `ps`/`systemctl show`, so if
+/// an operator can see it set, they likely meant it to override whatever's
+/// sitting in a credential file they may not remember configuring.
+fn read_config(env_name: &str) -> Option<String> {
+    if let Ok(value) = env::var(env_name) {
+        return Some(value);
     }
 
-    env::var(env_name).ok()
+    let cred_dir = env::var("CREDENTIALS_DIRECTORY").ok()?;
+    let path = Path::new(&cred_dir).join(credential_file_name(env_name));
+    if !path.exists() {
+        return None;
+    }
+
+    Some(
+        fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read credential file {}: {}", path.display(), e))
+            .trim_end_matches('\n')
+            .to_string(),
+    )
+}
+
+/// `HWAITING_ADMIN_USERNAME` -> `hwaiting-admin-username`: lowercase,
+/// underscores to dashes. Purely mechanical so the env var name is the only
+/// name callers ever have to write down - there's no second string to keep
+/// in sync or typo out of step with the first.
+fn credential_file_name(env_name: &str) -> String {
+    env_name.to_lowercase().replace('_', "-")
 }
 
 /// Like `read_config`, but for options with no sane default: panics naming
-/// both the credential and the env var when neither is set.
-fn require_config(cred_name: &str, env_name: &str) -> String {
-    read_config(cred_name, env_name).unwrap_or_else(|| {
+/// both the env var and the credential file when neither is set.
+fn require_config(env_name: &str) -> String {
+    read_config(env_name).unwrap_or_else(|| {
         panic!(
-            "Neither systemd credential '{}' nor env var {} is set",
-            cred_name, env_name
+            "Neither env var {} nor systemd credential file '{}' (under $CREDENTIALS_DIRECTORY) is set",
+            env_name,
+            credential_file_name(env_name)
         )
     })
 }
 
 /// Like `read_config`, but falls back to `default` when neither is set.
-fn config_or(cred_name: &str, env_name: &str, default: &str) -> String {
-    read_config(cred_name, env_name).unwrap_or_else(|| default.to_string())
+fn config_or(env_name: &str, default: &str) -> String {
+    read_config(env_name).unwrap_or_else(|| default.to_string())
 }
 
 pub fn jwt_secret() -> String {
-    require_config("hwaiting-jwt-secret", "JWT_SECRET")
+    require_config("HWAITING_JWT_SECRET")
 }
 
 pub fn admin_password() -> String {
-    require_config("hwaiting-admin-password", "ADMIN_PASSWORD")
+    require_config("HWAITING_ADMIN_PASSWORD")
 }
 
 /// XDG Base Directory data home: `$XDG_DATA_HOME`, or `$HOME/.local/share`
@@ -72,19 +86,20 @@ fn xdg_data_home() -> Option<PathBuf> {
 /// Defaults to `<xdg-data-home>/hwaiting/hwaiting.db`, creating that
 /// directory if it doesn't exist yet - `create_if_missing` on the sqlite
 /// connect options only creates the file, not its parent directory. Unlike
-/// `ADMIN_USERNAME`/`HOST`/`PORT`, there's no static default here since the
-/// value is derived, not fixed; and if `XDG_DATA_HOME`/`HOME` are both
-/// unset too (e.g. some systemd service setups), there's nothing to derive
-/// it from, so this still panics rather than picking an arbitrary path.
+/// `HWAITING_ADMIN_USERNAME`/`HWAITING_HOST`/`HWAITING_PORT`, there's no
+/// static default here since the value is derived, not fixed; and if
+/// `XDG_DATA_HOME`/`HOME` are both unset too (e.g. some systemd service
+/// setups), there's nothing to derive it from, so this still panics rather
+/// than picking an arbitrary path.
 pub fn database_url() -> String {
-    if let Some(value) = read_config("hwaiting-database-url", "DATABASE_URL") {
+    if let Some(value) = read_config("HWAITING_DATABASE_URL") {
         return value;
     }
 
     let dir = xdg_data_home()
         .unwrap_or_else(|| {
             panic!(
-                "DATABASE_URL not set, and neither XDG_DATA_HOME nor HOME is set to derive a default location from"
+                "HWAITING_DATABASE_URL not set, and neither XDG_DATA_HOME nor HOME is set to derive a default location from"
             )
         })
         .join("hwaiting");
@@ -98,9 +113,9 @@ pub fn database_url() -> String {
 
 /// Defaults to "admin" - unlike the values above, there's nothing unsafe
 /// about a default here, it's not a secret and not deployment-specific
-/// identity like RP_ID/RP_ORIGINS.
+/// identity like HWAITING_RP_ID/HWAITING_RP_ORIGINS.
 pub fn admin_username() -> String {
-    config_or("hwaiting-admin-username", "ADMIN_USERNAME", "admin")
+    config_or("HWAITING_ADMIN_USERNAME", "admin")
 }
 
 /// No default, and deliberately not derived from `host()`/`port()` either:
@@ -111,36 +126,36 @@ pub fn admin_username() -> String {
 /// passkey sign-in - a genuinely optional feature alongside
 /// username/password auth - is off, not misconfigured.
 pub fn rp_id() -> Option<String> {
-    read_config("hwaiting-rp-id", "RP_ID")
+    read_config("HWAITING_RP_ID")
 }
 
 pub fn rp_origins() -> Option<String> {
-    read_config("hwaiting-rp-origins", "RP_ORIGINS")
+    read_config("HWAITING_RP_ORIGINS")
 }
 
 /// Only consulted on the plain-TCP listener path - defaults here don't
-/// affect systemd socket activation or UNIX_SOCKET, which are checked
+/// affect systemd socket activation or HWAITING_UNIX_SOCKET, which are checked
 /// first and don't call this.
 pub fn host() -> String {
-    config_or("hwaiting-host", "HOST", "127.0.0.1")
+    config_or("HWAITING_HOST", "127.0.0.1")
 }
 
 pub fn port() -> String {
-    config_or("hwaiting-port", "PORT", "3000")
+    config_or("HWAITING_PORT", "3000")
 }
 
 pub fn unix_socket() -> Option<String> {
-    read_config("hwaiting-unix-socket", "UNIX_SOCKET")
+    read_config("HWAITING_UNIX_SOCKET")
 }
 
 pub fn jwt_expiry_seconds() -> Option<String> {
-    read_config("hwaiting-jwt-expiry-seconds", "JWT_EXPIRY_SECONDS")
+    read_config("HWAITING_JWT_EXPIRY_SECONDS")
 }
 
 pub fn static_dir() -> Option<String> {
-    read_config("hwaiting-static-dir", "STATIC_DIR")
+    read_config("HWAITING_STATIC_DIR")
 }
 
 pub fn cors_allowed_origins() -> Option<String> {
-    read_config("hwaiting-cors-allowed-origins", "CORS_ALLOWED_ORIGINS")
+    read_config("HWAITING_CORS_ALLOWED_ORIGINS")
 }
