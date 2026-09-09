@@ -127,7 +127,7 @@ impl Ceremony {
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
-    /// `None` when `RP_ID`/`RP_ORIGINS` aren't configured - passkey sign-in
+    /// `None` when `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS` aren't configured - passkey sign-in
     /// is an optional feature, not a required one, see `build_webauthn`.
     webauthn: Option<Arc<WebauthnCore>>,
     ceremonies: Arc<Mutex<HashMap<Uuid, Ceremony>>>,
@@ -143,7 +143,7 @@ impl AppState {
     }
 
     /// The configured WebAuthn instance, or `AppError::PasskeysDisabled` if
-    /// this deployment never set `RP_ID`/`RP_ORIGINS`. Every handler that
+    /// this deployment never set `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS`. Every handler that
     /// needs to run an actual ceremony goes through this instead of
     /// touching the field directly.
     fn webauthn(&self) -> Result<&WebauthnCore, AppError> {
@@ -174,8 +174,8 @@ impl FromRef<AppState> for SqlitePool {
     }
 }
 
-/// Reads `RP_ID` (a hostname - WebAuthn's "relying party id") and
-/// `RP_ORIGINS` (comma-separated full origins the frontend is served from,
+/// Reads `HWAITING_RP_ID` (a hostname - WebAuthn's "relying party id") and
+/// `HWAITING_RP_ORIGINS` (comma-separated full origins the frontend is served from,
 /// e.g. `https://hwaiting.example.com`), each from a systemd credential or
 /// env var (see `credentials::rp_id`/`rp_origins`).
 ///
@@ -184,24 +184,24 @@ impl FromRef<AppState> for SqlitePool {
 /// deployment isn't using it: `AppState::new` stores no `WebauthnCore`, and
 /// every passkey endpoint returns `AppError::PasskeysDisabled` instead of
 /// running a ceremony. Setting only one of the two, or an unparseable
-/// `RP_ORIGINS`, is a config mistake rather than "half enabled" and still
+/// `HWAITING_RP_ORIGINS`, is a config mistake rather than "half enabled" and still
 /// panics at startup, same as before.
 ///
-/// There's still no default derived from `HOST`/`PORT` when both are unset:
-/// WebAuthn only runs in a secure context, and in production `RP_ID`/
-/// `RP_ORIGINS` must be the app's real HTTPS hostname and origin, not the
-/// bare `HOST`/`PORT` this binary listens on internally behind a
+/// There's still no default derived from `HWAITING_HOST`/`HWAITING_PORT` when both are unset:
+/// WebAuthn only runs in a secure context, and in production `HWAITING_RP_ID`/
+/// `HWAITING_RP_ORIGINS` must be the app's real HTTPS hostname and origin, not the
+/// bare `HWAITING_HOST`/`HWAITING_PORT` this binary listens on internally behind a
 /// TLS-terminating proxy - so guessing from those would be wrong exactly
 /// when it matters most, and silently so.
 fn build_webauthn() -> Option<WebauthnCore> {
     let (rp_id, rp_origins) = match (crate::credentials::rp_id(), crate::credentials::rp_origins()) {
         (None, None) => {
-            info!("RP_ID/RP_ORIGINS not set - passkey sign-in disabled");
+            info!("HWAITING_RP_ID/HWAITING_RP_ORIGINS not set - passkey sign-in disabled");
             return None;
         }
         (Some(rp_id), Some(rp_origins)) => (rp_id, rp_origins),
-        (Some(_), None) => panic!("RP_ID is set but RP_ORIGINS is not - passkeys need both or neither"),
-        (None, Some(_)) => panic!("RP_ORIGINS is set but RP_ID is not - passkeys need both or neither"),
+        (Some(_), None) => panic!("HWAITING_RP_ID is set but HWAITING_RP_ORIGINS is not - passkeys need both or neither"),
+        (None, Some(_)) => panic!("HWAITING_RP_ORIGINS is set but HWAITING_RP_ID is not - passkeys need both or neither"),
     };
 
     let origins: Vec<Url> = rp_origins
@@ -210,12 +210,12 @@ fn build_webauthn() -> Option<WebauthnCore> {
         .filter(|s| !s.is_empty())
         .map(|s| {
             Url::parse(s).unwrap_or_else(|e| {
-                panic!("Invalid origin '{s}' in RP_ORIGINS: {e}")
+                panic!("Invalid origin '{s}' in HWAITING_RP_ORIGINS: {e}")
             })
         })
         .collect();
     if origins.is_empty() {
-        panic!("RP_ORIGINS must contain at least one origin");
+        panic!("HWAITING_RP_ORIGINS must contain at least one origin");
     }
 
     info!("Passkey sign-in enabled for RP ID {rp_id:?}, origins {origins:?}");

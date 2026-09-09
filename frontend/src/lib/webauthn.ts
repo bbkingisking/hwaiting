@@ -109,7 +109,7 @@ const API_BASE_KEY = 'annyeong-api-base'
 // to read an env var from at request time. Below that, `?api=<origin>`
 // (persisted to localStorage) remains the manual override for a one-off
 // preview pointed at a different backend. This is independent of the
-// backend's RP_ID/RP_ORIGINS config, which must match wherever *this page*
+// backend's HWAITING_RP_ID/HWAITING_RP_ORIGINS config, which must match wherever *this page*
 // is served from, not wherever the API happens to live - WebAuthn scopes
 // the ceremony to the calling page's origin, not the origin its fetch()
 // calls go to.

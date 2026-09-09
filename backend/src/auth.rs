@@ -178,7 +178,7 @@ pub async fn signup(
     })))
 }
 
-/// TTL for newly issued JWTs, in seconds, from `JWT_EXPIRY_SECONDS`. Unset or
+/// TTL for newly issued JWTs, in seconds, from `HWAITING_JWT_EXPIRY_SECONDS`. Unset or
 /// `0` means tokens never expire - the default, so existing single-user
 /// deployments are unaffected unless this is set explicitly. A negative
 /// value is a config error and panics at token-generation time, same as an
@@ -188,10 +188,10 @@ fn jwt_ttl_seconds() -> Option<i64> {
     let secs: i64 = raw
         .trim()
         .parse()
-        .unwrap_or_else(|_| panic!("JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw));
+        .unwrap_or_else(|_| panic!("HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw));
 
     if secs < 0 {
-        panic!("JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw);
+        panic!("HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw);
     }
 
     (secs > 0).then_some(secs)
