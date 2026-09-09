@@ -11,7 +11,6 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
-use std::env;
 use tracing::{debug, info, warn};
 use utoipa::ToSchema;
 
@@ -185,7 +184,7 @@ pub async fn signup(
 /// value is a config error and panics at token-generation time, same as an
 /// unparseable one.
 fn jwt_ttl_seconds() -> Option<i64> {
-    let raw = env::var("JWT_EXPIRY_SECONDS").ok()?;
+    let raw = crate::credentials::jwt_expiry_seconds()?;
     let secs: i64 = raw
         .trim()
         .parse()
