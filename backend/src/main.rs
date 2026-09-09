@@ -29,6 +29,15 @@ mod user;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // `--help`/`-h` prints usage and the env-var config surface, then exits
+    // before anything else runs - same reasoning as `--print-openapi` below:
+    // a one-off "tell me how to run this" instruction belongs on argv, not
+    // in credentials.rs's config surface.
+    if env::args().any(|arg| arg == "--help" || arg == "-h") {
+        print!("{}", help_text());
+        return Ok(());
+    }
+
     // Static OpenAPI export: `./hwaiting --print-openapi` prints the spec to
     // stdout and exits, without touching the DB, credentials, or anything
     // else - used to feed frontend type generation from CI/local builds
@@ -252,6 +261,72 @@ fn systemd_activated_unix_socket() -> Option<std::os::unix::net::UnixListener> {
     let listener = std::os::unix::net::UnixListener::from(fd);
     listener.set_nonblocking(true).ok()?;
     Some(listener)
+}
+
+/// Text for `--help`/`-h`. A plain function returning a `String` rather than
+/// a `const &str` so it can interpolate `CARGO_PKG_VERSION` - the one bit
+/// that isn't known until compile time either way, but is cleaner to splice
+/// in here than to hand-copy into a literal.
+///
+/// The env vars listed are exactly credentials.rs's config surface (see that
+/// file's doc comment on `read_config`): every one of them, in the same
+/// order they're defined there, is also readable as a systemd credential
+/// file named after the lowercased, dash-separated env var (e.g.
+/// `HWAITING_JWT_SECRET` -> `$CREDENTIALS_DIRECTORY/hwaiting-jwt-secret`),
+/// with the env var winning if both are set. That mechanism itself isn't
+/// repeated per-line below - just noted once - so this list stays in sync
+/// with credentials.rs by inspection rather than needing an update every
+/// time someone skims past it.
+fn help_text() -> String {
+    format!(
+        "hwaiting {version}
+Korean flashcard backend (axum/SQLite), also serving the frontend SPA.
+
+USAGE:
+    hwaiting [OPTIONS]
+
+OPTIONS:
+    -h, --help          Print this help message and exit
+        --print-openapi Print the OpenAPI spec as JSON to stdout and exit
+                         (no DB or config access)
+
+ENVIRONMENT VARIABLES:
+    Every variable below can also be set via a systemd credential file at
+    $CREDENTIALS_DIRECTORY/<name, lowercased, underscores to dashes> (e.g.
+    HWAITING_JWT_SECRET -> hwaiting-jwt-secret); the env var wins if both
+    are set.
+
+    Required, no default:
+        HWAITING_JWT_SECRET             Secret used to sign auth JWTs
+        HWAITING_ADMIN_PASSWORD         Password for the admin account
+
+    Optional, with a default:
+        HWAITING_ADMIN_USERNAME         Admin account username (default: admin)
+        HWAITING_HOST                   TCP bind host (default: 127.0.0.1)
+        HWAITING_PORT                   TCP bind port (default: 3000)
+        HWAITING_DATABASE_URL           sqlite:// URL
+                                         (default: $XDG_DATA_HOME/hwaiting/hwaiting.db,
+                                         or $HOME/.local/share/hwaiting/hwaiting.db)
+
+    Optional, unset means the feature is off:
+        HWAITING_UNIX_SOCKET            Bind a Unix socket at this path instead of TCP
+        HWAITING_STATIC_DIR             Serve the frontend SPA from this directory
+        HWAITING_CORS_ALLOWED_ORIGINS   Comma-separated list of allowed CORS origins
+        HWAITING_RP_ID                  WebAuthn RP ID - enables passkey sign-in
+        HWAITING_RP_ORIGINS             WebAuthn allowed origin(s) for passkey sign-in
+        HWAITING_JWT_EXPIRY_SECONDS     Auth JWT lifetime in seconds
+
+    Other:
+        CREDENTIALS_DIRECTORY           systemd credential directory (see above)
+        LISTEN_PID, LISTEN_FDS          systemd socket activation - takes priority
+                                         over HWAITING_UNIX_SOCKET and
+                                         HWAITING_HOST/HWAITING_PORT when both are set
+                                         and LISTEN_PID matches this process
+        RUST_LOG                        tracing/log filter
+                                         (default: hwaiting=info,tower_http=info,axum=info)
+",
+        version = env!("CARGO_PKG_VERSION"),
+    )
 }
 
 #[utoipa::path(
