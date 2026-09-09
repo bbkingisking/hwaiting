@@ -127,7 +127,9 @@ impl Ceremony {
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
-    webauthn: Arc<WebauthnCore>,
+    /// `None` when `RP_ID`/`RP_ORIGINS` aren't configured - passkey sign-in
+    /// is an optional feature, not a required one, see `build_webauthn`.
+    webauthn: Option<Arc<WebauthnCore>>,
     ceremonies: Arc<Mutex<HashMap<Uuid, Ceremony>>>,
 }
 
@@ -135,9 +137,17 @@ impl AppState {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
-            webauthn: Arc::new(build_webauthn()),
+            webauthn: build_webauthn().map(Arc::new),
             ceremonies: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// The configured WebAuthn instance, or `AppError::PasskeysDisabled` if
+    /// this deployment never set `RP_ID`/`RP_ORIGINS`. Every handler that
+    /// needs to run an actual ceremony goes through this instead of
+    /// touching the field directly.
+    fn webauthn(&self) -> Result<&WebauthnCore, AppError> {
+        self.webauthn.as_deref().ok_or(AppError::PasskeysDisabled)
     }
 
     fn store_ceremony(&self, ceremony: Ceremony) -> Uuid {
@@ -167,16 +177,34 @@ impl FromRef<AppState> for SqlitePool {
 /// Reads `RP_ID` (a hostname - WebAuthn's "relying party id") and
 /// `RP_ORIGINS` (comma-separated full origins the frontend is served from,
 /// e.g. `https://hwaiting.example.com`), each from a systemd credential or
-/// env var (see `credentials::rp_id`/`rp_origins`). Unlike `HOST`/`PORT`,
-/// these have no default: there's no safe guess for the app's real hostname
-/// and origin, so anything missing or invalid panics at startup rather than
-/// failing confusingly on the first ceremony. WebAuthn only runs in a secure
-/// context, so in production these must be the app's real HTTPS hostname
-/// and origin, not the bare `HOST`/`PORT` this binary listens on internally
-/// behind a TLS-terminating proxy.
-fn build_webauthn() -> WebauthnCore {
-    let rp_id = crate::credentials::rp_id();
-    let origins: Vec<Url> = crate::credentials::rp_origins()
+/// env var (see `credentials::rp_id`/`rp_origins`).
+///
+/// Passkey sign-in is optional, alongside (not instead of) username/password
+/// auth - see the module docs - so `None` here (both unset) just means this
+/// deployment isn't using it: `AppState::new` stores no `WebauthnCore`, and
+/// every passkey endpoint returns `AppError::PasskeysDisabled` instead of
+/// running a ceremony. Setting only one of the two, or an unparseable
+/// `RP_ORIGINS`, is a config mistake rather than "half enabled" and still
+/// panics at startup, same as before.
+///
+/// There's still no default derived from `HOST`/`PORT` when both are unset:
+/// WebAuthn only runs in a secure context, and in production `RP_ID`/
+/// `RP_ORIGINS` must be the app's real HTTPS hostname and origin, not the
+/// bare `HOST`/`PORT` this binary listens on internally behind a
+/// TLS-terminating proxy - so guessing from those would be wrong exactly
+/// when it matters most, and silently so.
+fn build_webauthn() -> Option<WebauthnCore> {
+    let (rp_id, rp_origins) = match (crate::credentials::rp_id(), crate::credentials::rp_origins()) {
+        (None, None) => {
+            info!("RP_ID/RP_ORIGINS not set - passkey sign-in disabled");
+            return None;
+        }
+        (Some(rp_id), Some(rp_origins)) => (rp_id, rp_origins),
+        (Some(_), None) => panic!("RP_ID is set but RP_ORIGINS is not - passkeys need both or neither"),
+        (None, Some(_)) => panic!("RP_ORIGINS is set but RP_ID is not - passkeys need both or neither"),
+    };
+
+    let origins: Vec<Url> = rp_origins
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -190,14 +218,15 @@ fn build_webauthn() -> WebauthnCore {
         panic!("RP_ORIGINS must contain at least one origin");
     }
 
-    WebauthnCore::new_unsafe_experts_only(
+    info!("Passkey sign-in enabled for RP ID {rp_id:?}, origins {origins:?}");
+    Some(WebauthnCore::new_unsafe_experts_only(
         "hwaiting",
         &rp_id,
         origins,
         CEREMONY_TTL,
         Some(false),
         Some(false),
-    )
+    ))
 }
 
 /// Rebuilds the full `webauthn-rs` `Credential` that `authenticate_credential`
@@ -308,8 +337,8 @@ fn start_registration(
         hmac_create_secret: None,
     };
 
-    let builder = state
-        .webauthn
+    let webauthn = state.webauthn()?;
+    let builder = webauthn
         .new_challenge_register_builder(handle.as_bytes(), USER_LABEL, USER_LABEL)?
         .attestation(AttestationConveyancePreference::None)
         .credential_algorithms(COSEAlgorithm::secure_algs())
@@ -322,7 +351,7 @@ fn start_registration(
         .exclude_credentials(exclude_credentials)
         .hints(None)
         .extensions(Some(extensions));
-    let (options, reg_state) = state.webauthn.generate_challenge_register(builder)?;
+    let (options, reg_state) = webauthn.generate_challenge_register(builder)?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Registration {
         for_user,
@@ -352,7 +381,7 @@ async fn finish_registration(
         return Err(AppError::CeremonyNotFound);
     };
 
-    let cred = state.webauthn.register_credential(credential, reg_state, None)?;
+    let cred = state.webauthn()?.register_credential(credential, reg_state, None)?;
 
     // One transaction for account creation (or reuse) and the passkey row
     // itself, so a failure partway through never leaves one without the
@@ -444,8 +473,8 @@ pub async fn register_finish(
 pub async fn login_start(
     State(state): State<AppState>,
 ) -> Result<Json<StartResponse<RequestChallengeResponse>>, AppError> {
-    let builder = state
-        .webauthn
+    let webauthn = state.webauthn()?;
+    let builder = webauthn
         .new_challenge_authenticate_builder(Vec::new(), Some(UserVerificationPolicy::Required))?
         .extensions(Some(RequestAuthenticationExtensions {
             appid: None,
@@ -458,7 +487,7 @@ pub async fn login_start(
         // there's nothing for it to permit.
         .allow_backup_eligible_upgrade(false)
         .hints(None);
-    let (options, auth_state) = state.webauthn.generate_challenge_authenticate(builder)?;
+    let (options, auth_state) = webauthn.generate_challenge_authenticate(builder)?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Authentication {
         state: auth_state,
@@ -541,7 +570,7 @@ pub async fn login_finish(
     }
 
     auth_state.set_allowed_credentials(candidates);
-    let result = state.webauthn.authenticate_credential(&req.credential, &auth_state)?;
+    let result = state.webauthn()?.authenticate_credential(&req.credential, &auth_state)?;
 
     // `authenticate_credential` only tells us the id of whichever
     // candidate matched - map it back to find out who just signed in.

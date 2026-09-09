@@ -103,12 +103,19 @@ pub fn admin_username() -> String {
     config_or("hwaiting-admin-username", "ADMIN_USERNAME", "admin")
 }
 
-pub fn rp_id() -> String {
-    require_config("hwaiting-rp-id", "RP_ID")
+/// No default, and deliberately not derived from `host()`/`port()` either:
+/// those name the internal socket this binary listens on, which in
+/// production sits behind a TLS-terminating proxy and is never what the
+/// browser sees, so defaulting one from the other would be wrong exactly
+/// when it matters most. Unset (see `passkey::build_webauthn`) means
+/// passkey sign-in - a genuinely optional feature alongside
+/// username/password auth - is off, not misconfigured.
+pub fn rp_id() -> Option<String> {
+    read_config("hwaiting-rp-id", "RP_ID")
 }
 
-pub fn rp_origins() -> String {
-    require_config("hwaiting-rp-origins", "RP_ORIGINS")
+pub fn rp_origins() -> Option<String> {
+    read_config("hwaiting-rp-origins", "RP_ORIGINS")
 }
 
 /// Only consulted on the plain-TCP listener path - defaults here don't
