@@ -55,6 +55,14 @@ pub enum AppError {
     #[error("No account for that passkey")]
     UnknownPasskey,
 
+    /// Passkey sign-in is a genuinely optional feature (see
+    /// `passkey::build_webauthn`) - this deployment has no `RP_ID`/
+    /// `RP_ORIGINS` configured, so every passkey endpoint that would need
+    /// the WebAuthn machinery returns this instead of panicking or
+    /// pretending to work.
+    #[error("Passkey sign-in is not configured on this server")]
+    PasskeysDisabled,
+
     #[error("Username already exists")]
     UsernameExists,
 
@@ -103,6 +111,9 @@ impl IntoResponse for AppError {
             }
             AppError::UnknownPasskey => {
                 (StatusCode::UNAUTHORIZED, "No account for that passkey".to_string())
+            }
+            AppError::PasskeysDisabled => {
+                (StatusCode::NOT_IMPLEMENTED, "Passkey sign-in is not configured on this server".to_string())
             }
             AppError::UsernameExists => {
                 (StatusCode::CONFLICT, "Username already exists".to_string())
