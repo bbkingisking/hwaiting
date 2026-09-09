@@ -15,7 +15,7 @@ Assuming defaults (see Configuration below) don't clash with anything else on yo
 
 ## Configuration
 
-Every backend option is configurable from an env var `KEY_NAME` or a plain text file in `$CREDENTIALS_DIRECTORY/key-name`. For example, both `HWAITING_ADMIN_USERNAME=admin` and a file in `$CREDENTIALS_DIRECTORY/hwaiting-admin-username` containing the string `admin` accomplish the same thing. Env vars take precedence over plain text files. The full 
+Every backend option is configurable from an env var `KEY_NAME` or a plain text file in `$CREDENTIALS_DIRECTORY/key-name`. For example, both `HWAITING_ADMIN_USERNAME=admin` and a file in `$CREDENTIALS_DIRECTORY/hwaiting-admin-username` containing the string `admin` accomplish the same thing. Env vars take precedence over plain text files.
 
 | Variable | Credential file | Required | Default |
 | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ In addition to that, the backend supports passkeys for identifier-less sign-up/s
 
 The most simple deployment is by running the binary and binding to an IP:PORT. You can see an example of that in the Quick start section above. If needed, the runtime can be restricted heavily without compromising functionality. Below is an example of an extremely restricted deployment using systemd.
 
-As a standard web server, the backend speaks TCP/IP by default and uses that to receive and send data via HTTP requests. However, `axum`, the backend crate powering the server, has fairly good support for UNIX sockets as well. By using sockets instead of network requests, the backend can be completely network-free (and offload the network communication to a more battle-tested surface, such as a reverse proxy). This is fully optional and configurable via `HWAITING_UNIX_SOCKET`. If a reverse is already in the picture (common when hosting to clients other than localhost), then this is more or less free sandboxing.
+As a standard web server, the backend speaks TCP/IP by default and uses that to receive and send data via HTTP requests. However, `axum`, the backend crate powering the server, has fairly good support for UNIX sockets as well. By using sockets instead of network requests, the backend can be completely network-free (and offload the network communication to a more battle-tested surface, such as a reverse proxy). This is fully optional and configurable via `HWAITING_UNIX_SOCKET`. If a reverse proxy is already in the picture (common when hosting to clients other than localhost), then this is more or less free sandboxing.
 
 In addition to that, by targetting `x86_64-unknown-linux-musl`, it can be compiled into a fully static binary. That makes it easy to `chroot` it in its own restricted filesystem without worrying about dynamic linking breaking. Combined with the unix socket approach, this means you can run this binary in a completely networkless/filesystemless environment. 
 
@@ -140,7 +140,7 @@ WantedBy=sockets.target
 
 - The backend binary dropped in `/opt/hwaiting/root/usr/local/bin/hwaiting`
 - The frontend in `/opt/hwaiting/root/srv/hwaiting`
-- Encrypted credentials in `/etc/credstore/hwaiting/hwaiting-jwt-secret.cred` and `/etc/credstore/hwaiting/hwaiting-admin-password.cred`. You can generate the .cred files with `systemd-ask-password | sudo systemd-creds encrypt --with-key=tpm2 - hwaiting-admin-password.cred`.
+- Encrypted credentials in `/etc/credstore/hwaiting/hwaiting-jwt-secret.cred` and `/etc/credstore/hwaiting/hwaiting-admin-password.cred`. You can generate the .cred files with `systemd-ask-password | sudo systemd-creds encrypt --with-key=tpm2 --name=hwaiting-admin-password - hwaiting-admin-password.cred` and `systemd-ask-password | sudo systemd-creds encrypt --with-key=tpm2 --name=hwaiting-jwt-secret - hwaiting-jwt-secret.cred`.
 - A reverse proxy that forwards the web address to the socket. An example Caddy block: 
 
 ```
