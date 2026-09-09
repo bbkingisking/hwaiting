@@ -57,6 +57,19 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json()
 }
 
+type Capabilities = Schemas['Capabilities']
+
+// Unauthenticated, unlike everything else here - AuthProvider calls this
+// before there's any session (it decides whether to even offer passkey
+// sign-in), so it can't go through fetchWithAuth.
+export async function getCapabilities(): Promise<Capabilities> {
+  const response = await fetch(`${apiBase()}/api/capabilities`)
+  if (!response.ok) {
+    throw new ApiError(response.status, `HTTP ${response.status}`)
+  }
+  return response.json()
+}
+
 interface GetNextCardOptions {
   // Card ids the caller doesn't want back - see NextCardQuery::exclude on
   // the backend. Comma-joined into one `exclude` param, since the server's

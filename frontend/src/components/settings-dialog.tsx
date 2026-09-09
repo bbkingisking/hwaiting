@@ -32,7 +32,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
-  const { token, isAdmin } = useAuth()
+  const { token, isAdmin, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -186,10 +186,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }, [])
 
   useEffect(() => {
-    if (open) {
+    if (open && passkeysEnabled) {
       fetchPasskeys()
     }
-  }, [open])
+  }, [open, passkeysEnabled])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -507,7 +507,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </AccordionContent>
           </AccordionItem>
 
-          {/* Passkeys */}
+          {/* Passkeys - omitted entirely when the server doesn't offer them
+              (HWAITING_RP_ID/HWAITING_RP_ORIGINS unset), same as the auth
+              dialog's method switch. */}
+          {passkeysEnabled && (
           <AccordionItem value="passkeys">
             <AccordionTrigger>Passkeys</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-4">
@@ -560,6 +563,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             </AccordionContent>
           </AccordionItem>
+          )}
 
           {/* Admin Section */}
           {isAdmin && (

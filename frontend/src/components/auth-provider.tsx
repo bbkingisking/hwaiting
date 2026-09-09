@@ -1,10 +1,15 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { getUserProfile } from '@/lib/api'
+import { getCapabilities, getUserProfile } from '@/lib/api'
 import { apiBase, assertionToJson, attestationToJson, describeCeremonyError, toCreationOptions, toRequestOptions } from '@/lib/webauthn'
 
 interface AuthContextType {
   token: string | null
   isAdmin: boolean
+  // Whether this deployment has HWAITING_RP_ID/HWAITING_RP_ORIGINS
+  // configured - see GET /api/capabilities. False (not "unknown") until
+  // that fetch resolves, since AuthProvider withholds `children` until
+  // `loading` clears anyway - nothing ever reads this before it's settled.
+  passkeysEnabled: boolean
   // Username/password login against an existing account.
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
   // Username/password sign-up.
@@ -38,33 +43,50 @@ function requireWebAuthnSupport() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [passkeysEnabled, setPasskeysEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Load the token from localStorage on mount. The JWT itself carries no
-  // is_admin claim (see backend auth::Claims), so that has to come from a
-  // profile fetch rather than being cached alongside the token.
+  // Load the token from localStorage, and the server's passkey capability,
+  // in parallel on mount - `loading` (and so `children`, see the provider
+  // below) waits on both, so nothing ever renders with a stale/unknown
+  // passkeysEnabled the way a component-local fetch could.
   useEffect(() => {
     // Leftovers from the old username/password build, which cached these
     // directly - harmless to leave, but there's no reason to.
     localStorage.removeItem('annyeong-username')
     localStorage.removeItem('annyeong-isadmin')
 
-    const storedToken = localStorage.getItem(TOKEN_KEY)
-    if (!storedToken) {
-      setLoading(false)
-      return
-    }
+    // The JWT itself carries no is_admin claim (see backend auth::Claims),
+    // so that has to come from a profile fetch rather than being cached
+    // alongside the token.
+    const loadSession = async () => {
+      const storedToken = localStorage.getItem(TOKEN_KEY)
+      if (!storedToken) return
 
-    setToken(storedToken)
-    getUserProfile()
-      .then((profile) => setIsAdmin(profile.is_admin))
-      .catch(() => {
+      setToken(storedToken)
+      try {
+        const profile = await getUserProfile()
+        setIsAdmin(profile.is_admin)
+      } catch {
         // Token rejected or expired - don't stay "authenticated" with a
         // token that doesn't actually work.
         localStorage.removeItem(TOKEN_KEY)
         setToken(null)
-      })
-      .finally(() => setLoading(false))
+      }
+    }
+
+    const loadCapabilities = async () => {
+      try {
+        const { passkeys_enabled } = await getCapabilities()
+        setPasskeysEnabled(passkeys_enabled)
+      } catch {
+        // Couldn't even reach the capabilities check - fail closed rather
+        // than offer passkey UI that might 501.
+        setPasskeysEnabled(false)
+      }
+    }
+
+    Promise.all([loadSession(), loadCapabilities()]).finally(() => setLoading(false))
   }, [])
 
   const applySession = (data: { token: string; is_admin: boolean }) => {
@@ -197,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         token,
         isAdmin,
+        passkeysEnabled,
         login,
         signup,
         passkeyLogin,

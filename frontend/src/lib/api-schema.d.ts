@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["capabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cards/field-values": {
         parameters: {
             query?: never;
@@ -513,6 +529,15 @@ export interface components {
             label: string;
             /** Format: int64 */
             reviews: number;
+        };
+        /**
+         * @description Which optional features this deployment has turned on. Just the one
+         *     field today - passkeys is the only config-gated optional feature that
+         *     matters to the frontend - but this is the endpoint any future one would
+         *     join, rather than each growing its own ad hoc discovery mechanism.
+         */
+        Capabilities: {
+            passkeys_enabled: boolean;
         };
         /**
          * @description The canonical full-card shape: a `cards` row joined with its English
@@ -1457,6 +1482,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    capabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Which optional features this deployment has turned on */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
                 };
             };
         };
