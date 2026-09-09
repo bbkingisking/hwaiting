@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Serve static files from STATIC_DIR, if set. Unset means API-only mode:
     // no fallback service, unmatched paths just 404.
-    match env::var("STATIC_DIR").ok().filter(|s| !s.trim().is_empty()) {
+    match credentials::static_dir().filter(|s| !s.trim().is_empty()) {
         Some(static_dir) => {
             tracing::info!("Serving static files from {}", static_dir);
             let index_path = format!("{}/index.html", static_dir);
@@ -126,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
     // means same-origin only, enforced by the browser for free - the
     // correct default when STATIC_DIR is serving the frontend from this
     // same binary.
-    match env::var("CORS_ALLOWED_ORIGINS").ok().filter(|s| !s.trim().is_empty()) {
+    match credentials::cors_allowed_origins().filter(|s| !s.trim().is_empty()) {
         Some(origins) => {
             let allowed_origins: Vec<HeaderValue> = origins
                 .split(',')
@@ -168,22 +168,22 @@ async fn main() -> anyhow::Result<()> {
     //     that reverse-proxy over a local socket file without using
     //     systemd socket activation.
     //  3. HOST + PORT: the original TCP listener - unchanged, still what
-    //     prod uses.
+    //     prod uses. Defaults to 127.0.0.1:3000 when unset, since neither
+    //     value is a secret or deployment-specific in a way that makes a
+    //     default unsafe - unlike RP_ID/RP_ORIGINS, which have none.
     if let Some(std_listener) = systemd_activated_unix_socket() {
         let listener = tokio::net::UnixListener::from_std(std_listener)?;
         tracing::info!("Backend listening on systemd-activated unix socket");
         axum::serve(listener, app).await?;
-    } else if let Ok(path) = env::var("UNIX_SOCKET") {
+    } else if let Some(path) = credentials::unix_socket() {
         // Remove a stale socket file left behind by an unclean previous exit.
         let _ = std::fs::remove_file(&path);
         let listener = tokio::net::UnixListener::bind(&path)?;
         tracing::info!("Backend listening on unix socket {}", path);
         axum::serve(listener, app).await?;
     } else {
-        let host = env::var("HOST")
-            .expect("HOST environment variable must be set");
-        let port: u16 = env::var("PORT")
-            .expect("PORT environment variable must be set")
+        let host = credentials::host();
+        let port: u16 = credentials::port()
             .parse()
             .expect("PORT must be a valid u16 number");
 

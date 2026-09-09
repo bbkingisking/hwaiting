@@ -1,12 +1,10 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
-use std::env;
 use std::time::Duration;
 use tracing::{debug, info};
 
 pub async fn init() -> anyhow::Result<SqlitePool> {
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL environment variable must be set");
+    let database_url = crate::credentials::database_url();
 
     // WAL lets readers (GET /cards/next's "pick a due card" query, in
     // particular - it's the slowest read in the app) run concurrently with a
@@ -65,8 +63,7 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
     };
 
     // Get admin credentials from environment or systemd credential store
-    let admin_username = env::var("ADMIN_USERNAME")
-        .expect("ADMIN_USERNAME environment variable must be set");
+    let admin_username = crate::credentials::admin_username();
     let admin_password = crate::credentials::admin_password();
 
     // Check if admin user already exists

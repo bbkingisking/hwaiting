@@ -49,7 +49,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::{
     collections::HashMap,
-    env,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -167,16 +166,17 @@ impl FromRef<AppState> for SqlitePool {
 
 /// Reads `RP_ID` (a hostname - WebAuthn's "relying party id") and
 /// `RP_ORIGINS` (comma-separated full origins the frontend is served from,
-/// e.g. `https://hwaiting.example.com`) the same way `main.rs` reads `HOST`
-/// and `PORT`: required, and a panic at startup on anything wrong rather
-/// than a confusing runtime failure on the first ceremony. WebAuthn only
-/// runs in a secure context, so in production these must be the app's real
-/// HTTPS hostname and origin, not the bare `HOST`/`PORT` this binary listens
-/// on internally behind a TLS-terminating proxy.
+/// e.g. `https://hwaiting.example.com`), each from a systemd credential or
+/// env var (see `credentials::rp_id`/`rp_origins`). Unlike `HOST`/`PORT`,
+/// these have no default: there's no safe guess for the app's real hostname
+/// and origin, so anything missing or invalid panics at startup rather than
+/// failing confusingly on the first ceremony. WebAuthn only runs in a secure
+/// context, so in production these must be the app's real HTTPS hostname
+/// and origin, not the bare `HOST`/`PORT` this binary listens on internally
+/// behind a TLS-terminating proxy.
 fn build_webauthn() -> WebauthnCore {
-    let rp_id = env::var("RP_ID").expect("RP_ID environment variable must be set");
-    let origins: Vec<Url> = env::var("RP_ORIGINS")
-        .expect("RP_ORIGINS environment variable must be set")
+    let rp_id = crate::credentials::rp_id();
+    let origins: Vec<Url> = crate::credentials::rp_origins()
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
