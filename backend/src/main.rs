@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build API routes
     let api_routes = Router::new()
+        .route("/capabilities", get(passkey::capabilities))
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
         .route("/auth/passkey/register/start", post(passkey::register_start))

@@ -150,6 +150,13 @@ impl AppState {
         self.webauthn.as_deref().ok_or(AppError::PasskeysDisabled)
     }
 
+    /// Same fact as `webauthn()`, as a plain bool for `capabilities` to
+    /// report - the frontend needs to know *whether* passkeys work before
+    /// it ever tries a ceremony, not just get told so after the fact.
+    fn passkeys_enabled(&self) -> bool {
+        self.webauthn.is_some()
+    }
+
     fn store_ceremony(&self, ceremony: Ceremony) -> Uuid {
         let id = Uuid::new_v4();
         self.ceremonies.lock().unwrap().insert(id, ceremony);
@@ -310,6 +317,29 @@ pub struct PasskeySummary {
 #[derive(Serialize, ToSchema)]
 pub struct ListPasskeysResponse {
     pub passkeys: Vec<PasskeySummary>,
+}
+
+/// Which optional features this deployment has turned on. Just the one
+/// field today - passkeys is the only config-gated optional feature that
+/// matters to the frontend - but this is the endpoint any future one would
+/// join, rather than each growing its own ad hoc discovery mechanism.
+#[derive(Serialize, ToSchema)]
+pub struct Capabilities {
+    pub passkeys_enabled: bool,
+}
+
+// ---------------------------------------------------------------- public: capabilities
+
+#[utoipa::path(
+    get,
+    path = "/api/capabilities",
+    responses(
+        (status = 200, description = "Which optional features this deployment has turned on", body = Capabilities),
+    ),
+    tag = "auth"
+)]
+pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
+    Json(Capabilities { passkeys_enabled: state.passkeys_enabled() })
 }
 
 // ---------------------------------------------------------------- shared registration logic

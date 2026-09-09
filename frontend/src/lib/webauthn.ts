@@ -98,26 +98,25 @@ export function describeCeremonyError(e: unknown, label: string): string {
   return e instanceof Error ? e.message : `${label} failed`
 }
 
-const API_BASE_KEY = 'annyeong-api-base'
-
 // Same-origin by default - correct for the normal deployment, where this
 // binary serves both the API and the built frontend. VITE_API_BASE is
 // this build's own compiled-in override for the opposite case: a build
 // deployed to a static host with no backend of its own (e.g.
 // hwaiting-demo.surge.sh), baked in at `npm run build` time (see
 // hwaiting-demo's install.sh) since there's no server-side process there
-// to read an env var from at request time. Below that, `?api=<origin>`
-// (persisted to localStorage) remains the manual override for a one-off
-// preview pointed at a different backend. This is independent of the
-// backend's HWAITING_RP_ID/HWAITING_RP_ORIGINS config, which must match wherever *this page*
-// is served from, not wherever the API happens to live - WebAuthn scopes
-// the ceremony to the calling page's origin, not the origin its fetch()
-// calls go to.
+// to read an env var from at request time. This is independent of the
+// backend's HWAITING_RP_ID/HWAITING_RP_ORIGINS config, which must match
+// wherever *this page* is served from, not wherever the API happens to
+// live - WebAuthn scopes the ceremony to the calling page's origin, not
+// the origin its fetch() calls go to.
+//
+// There used to be a third tier here too: a `?api=<origin>` query param,
+// persisted to localStorage, as a manual override for testing the passkey
+// rollout against an arbitrary backend. Removed once that testing was
+// done - it was also a quiet phishing vector (a crafted link could point
+// every subsequent login/signup POST, credentials included, at an
+// attacker's origin, persisting across visits via localStorage).
 export function apiBase(): string {
-  const fromQuery = new URLSearchParams(window.location.search).get('api')
-  if (fromQuery) {
-    localStorage.setItem(API_BASE_KEY, fromQuery)
-  }
-  const base = fromQuery || localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || window.location.origin
+  const base = import.meta.env.VITE_API_BASE || window.location.origin
   return base.replace(/\/$/, '')
 }

@@ -23,9 +23,16 @@ interface AuthDialogProps {
 type Method = 'password' | 'passkey'
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
-  const { login, signup, passkeyLogin, passkeyRegister } = useAuth()
+  const { login, signup, passkeyLogin, passkeyRegister, passkeysEnabled } = useAuth()
 
-  const [method, setMethod] = useState<Method>('passkey')
+  // Defaults to 'passkey' only when the server actually offers it - safe to
+  // read passkeysEnabled here (rather than force 'password' and flip it in
+  // an effect) because AuthProvider already withholds every descendant,
+  // this dialog included, until that capability check has resolved.
+  const [method, setMethod] = useState<Method>(passkeysEnabled ? 'passkey' : 'password')
+  // Belt-and-suspenders against the disabled case ever rendering passkey
+  // UI - not just the initial state above.
+  const showPasskey = passkeysEnabled && method === 'passkey'
 
   // Password method state
   const [loginUsername, setLoginUsername] = useState('')
@@ -101,7 +108,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     setPasskeyBusy(false)
   }
 
-  const methodToggle = (
+  // Nothing to switch between when the server doesn't offer passkeys at
+  // all - the whole point of a toggle is a real second option.
+  const methodToggle = passkeysEnabled && (
     <div className="flex items-center justify-center gap-3 pb-2">
       <Label htmlFor="auth-method" className={method === 'password' ? '' : 'text-muted-foreground font-normal'}>
         Password
@@ -131,7 +140,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
           <TabsContent value="login" className="space-y-4">
             {methodToggle}
-            {method === 'password' ? (
+            {!showPasskey ? (
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-username">Username</Label>
@@ -180,7 +189,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
           <TabsContent value="signup" className="space-y-4">
             {methodToggle}
-            {method === 'password' ? (
+            {!showPasskey ? (
               <form onSubmit={handleSignupSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-username">Username</Label>

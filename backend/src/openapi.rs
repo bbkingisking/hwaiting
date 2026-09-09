@@ -29,6 +29,7 @@ impl Modify for SecurityAddon {
         description = "Korean FSRS flashcard backend."
     ),
     paths(
+        crate::passkey::capabilities,
         crate::auth::login,
         crate::auth::signup,
         crate::passkey::register_start,
@@ -69,6 +70,7 @@ impl Modify for SecurityAddon {
         crate::auth::AuthResponse,
         crate::passkey::PasskeySummary,
         crate::passkey::ListPasskeysResponse,
+        crate::passkey::Capabilities,
         crate::cards::FieldValues,
         crate::cards::FieldName,
         crate::cards::NextCardEnvelope,
