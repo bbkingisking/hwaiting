@@ -167,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let credential: PublicKeyCredential | null
       try {
-        credential = await getCredential(options.publicKey)
+        credential = await getCredential(options)
       } catch (e) {
         return { success: false, error: describeCeremonyError(e, kind === 'login' ? 'Sign-in' : 'Account creation') }
       }

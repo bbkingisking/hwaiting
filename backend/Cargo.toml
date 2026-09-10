@@ -13,7 +13,6 @@ dotenvy = "0.15.7"
 fsrs = "5.2.0"
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 libc = "0.2"
-openssl = { version = "0.10", features = ["vendored"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sqlx = { version = "0.8.6", features = ["chrono", "runtime-tokio", "sqlite"] }
@@ -22,8 +21,22 @@ tokio = { version = "1.52.1", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["fs", "cors"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+# Only for validating `HWAITING_RP_ORIGINS` entries as proper origins
+# (scheme + host, no path/query/fragment) in passkey.rs - already pulled
+# in transitively by sqlx and webauthn_rp, so this adds no new dependency
+# to the tree, just a direct edge to a crate already being built.
 url = "2.5.8"
 utoipa = { version = "5.5.0", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.26.0", features = ["v4", "serde"] }
-webauthn-rs-core = "0.5.5"
+# Pure-Rust WebAuthn relying-party library (RustCrypto backend: p256/p384/
+# ed25519-dalek/rsa) - no openssl-sys anywhere in the dependency tree. See
+# the session this swap was made in for why (webauthn-rs-core hard-depends
+# on openssl unconditionally, and this app doesn't use TLS/attestation
+# trust chains, so that dependency bought nothing here).
+# `serde_relaxed` accepts the near-standard-but-not-quite JSON the frontend
+# sends (see webauthn.ts); `serializable_server_state` (which implies
+# `bin`) is used not for cross-restart persistence but so login/finish's
+# brute-force loop can decode a fresh, independent ceremony state per
+# candidate credential - see passkey.rs.
+webauthn_rp = { version = "0.3.0", features = ["serde_relaxed", "serializable_server_state"] }

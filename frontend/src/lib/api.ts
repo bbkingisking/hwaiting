@@ -177,7 +177,7 @@ export async function addPasskey(): Promise<PasskeySummary> {
   let attestation: PublicKeyCredential
   try {
     attestation = (await navigator.credentials.create({
-      publicKey: toCreationOptions(options.publicKey),
+      publicKey: toCreationOptions(options),
     })) as PublicKeyCredential
   } catch (e) {
     throw new Error(describeCeremonyError(e, 'Adding a passkey'))

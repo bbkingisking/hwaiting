@@ -6,7 +6,11 @@
 // api.ts.
 //
 // The backend (see backend/src/passkey.rs) speaks base64url for every
-// binary field - that's what webauthn-rs-core emits/accepts - while
+// binary field - that's what webauthn_rp's `serde_relaxed` feature
+// emits/accepts, matching the standard PublicKeyCredentialCreationOptionsJSON/
+// PublicKeyCredentialRequestOptionsJSON/RegistrationResponseJSON/
+// AuthenticationResponseJSON shapes almost exactly (relaxed only in that
+// it tolerates a couple of missing/optional fields) - while
 // navigator.credentials.create()/.get() want ArrayBuffers. These helpers
 // are the only place that conversion happens.
 
@@ -26,8 +30,9 @@ function bufferToBase64url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-// The backend's CreationChallengeResponse.public_key -> what
-// navigator.credentials.create() expects.
+// The backend's StartResponse.options (a bare
+// PublicKeyCredentialCreationOptionsJSON, not wrapped under a "publicKey"
+// key) -> what navigator.credentials.create({ publicKey }) expects.
 export function toCreationOptions(publicKey: any): PublicKeyCredentialCreationOptions {
   return {
     ...publicKey,
@@ -40,8 +45,9 @@ export function toCreationOptions(publicKey: any): PublicKeyCredentialCreationOp
   }
 }
 
-// The backend's RequestChallengeResponse.public_key -> what
-// navigator.credentials.get() expects.
+// The backend's StartResponse.options (a bare
+// PublicKeyCredentialRequestOptionsJSON, not wrapped under a "publicKey"
+// key) -> what navigator.credentials.get({ publicKey }) expects.
 export function toRequestOptions(publicKey: any): PublicKeyCredentialRequestOptions {
   return {
     ...publicKey,
@@ -54,7 +60,9 @@ export function toRequestOptions(publicKey: any): PublicKeyCredentialRequestOpti
 }
 
 // A browser attestation response (from credentials.create()) -> the JSON
-// shape webauthn-rs-core's RegisterPublicKeyCredential parses.
+// shape webauthn_rp's Registration (relaxed) parses - i.e. close to the
+// spec's RegistrationResponseJSON, field name and all
+// (clientExtensionResults, not extensions).
 export function attestationToJson(cred: PublicKeyCredential) {
   const response = cred.response as AuthenticatorAttestationResponse
   return {
@@ -66,12 +74,14 @@ export function attestationToJson(cred: PublicKeyCredential) {
       clientDataJSON: bufferToBase64url(response.clientDataJSON),
       transports: response.getTransports?.(),
     },
-    extensions: cred.getClientExtensionResults(),
+    clientExtensionResults: cred.getClientExtensionResults(),
   }
 }
 
 // A browser assertion response (from credentials.get()) -> the JSON shape
-// webauthn-rs-core's PublicKeyCredential parses.
+// webauthn_rp's Authentication (relaxed) parses - i.e. close to the spec's
+// AuthenticationResponseJSON, field name and all (clientExtensionResults,
+// not extensions).
 export function assertionToJson(cred: PublicKeyCredential) {
   const response = cred.response as AuthenticatorAssertionResponse
   return {
@@ -84,7 +94,7 @@ export function assertionToJson(cred: PublicKeyCredential) {
       signature: bufferToBase64url(response.signature),
       userHandle: response.userHandle ? bufferToBase64url(response.userHandle) : null,
     },
-    extensions: cred.getClientExtensionResults(),
+    clientExtensionResults: cred.getClientExtensionResults(),
   }
 }
 

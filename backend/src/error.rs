@@ -31,11 +31,13 @@ pub enum AppError {
 
     /// A `navigator.credentials.create()`/`.get()` ceremony failed
     /// server-side verification (bad signature, origin/RP ID mismatch,
-    /// counter regression, and so on). Wraps whatever webauthn-rs-core
-    /// reports so it ends up in the server log; the client only ever sees
-    /// the generic 400 below.
-    #[error("Passkey ceremony failed: {0:?}")]
-    Webauthn(#[from] webauthn_rs_core::error::WebauthnError),
+    /// counter regression, and so on). `webauthn_rp` has several disjoint
+    /// error enums (`RegCeremonyErr`, `AuthCeremonyErr`, ...) rather than
+    /// one unified type, so this carries a formatted message instead of
+    /// `#[from]`-wrapping one of them; it ends up in the server log, the
+    /// client only ever sees the generic 400 below.
+    #[error("Passkey ceremony failed: {0}")]
+    Webauthn(String),
 
     /// The ceremony id a `/finish` call named isn't in the in-memory
     /// table - already consumed, or never existed (e.g. a stale tab).
