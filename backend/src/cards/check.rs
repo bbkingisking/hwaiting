@@ -174,11 +174,13 @@ pub async fn check_answer(
     );
 
     // Rating is derived from correctness, not client-supplied - the UI only
-    // ever produces 1 (Again) or 3 (Good), same as the `ReviewRequest` this
+    // ever produces "again" or "good", same as the `ReviewRequest` this
     // folds in used to receive directly (trusted, since the client alone
     // knew whether the answer was right - no longer true now that grading
-    // happens here).
-    let (rating, rating_str): (u8, &str) = if correct { (3, "good") } else { (1, "again") };
+    // happens here). Binary throughout below, rather than routed through
+    // FSRS's 4-way (again/hard/good/easy) rating scale - "hard" and "easy"
+    // are never produced by this handler.
+    let rating_str = if correct { "good" } else { "again" };
 
     // Get existing card state if any
     let card_state_row = sqlx::query(
@@ -241,14 +243,9 @@ pub async fn check_answer(
         .next_states(memory_state, desired_retention as f32, elapsed_days)
         .map_err(|e| AppError::Internal(format!("FSRS error: {:?}", e)))?;
 
-    // Select the appropriate state based on rating
-    let scheduled_state = match rating {
-        1 => next_states.again,
-        2 => next_states.hard,
-        3 => next_states.good,
-        4 => next_states.easy,
-        _ => next_states.good,
-    };
+    // This handler only ever grades binary correct/incorrect (see above), so
+    // only these two of FSRS's four next-state slots are ever selected.
+    let scheduled_state = if correct { next_states.good } else { next_states.again };
 
     // Calculate scheduled days for tracking
     let scheduled_days = scheduled_state.interval;
@@ -257,10 +254,10 @@ pub async fn check_answer(
     // Determine new state based on rating
     let new_state = if memory_state.is_none() {
         "learning"
-    } else if rating == 1 {
-        "relearning"
-    } else {
+    } else if correct {
         "review"
+    } else {
+        "relearning"
     };
 
     // cards_states (the scheduling state check_answer's own logic above just
