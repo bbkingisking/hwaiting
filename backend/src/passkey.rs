@@ -863,3 +863,75 @@ pub async fn delete_passkey(
     info!("passkey delete: user_id={} removed passkey id={passkey_id}", auth.0);
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_plain_https_origin() {
+        assert_eq!(parse_origin("https://hwaiting.example.com").unwrap(), "https://hwaiting.example.com");
+    }
+
+    #[test]
+    fn accepts_http_origin() {
+        assert_eq!(parse_origin("http://localhost").unwrap(), "http://localhost");
+    }
+
+    #[test]
+    fn accepts_explicit_port() {
+        assert_eq!(parse_origin("http://localhost:5173").unwrap(), "http://localhost:5173");
+    }
+
+    #[test]
+    fn strips_trailing_slash() {
+        assert_eq!(parse_origin("https://hwaiting.example.com/").unwrap(), "https://hwaiting.example.com");
+    }
+
+    #[test]
+    fn rejects_other_schemes() {
+        assert!(parse_origin("ftp://hwaiting.example.com").is_err());
+    }
+
+    #[test]
+    fn rejects_a_path() {
+        assert!(parse_origin("https://hwaiting.example.com/login").is_err());
+    }
+
+    #[test]
+    fn rejects_a_query_string() {
+        assert!(parse_origin("https://hwaiting.example.com?x=1").is_err());
+    }
+
+    #[test]
+    fn rejects_a_fragment() {
+        assert!(parse_origin("https://hwaiting.example.com#top").is_err());
+    }
+
+    #[test]
+    fn rejects_userinfo() {
+        assert!(parse_origin("https://user:pass@hwaiting.example.com").is_err());
+    }
+
+    // No separate "bare hostname, no scheme" test: `Url::parse` fails on a
+    // schemeless string the same way it fails on any other unparseable
+    // input, so this would hit the exact same early return as
+    // rejects_unparseable_input below rather than the scheme-check branch.
+
+    #[test]
+    fn rejects_unparseable_input() {
+        assert!(parse_origin("not a url at all").is_err());
+    }
+
+    #[test]
+    fn does_not_lowercase_the_host() {
+        // Documents current behavior: no case-normalization happens, even
+        // though a real browser always sends a lowercase origin - an
+        // operator who configures HWAITING_RP_ORIGINS with any uppercase
+        // letters in the host will get an origin that a real browser
+        // request can never match by exact string equality (see
+        // WebauthnConfig's doc comment on why comparison is a plain string
+        // compare).
+        assert_eq!(parse_origin("https://HWaiting.Example.com").unwrap(), "https://HWaiting.Example.com");
+    }
+}

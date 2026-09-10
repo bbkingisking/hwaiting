@@ -25,6 +25,8 @@ mod export_import;
 mod inflection_hints;
 mod openapi;
 mod passkey;
+#[cfg(test)]
+mod test_support;
 mod user;
 
 #[tokio::main]

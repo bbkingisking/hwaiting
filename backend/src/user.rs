@@ -33,7 +33,7 @@ pub struct UserProfile {
 /// error either way. `sqlx::FromRow` lets both `get_settings` (below) and
 /// `export_import::get_user_settings` read a row straight into this shape
 /// too, rather than each hand-repeating the same 11 `row.get(...)` calls.
-#[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+#[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema, Debug, PartialEq)]
 pub struct UserSettingsCore {
     pub show_percentage: bool,
     pub red_threshold: i64,

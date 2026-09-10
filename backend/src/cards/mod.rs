@@ -122,6 +122,26 @@ where
     .collect())
 }
 
+/// Whether `a` and `b` share at least one CJK Unified Ideograph (U+4E00 to
+/// U+9FFF - the "CJK Unified Ideographs" block proper). Hangul-only strings,
+/// or ones with no overlap, never match. Note this range excludes CJK
+/// Extension A (U+3400 to U+4DBF) and the CJK Compatibility Ideographs block
+/// (U+F900 to U+FAFF) - a hanja drawn from either would never register as
+/// shared here even if it's the identical character KRDICT records
+/// elsewhere as canonically decomposing to one already in range. Extracted
+/// from `hanja_hints_for` so the character-matching rule can be tested
+/// without a database.
+fn shares_hanja_character(a: &str, b: &str) -> bool {
+    let a_chars: std::collections::HashSet<char> =
+        a.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
+    if a_chars.is_empty() {
+        return false;
+    }
+    b.chars()
+        .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c))
+        .any(|c| a_chars.contains(&c))
+}
+
 /// Hanja hints for `card_id`: hanja from other cards the user has already
 /// reviewed that share at least one character with `hanja`. Shared by
 /// `get_next_card` (which only needs the characters - see
@@ -157,16 +177,11 @@ async fn hanja_hints_for(
     .fetch_all(pool)
     .await?;
 
-    let current_chars: std::collections::HashSet<char> =
-        current_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
-
     Ok(other_hanja_rows
         .iter()
         .filter_map(|row| {
             let other_hanja: String = row.get("hanja");
-            let other_chars: std::collections::HashSet<char> =
-                other_hanja.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
-            if !current_chars.is_empty() && !other_chars.is_empty() && current_chars.intersection(&other_chars).next().is_some() {
+            if shares_hanja_character(current_hanja, &other_hanja) {
                 Some(HanjaHint {
                     hanja: other_hanja,
                     word: row.get("word"),
@@ -177,4 +192,33 @@ async fn hanja_hints_for(
             }
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shares_a_character() {
+        // 學 appears in both.
+        assert!(shares_hanja_character("學校", "學生"));
+    }
+
+    #[test]
+    fn no_overlap_is_false() {
+        assert!(!shares_hanja_character("學校", "生日"));
+    }
+
+    #[test]
+    fn hangul_only_strings_never_match() {
+        // Also exercises the a_chars.is_empty() early return that an
+        // all-empty-input case would hit identically, so there's no
+        // separate empty-string test.
+        assert!(!shares_hanja_character("학교", "학생"));
+    }
+
+    // No CJK-compatibility-ideograph test: this function does no Unicode
+    // normalization, so such a test could only pin down the absence of a
+    // feature, not catch a regression in one - same reasoning as the
+    // dropped NFD/NFC test in cards::check.
 }

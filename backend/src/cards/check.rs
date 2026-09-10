@@ -82,6 +82,19 @@ pub struct CheckResponse {
     pub reveal: CardReveal,
 }
 
+/// Whether `answer` grades as correct against `target` (or any of
+/// `alternatives`): trimmed exact string match, nothing fuzzier. No
+/// Unicode normalization happens here - an NFD-decomposed answer (e.g. from
+/// some IMEs/OSes, which can produce a jamo-decomposed Hangul string that
+/// renders identically to the NFC form the database stores) will not match
+/// an NFC `target` even though a person reading both would call them the
+/// same word. Extracted from `check_answer` so this comparison - the actual
+/// grading rule - can be tested without a database.
+fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
+    let trimmed = answer.trim();
+    trimmed == target || alternatives.iter().any(|alt| alt == trimmed)
+}
+
 // Check an answer against a card: grade it, record the FSRS review, and
 // reveal the card's secret half.
 #[utoipa::path(
@@ -149,8 +162,7 @@ pub async fn check_answer(
     .fetch_all(&pool)
     .await?;
 
-    let trimmed = payload.answer.trim();
-    let correct = trimmed == target || alternatives.iter().any(|alt| alt == trimmed);
+    let correct = is_correct(&payload.answer, &target, &alternatives);
 
     let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
 
@@ -312,4 +324,212 @@ pub async fn check_answer(
             inflections,
         },
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_match_is_correct() {
+        assert!(is_correct("먹어요", "먹어요", &[]));
+    }
+
+    #[test]
+    fn mismatch_is_incorrect() {
+        assert!(!is_correct("먹어요", "먹었어요", &[]));
+    }
+
+    #[test]
+    fn leading_and_trailing_whitespace_is_trimmed() {
+        assert!(is_correct("  먹어요  ", "먹어요", &[]));
+    }
+
+    #[test]
+    fn matches_an_alternative_target() {
+        let alts = vec!["먹었어요".to_string(), "드셨어요".to_string()];
+        assert!(is_correct("드셨어요", "먹어요", &alts));
+    }
+
+    // No separate "near miss" / "empty answer" cases: both just exercise the
+    // same `!=` comparison mismatch_is_incorrect already covers, with
+    // different data. And no NFD-vs-NFC normalization test either - there's
+    // no normalization step to test, so a test here could only ever pin
+    // down the *absence* of a feature, not catch a regression in one.
+
+    // --- check_answer (handler-level, in-process SQLite) ---------------------
+
+    use crate::auth::AuthUser;
+    use crate::test_support::{test_pool, test_user};
+
+    /// The literal target text for card_id (any seeded sample card, 1-50) -
+    /// fetched directly rather than hardcoded, so these tests don't need to
+    /// know the seed data's actual Korean content.
+    async fn target_for(pool: &SqlitePool, card_id: i64) -> String {
+        sqlx::query_scalar(
+            "SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = ?",
+        )
+        .bind(card_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn card_state(pool: &SqlitePool, user_id: i64, card_id: i64) -> (Option<f64>, Option<f64>, Option<String>, Option<String>) {
+        sqlx::query_as(
+            "SELECT stability, difficulty, last_review, state FROM cards_states WHERE user_id = ? AND card_id = ?",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn new_card_graded_correct_becomes_learning() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let card_id = 1;
+        let target = target_for(&pool, card_id).await;
+
+        let response = check_answer(
+            State(pool.clone()),
+            AppPath(card_id),
+            AuthUser(user_id),
+            AppJson(CheckRequest { answer: target }),
+        )
+        .await
+        .unwrap();
+
+        assert!(response.0.correct);
+
+        let (stability, difficulty, last_review, state) = card_state(&pool, user_id, card_id).await;
+        assert_eq!(state.as_deref(), Some("learning"));
+        assert!(stability.is_some());
+        assert!(difficulty.is_some());
+        assert!(last_review.is_some());
+
+        let review_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?")
+            .bind(user_id)
+            .bind(card_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(review_count, 1);
+
+        let rating: String = sqlx::query_scalar("SELECT rating FROM review_history WHERE user_id = ? AND card_id = ?")
+            .bind(user_id)
+            .bind(card_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rating, "good");
+    }
+
+    #[tokio::test]
+    async fn new_card_graded_wrong_is_incorrect_but_still_learning() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let card_id = 1;
+
+        let response = check_answer(
+            State(pool.clone()),
+            AppPath(card_id),
+            AuthUser(user_id),
+            AppJson(CheckRequest { answer: "definitely wrong".to_string() }),
+        )
+        .await
+        .unwrap();
+
+        assert!(!response.0.correct);
+
+        // A first-ever review is "learning" regardless of correctness - the
+        // rating (again vs. good) only changes the FSRS-scheduled state
+        // once a memory state already exists.
+        let (_, _, _, state) = card_state(&pool, user_id, card_id).await;
+        assert_eq!(state.as_deref(), Some("learning"));
+    }
+
+    #[tokio::test]
+    async fn wrong_answer_after_a_review_becomes_relearning() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let card_id = 1;
+        let target = target_for(&pool, card_id).await;
+
+        // First review: correct, establishes a memory state.
+        let _ = check_answer(
+            State(pool.clone()),
+            AppPath(card_id),
+            AuthUser(user_id),
+            AppJson(CheckRequest { answer: target }),
+        )
+        .await
+        .unwrap();
+
+        // Second review: wrong, with an existing memory state - should
+        // demote to "relearning", not stay "learning".
+        let response = check_answer(
+            State(pool.clone()),
+            AppPath(card_id),
+            AuthUser(user_id),
+            AppJson(CheckRequest { answer: "definitely wrong".to_string() }),
+        )
+        .await
+        .unwrap();
+
+        assert!(!response.0.correct);
+
+        let (_, _, _, state) = card_state(&pool, user_id, card_id).await;
+        assert_eq!(state.as_deref(), Some("relearning"));
+
+        let review_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?")
+            .bind(user_id)
+            .bind(card_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(review_count, 2);
+    }
+
+    #[tokio::test]
+    async fn existing_row_with_no_last_review_is_treated_as_a_new_card() {
+        // `cards_states.stability`/`difficulty` are `NOT NULL DEFAULT 0` in
+        // the schema (only `last_review` is nullable) - so despite
+        // `check_answer`'s comment describing this branch as "FSRS state is
+        // NULL", the tuple match it guards with can only ever fail via
+        // `last_review` being NULL; `stability`/`difficulty` are always
+        // `Some`. This simulates that real shape: a `cards_states` row that
+        // exists (e.g. pre-created by some other flow) but has never
+        // actually been reviewed.
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let card_id = 1;
+        let target = target_for(&pool, card_id).await;
+
+        sqlx::query(
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) VALUES (?, ?, 0, 0, NULL, 'new')",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let response = check_answer(
+            State(pool.clone()),
+            AppPath(card_id),
+            AuthUser(user_id),
+            AppJson(CheckRequest { answer: target }),
+        )
+        .await
+        .unwrap();
+
+        assert!(response.0.correct);
+
+        let (stability, _, _, state) = card_state(&pool, user_id, card_id).await;
+        assert_eq!(state.as_deref(), Some("learning"));
+        assert!(stability.is_some());
+    }
 }
