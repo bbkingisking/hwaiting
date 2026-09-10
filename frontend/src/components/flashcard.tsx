@@ -229,7 +229,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
   const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
 
-  const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === '동사' || card.pos === '형용사')
+  const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === 'verb' || card.pos === 'adjective')
 
   // `advancing` guards against a second click while a cold-path fetch for the
   // next card is in flight (the warm path, served from the prefetch buffer,
