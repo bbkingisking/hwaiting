@@ -56,7 +56,7 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 
-async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
+async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
     use argon2::{
         password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
         Argon2,
@@ -67,16 +67,16 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
     let admin_password = crate::credentials::admin_password();
 
     // Check if admin user already exists
-    let admin_exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM users WHERE username = ?"
+    let admin_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"
     )
     .bind(&admin_username)
-    .fetch_optional(pool)
+    .fetch_one(pool)
     .await?;
 
-    if let Some(_existing_id) = admin_exists {
+    if admin_exists {
         debug!("Admin user already exists, skipping seed");
-        return Ok(None);
+        return Ok(());
     }
 
     info!("Creating admin user: {}", admin_username);
@@ -97,16 +97,9 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
     .execute(pool)
     .await?;
 
-    let user_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM users WHERE username = ?"
-    )
-    .bind(&admin_username)
-    .fetch_one(pool)
-    .await?;
-
     info!("Admin user created successfully");
 
-    Ok(Some(user_id))
+    Ok(())
 }
 
 /// Seeds the 50 sample cards (frequency_rank 1-50, ids 1-50) a fresh/demo
