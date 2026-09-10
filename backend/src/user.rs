@@ -3,12 +3,29 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool};
 use tracing::info;
 use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
+
+/// Lazily creates the `users_settings` row for `user_id` if it doesn't exist
+/// yet - every settings read/write path needs this first, so it's shared
+/// rather than each hand-repeating the same `INSERT ... ON CONFLICT DO
+/// NOTHING`. Generic over the executor so `update_settings` can run it
+/// inside its own transaction instead of a separate round trip against the
+/// pool.
+pub(crate) async fn ensure_settings_row<'e, E>(executor: E, user_id: i64) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
+    sqlx::query("INSERT INTO users_settings (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING")
+        .bind(user_id)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct UserProfile {
@@ -128,17 +145,7 @@ pub async fn get_settings(
     let user_id = auth.0;
     info!("Getting settings for user_id: {}", user_id);
 
-    // Ensure users_settings row exists
-    sqlx::query(
-        r#"
-        INSERT INTO users_settings (user_id)
-        VALUES (?)
-        ON CONFLICT(user_id) DO NOTHING
-        "#
-    )
-    .bind(user_id)
-    .execute(&pool)
-    .await?;
+    ensure_settings_row(&pool, user_id).await?;
 
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
