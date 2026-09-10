@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::error::{AppError, AppQuery};
 
-use super::hanja_hints_for;
+use super::{hanja_hints_for, review_prefs, ReviewPrefs};
 use super::time::{logical_today_start, sqlite_datetime};
 
 /// The card fields visible before an answer is checked, shared with the
@@ -155,23 +155,7 @@ pub async fn get_next_card(
         user_id, params.exclude
     );
 
-    // Get user settings
-    let user_row = sqlx::query(
-        "SELECT daily_new_card_limit, day_boundary_hour FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?;
-
-    let daily_new_card_limit = user_row
-        .as_ref()
-        .and_then(|r| r.get::<Option<i64>, _>("daily_new_card_limit"))
-        .unwrap_or(20);
-
-    let day_boundary_hour = user_row
-        .as_ref()
-        .and_then(|r| r.get::<Option<i64>, _>("day_boundary_hour"))
-        .unwrap_or(4);
+    let ReviewPrefs { day_boundary_hour, daily_new_card_limit, .. } = review_prefs(&pool, user_id).await?;
 
     // Start of "today" per day_boundary_hour - same helper get_stats uses.
     let today_start_str = sqlite_datetime(logical_today_start(day_boundary_hour));

@@ -15,7 +15,7 @@ use super::time::{
     accuracy_percentage, logical_day_shift, logical_today_date, logical_today_start,
     parse_flexible_datetime, sqlite_datetime, CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL,
 };
-use super::MASTERED_STATE;
+use super::{review_prefs, ReviewPrefs, MASTERED_STATE};
 
 /// Current-streak and longest-streak, from the sorted, deduplicated list of
 /// logical days the user reviewed on and today's own logical date. Split out
@@ -134,23 +134,8 @@ pub async fn get_stats(
 ) -> Result<Json<StatsResponse>, AppError> {
     let user_id = auth.0;
 
-    // Get daily_new_card_limit setting (0 = suppress all new cards)
-    let daily_new_card_limit: i64 = sqlx::query_scalar(
-        "SELECT daily_new_card_limit FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?
-    .unwrap_or(20);
-
-    // Get day_boundary_hour from users_settings (default to 4)
-    let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?
-    .unwrap_or(4);
+    // daily_new_card_limit: 0 = suppress all new cards.
+    let ReviewPrefs { day_boundary_hour, daily_new_card_limit, .. } = review_prefs(&pool, user_id).await?;
 
     // Start of the user's current logical day, as UTC for database comparison
     let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
@@ -283,16 +268,7 @@ pub async fn get_stats(
     }))
 }
 
-async fn query_timeseries(pool: &SqlitePool, user_id: i64) -> Result<Vec<DayHistory>, AppError> {
-    // Get day_boundary_hour from users_settings (default 4)
-    let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or(4);
-
+async fn query_timeseries(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) -> Result<Vec<DayHistory>, AppError> {
     // Same logical-day definition as get_stats, so today's bucket here matches
     // the status bar exactly. The window covers today plus the 4 days before.
     let day_shift = logical_day_shift(day_boundary_hour);
@@ -337,16 +313,7 @@ async fn query_timeseries(pool: &SqlitePool, user_id: i64) -> Result<Vec<DayHist
     Ok(days)
 }
 
-async fn query_summary(pool: &SqlitePool, user_id: i64) -> Result<HistorySummary, AppError> {
-    // Get day_boundary_hour from users_settings (default 4)
-    let day_boundary_hour: i64 = sqlx::query_scalar(
-        "SELECT day_boundary_hour FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or(4);
-
+async fn query_summary(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) -> Result<HistorySummary, AppError> {
     // Query 1: Aggregate review stats. Accuracy only counts post-first-exposure
     // reviews (same rule as the status bar); the volume stats count everything.
     let stats_row = sqlx::query(&format!(
@@ -583,9 +550,14 @@ pub async fn get_history(
 ) -> Result<Json<HistoryResponse>, AppError> {
     let user_id = auth.0;
 
+    // Fetched once here rather than by query_timeseries/query_summary each -
+    // both need the same day_boundary_hour, and re-fetching it a second time
+    // for the same request bought nothing.
+    let ReviewPrefs { day_boundary_hour, .. } = review_prefs(&pool, user_id).await?;
+
     let (timeseries, summary, breakdown) = tokio::try_join!(
-        query_timeseries(&pool, user_id),
-        query_summary(&pool, user_id),
+        query_timeseries(&pool, user_id, day_boundary_hour),
+        query_summary(&pool, user_id, day_boundary_hour),
         query_breakdown(&pool, user_id),
     )?;
 
