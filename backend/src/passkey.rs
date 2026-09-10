@@ -4,6 +4,16 @@
 //! table of credentials and otherwise defers entirely to
 //! `auth::generate_token`.
 //!
+//! Built on `webauthn_rp`, a pure-Rust relying-party library (RustCrypto
+//! primitives - p256/p384/ed25519-dalek/rsa - no OpenSSL), not
+//! `webauthn-rs-core` - see the session this module was rewritten in for
+//! why: `webauthn-rs-core` hard-depends on OpenSSL unconditionally, and
+//! this app has no other reason to link it (TLS is terminated by Caddy in
+//! front of this binary; passkey registration requests
+//! `AttestationConveyancePreference::None`, so the OpenSSL-backed
+//! attestation-cert-chain machinery in `webauthn-rs-core` was never
+//! exercised either).
+//!
 //! Every ceremony still needs a WebAuthn user handle to hand the
 //! authenticator (the protocol requires one), but nothing here persists
 //! it - each ceremony gets a fresh throwaway handle that lives only in
@@ -22,6 +32,17 @@
 //! written in for the full reasoning and the cost accounting at this
 //! app's scale.
 //!
+//! `webauthn_rp::request::auth::DiscoverableAuthenticationServerState::verify`
+//! consumes itself (by design - a ceremony should only be completable
+//! once), which doesn't compose directly with trying N candidate
+//! credentials against the same challenge. `login_finish` works around
+//! this by `Encode`ing the ceremony state once and `Decode`ing a fresh,
+//! independent copy for each candidate - a sanctioned use of the crate's
+//! own `serializable_server_state` (de)serialization, not a hack: the
+//! crate designed that feature for exactly "give me another instance of
+//! this same state", just for the persistence use case rather than this
+//! one.
+//!
 //! Every ceremony (`/register/*`, `/login/*`) is two calls: `start` builds
 //! the options the browser needs and stashes server-side ceremony state
 //! in-memory under a fresh id; `finish` takes that id back plus the
@@ -34,12 +55,13 @@
 //! tries one then falls back to the other (that was prototyped and felt
 //! worse - see the session this module was written in).
 //!
-//! Sign-in is a *discoverable*-credential assertion: `login/start` sends an
-//! empty allow-list, and the browser's own passkey picker lists every
-//! credential registered for this RP ID. That's why every passkey is
-//! registered with `require_resident_key(true)` - a non-discoverable
-//! credential would be unreachable from this flow, since there is no
-//! identifier to look one up by.
+//! Sign-in is a *discoverable*-credential assertion: `login/start` uses
+//! `DiscoverableCredentialRequestOptions`, so the browser's own passkey
+//! picker lists every credential registered for this RP ID. That's why
+//! every passkey is registered via `PublicKeyCredentialCreationOptions::
+//! passkey` (resident key required) - a non-discoverable credential would
+//! be unreachable from this flow, since there is no identifier to look one
+//! up by.
 
 use axum::{
     extract::{FromRef, State},
@@ -57,17 +79,23 @@ use tracing::{info, warn};
 use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
-use webauthn_rs_core::{
-    internals::AuthenticatorData,
-    proto::{
-        Authentication, AttestationConveyancePreference, AttestationFormat, AuthenticationState,
-        COSEAlgorithm, COSEKey, CreationChallengeResponse, CredProtect, Credential, CredentialID,
-        CredentialProtectionPolicy, ParsedAttestation, PublicKeyCredential,
-        RegisterPublicKeyCredential, RegisteredExtensions, RegistrationState,
-        RequestAuthenticationExtensions, RequestChallengeResponse,
-        RequestRegistrationExtensions, UserVerificationPolicy,
+use webauthn_rp::{
+    bin::{Decode, Encode},
+    request::{
+        auth::{AuthenticationVerificationOptions, DiscoverableCredentialRequestOptions},
+        register::{
+            Nickname, PublicKeyCredentialCreationOptions, PublicKeyCredentialUserEntity,
+            RegistrationVerificationOptions, UserHandle16, Username,
+        },
+        AsciiDomain, RpId,
     },
-    WebauthnCore,
+    response::{
+        auth::AuthenticatorData as AssertionAuthenticatorData,
+        register::{CompressedPubKey, DynamicState, StaticState},
+        AuthenticatorAttachment,
+    },
+    AuthenticatedCredential, DiscoverableAuthentication16, DiscoverableAuthenticationServerState,
+    Registration, RegistrationServerState,
 };
 
 use crate::auth::{generate_token, AuthResponse, AuthUser};
@@ -81,12 +109,28 @@ const CEREMONY_TTL: Duration = Duration::from_secs(120);
 
 /// The spec requires a non-empty WebAuthn `user.name`/`displayName`, and
 /// this app deliberately stores no identifying field to put there instead -
-/// see the plan this module implements. A constant is the least
-/// identifying value that satisfies the requirement; the cost is that two
-/// accounts registered from the same device are indistinguishable in the
-/// OS's own picker UI, which is an acceptable trade for "no identifiers at
-/// all".
+/// see the module docs. A constant is the least identifying value that
+/// satisfies the requirement; the cost is that two accounts registered
+/// from the same device are indistinguishable in the OS's own picker UI,
+/// which is an acceptable trade for "no identifiers at all". (`webauthn_rp`
+/// has its own convenience for this exact case,
+/// `PublicKeyCredentialUserEntity::from(&UserHandle)`, which uses the
+/// literal string `"blank"` - this app spells out its own constant instead
+/// purely so the OS passkey picker shows this app's name rather than that
+/// placeholder.)
 const USER_LABEL: &str = "hwaiting";
+
+/// Every passkey WebAuthn credential this app ever registers uses one of
+/// these four algorithms; RSA's `Vec<u8>` (variable-length modulus) is the
+/// only one that isn't a fixed-size array. This is `webauthn_rp`'s own
+/// documented "concrete storage type" (see its top-level example) - not a
+/// guess.
+type StoredPubKey = CompressedPubKey<[u8; 32], [u8; 32], [u8; 48], Vec<u8>>;
+
+/// A candidate credential reconstructed from one `passkeys` row for a
+/// single login attempt, `'a`-tied to the assertion it's being checked
+/// against (see `login_finish`).
+type LoginCredential<'a> = AuthenticatedCredential<'a, 'a, 16, StoredPubKey>;
 
 enum Ceremony {
     /// `for_user: None` is a public `/api/auth/passkey/register/*`
@@ -96,11 +140,11 @@ enum Ceremony {
     /// caller's JWT still names that same user before writing anything.
     Registration {
         for_user: Option<i64>,
-        state: RegistrationState,
+        state: RegistrationServerState<16>,
         expires: Instant,
     },
     Authentication {
-        state: AuthenticationState,
+        state: DiscoverableAuthenticationServerState,
         expires: Instant,
     },
 }
@@ -113,6 +157,33 @@ impl Ceremony {
             }
         };
         Instant::now() > expires
+    }
+}
+
+/// Resolved `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS`. `rp_id` is `webauthn_rp`'s
+/// own type; `origins` deliberately isn't `webauthn_rp::request::Url` - that
+/// type validates a URL with *no host* (it backs the non-domain `RpId::Url`
+/// variant, for native-app RP ids expressed as a custom URL scheme) and
+/// would reject every real origin here, which all have one. `verify`'s
+/// `allowed_origins` only requires `PartialEq<Origin>`, which plain
+/// `String` satisfies with an ordinary string compare - the same compare
+/// `webauthn_rp::request::Url` itself boils down to - so a `String`
+/// validated as a proper origin serves just as well without the wrong
+/// constraint.
+///
+/// `origins` is a `Vec` (not the single origin `webauthn_rp` can derive
+/// from `rp_id` alone) because this app supports multiple configured
+/// origins (e.g. a prod and a demo frontend sharing one RP ID) - every
+/// `verify` call passes it explicitly rather than relying on the
+/// single-origin default.
+struct WebauthnConfig {
+    rp_id: RpId,
+    origins: Vec<String>,
+}
+
+impl WebauthnConfig {
+    fn allowed_origins(&self) -> Vec<&str> {
+        self.origins.iter().map(String::as_str).collect()
     }
 }
 
@@ -129,8 +200,8 @@ impl Ceremony {
 pub struct AppState {
     pub pool: SqlitePool,
     /// `None` when `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS` aren't configured - passkey sign-in
-    /// is an optional feature, not a required one, see `build_webauthn`.
-    webauthn: Option<Arc<WebauthnCore>>,
+    /// is an optional feature, not a required one, see `build_webauthn_config`.
+    webauthn: Option<Arc<WebauthnConfig>>,
     ceremonies: Arc<Mutex<HashMap<Uuid, Ceremony>>>,
 }
 
@@ -138,16 +209,16 @@ impl AppState {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
-            webauthn: build_webauthn().map(Arc::new),
+            webauthn: build_webauthn_config().map(Arc::new),
             ceremonies: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// The configured WebAuthn instance, or `AppError::PasskeysDisabled` if
-    /// this deployment never set `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS`. Every handler that
-    /// needs to run an actual ceremony goes through this instead of
-    /// touching the field directly.
-    fn webauthn(&self) -> Result<&WebauthnCore, AppError> {
+    /// The configured WebAuthn RP settings, or `AppError::PasskeysDisabled`
+    /// if this deployment never set `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS`.
+    /// Every handler that needs to run an actual ceremony goes through this
+    /// instead of touching the field directly.
+    fn webauthn(&self) -> Result<&WebauthnConfig, AppError> {
         self.webauthn.as_deref().ok_or(AppError::PasskeysDisabled)
     }
 
@@ -189,9 +260,9 @@ impl FromRef<AppState> for SqlitePool {
 ///
 /// Passkey sign-in is optional, alongside (not instead of) username/password
 /// auth - see the module docs - so `None` here (both unset) just means this
-/// deployment isn't using it: `AppState::new` stores no `WebauthnCore`, and
-/// every passkey endpoint returns `AppError::PasskeysDisabled` instead of
-/// running a ceremony. Setting only one of the two, or an unparseable
+/// deployment isn't using it: `AppState::new` stores no `WebauthnConfig`,
+/// and every passkey endpoint returns `AppError::PasskeysDisabled` instead
+/// of running a ceremony. Setting only one of the two, or an unparseable
 /// `HWAITING_RP_ORIGINS`, is a config mistake rather than "half enabled" and still
 /// panics at startup, same as before.
 ///
@@ -201,7 +272,7 @@ impl FromRef<AppState> for SqlitePool {
 /// bare `HWAITING_HOST`/`HWAITING_PORT` this binary listens on internally behind a
 /// TLS-terminating proxy - so guessing from those would be wrong exactly
 /// when it matters most, and silently so.
-fn build_webauthn() -> Option<WebauthnCore> {
+fn build_webauthn_config() -> Option<WebauthnConfig> {
     let (rp_id, rp_origins) = match (crate::credentials::rp_id(), crate::credentials::rp_origins()) {
         (None, None) => {
             info!("HWAITING_RP_ID/HWAITING_RP_ORIGINS not set - passkey sign-in disabled");
@@ -212,99 +283,73 @@ fn build_webauthn() -> Option<WebauthnCore> {
         (None, Some(_)) => panic!("HWAITING_RP_ORIGINS is set but HWAITING_RP_ID is not - passkeys need both or neither"),
     };
 
-    let origins: Vec<Url> = rp_origins
+    let ascii_domain = AsciiDomain::try_from(rp_id.clone())
+        .unwrap_or_else(|e| panic!("Invalid HWAITING_RP_ID {rp_id:?}: {e:?}"));
+
+    let origins: Vec<String> = rp_origins
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| {
-            Url::parse(s).unwrap_or_else(|e| {
-                panic!("Invalid origin '{s}' in HWAITING_RP_ORIGINS: {e}")
-            })
-        })
+        .map(|s| parse_origin(s).unwrap_or_else(|e| panic!("Invalid origin '{s}' in HWAITING_RP_ORIGINS: {e}")))
         .collect();
     if origins.is_empty() {
         panic!("HWAITING_RP_ORIGINS must contain at least one origin");
     }
 
     info!("Passkey sign-in enabled for RP ID {rp_id:?}, origins {origins:?}");
-    Some(WebauthnCore::new_unsafe_experts_only(
-        "hwaiting",
-        &rp_id,
-        origins,
-        CEREMONY_TTL,
-        Some(false),
-        Some(false),
-    ))
+    Some(WebauthnConfig { rp_id: RpId::Domain(ascii_domain), origins })
 }
 
-/// Rebuilds the full `webauthn-rs` `Credential` that `authenticate_credential`
-/// expects, from the one field this app actually persists (`public_key`) -
-/// see `20260909000000_drop_passkey_credential_id.sql` for why the rest of
-/// the struct, `cred_id` included, isn't stored. `cred_id` is filled in by
-/// the caller with the current assertion's own `raw_id` rather than a
-/// stored value - see `login_finish`, the only caller, for why forging it
-/// this way is safe and what it buys (every candidate reaches a real
-/// signature check instead of being filtered out by an id that was never
-/// recorded). The remaining defaults aren't guesses at "what a fresh
-/// credential looks like": they're the values that make each field a no-op
-/// given this app's fixed ceremony policy, so this reconstructs exactly the
-/// behaviour storing the whole struct would have had here.
+/// Validates `s` as a full [origin](https://www.w3.org/TR/webauthn-3/#dom-collectedclientdata-origin) -
+/// `http`/`https` scheme, a host, and nothing else (no path/query/fragment/
+/// userinfo) - and returns it unchanged as an owned `String` for
+/// `WebauthnConfig::origins` to compare a ceremony's `CollectedClientData::origin`
+/// against by exact string equality (see `WebauthnConfig`'s doc comment for
+/// why that's a plain `String` rather than `webauthn_rp::request::Url`).
 ///
-/// - `registration_policy: Required` / `user_verified: true` - both
-///   `start_registration` and `login_start` hardcode
-///   `UserVerificationPolicy::Required` regardless of what's stored, so
-///   these never influenced the outcome even when persisted.
-/// - `attestation: ParsedAttestation::default()` / `attestation_format:
-///   AttestationFormat::None` - always empty anyway, since registration
-///   requests `AttestationConveyancePreference::None`.
-/// - `transports: None` / `extensions: RegisteredExtensions::none()` -
-///   written by webauthn-rs but never read back by anything in this app.
-/// - `counter: 0` / `backup_state: false` - this app keeps no per-login
-///   state for anti-clone or sync-status tracking, so every login is
-///   verified as if it were the credential's first.
-///
-/// `backup_eligible` is the one field callers must supply rather than get
-/// defaulted: `verify_credential_internal`'s anti-tampering checks compare
-/// it against the *current* assertion's own backup-eligible flag, and this
-/// app doesn't persist a prior value to compare against (see the session
-/// this was written in - reintroducing that column was considered and
-/// deliberately declined). Passing the assertion's own flag back in makes
-/// that comparison self-referential (always equal, so both checks - the
-/// mismatch check and the unconditional backup-state-implies-eligible
-/// check - degrade into asking "is this one assertion internally
-/// consistent", which every spec-compliant authenticator already is, and
-/// which an attacker can't forge without also forging a valid signature
-/// over it) instead of comparing against a value that would otherwise be
-/// permanently wrong for any backup-eligible authenticator.
-fn rebuild_credential(
-    cred_id: CredentialID,
-    public_key: &str,
-    backup_eligible: bool,
-) -> Result<Credential, AppError> {
-    let cred: COSEKey = serde_json::from_str(public_key).map_err(|e| {
-        AppError::Internal(format!("failed to deserialize stored passkey public key: {e}"))
-    })?;
-    Ok(Credential {
-        cred_id,
-        cred,
-        counter: 0,
-        transports: None,
-        user_verified: true,
-        backup_eligible,
-        backup_state: false,
-        registration_policy: UserVerificationPolicy::Required,
-        extensions: RegisteredExtensions::none(),
-        attestation: ParsedAttestation::default(),
-        attestation_format: AttestationFormat::None,
-    })
+/// Deliberately returns the input `s` itself rather than `url::Url::parse`'s
+/// own serialization: that parse is used only to check the origin's shape,
+/// since re-serializing would append the `/` root path `url::Url` gives
+/// every hierarchical URL - which would then never match the slash-less
+/// origin string a real browser sends.
+fn parse_origin(s: &str) -> Result<String, String> {
+    let url = Url::parse(s).map_err(|e| e.to_string())?;
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return Err(format!("scheme must be http or https, got {:?}", url.scheme()));
+    }
+    if !url.has_host() {
+        return Err("must have a host".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("must not contain userinfo".to_string());
+    }
+    if !matches!(url.path(), "" | "/") {
+        return Err(format!("must not have a path, got {:?}", url.path()));
+    }
+    if url.query().is_some() {
+        return Err("must not have a query".to_string());
+    }
+    if url.fragment().is_some() {
+        return Err("must not have a fragment".to_string());
+    }
+    Ok(s.trim_end_matches('/').to_string())
 }
 
 // ---------------------------------------------------------------- wire types
 
 #[derive(Serialize)]
-pub struct StartResponse<T: Serialize> {
+pub struct StartResponse {
     ceremony_id: Uuid,
-    options: T,
+    /// The `PublicKeyCredentialCreationOptionsJSON`/`PublicKeyCredentialRequestOptionsJSON`
+    /// `webauthn_rp` serializes its client-state types into - passed
+    /// straight to `navigator.credentials.create()`/`.get()` by the
+    /// frontend after base64url-decoding the binary fields. Untyped here
+    /// (rather than generic like the old `webauthn-rs-core`-backed version
+    /// was) because the client-state types borrow from ceremony-local data
+    /// (the throwaway user handle) that doesn't outlive this function, so
+    /// they're serialized to a `Value` before returning rather than
+    /// threaded through the return type.
+    options: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -352,48 +397,45 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
 
 /// Builds the creation options both registration ceremonies (public
 /// sign-up, and an authenticated user adding a second device) share; they
-/// differ only in what `for_user` gets recorded as. `handle` is thrown away
-/// once this returns - it's never read back after the authenticator embeds
-/// it in the credential.
+/// differ only in what `for_user` gets recorded as. The user handle is
+/// thrown away once this returns - it's never read back after the
+/// authenticator embeds it in the credential.
 ///
-/// Always registers with an empty exclude-list: excluding a device already
-/// registered to this account would need its credential id on hand, and
-/// this app doesn't persist one (see
-/// `20260909000000_drop_passkey_credential_id.sql`). So the same physical
-/// authenticator *can* end up registered to one account twice, as two
-/// separate rows sharing a public key - a deliberate consequence of storing
-/// nothing to exclude by, not a bug.
+/// `PublicKeyCredentialCreationOptions::passkey` already requires
+/// resident-key/user-verification (`AuthenticatorSelectionCriteria::
+/// passkey`) and requests no attestation - exactly this app's policy,
+/// without needing to hand-build a custom set of options for it.
 fn start_registration(
     state: &AppState,
-    handle: Uuid,
     for_user: Option<i64>,
-) -> Result<(Uuid, CreationChallengeResponse), AppError> {
-    let extensions = RequestRegistrationExtensions {
-        cred_protect: Some(CredProtect {
-            credential_protection_policy: CredentialProtectionPolicy::UserVerificationRequired,
-            enforce_credential_protection_policy: Some(false),
-        }),
-        uvm: Some(true),
-        cred_props: Some(true),
-        min_pin_length: None,
-        hmac_create_secret: None,
+) -> Result<(Uuid, serde_json::Value), AppError> {
+    let config = state.webauthn()?;
+    let user_handle = UserHandle16::new();
+    let user = PublicKeyCredentialUserEntity {
+        name: Username::try_from(USER_LABEL)
+            .unwrap_or_else(|e| panic!("USER_LABEL {USER_LABEL:?} is not a valid Username: {e:?}")),
+        id: &user_handle,
+        display_name: Some(Nickname::try_from(USER_LABEL).unwrap_or_else(|e| {
+            panic!("USER_LABEL {USER_LABEL:?} is not a valid Nickname: {e:?}")
+        })),
     };
+    let (reg_state, client_state) = PublicKeyCredentialCreationOptions::passkey(
+        &config.rp_id,
+        user,
+        // Always an empty exclude-list: excluding a device already
+        // registered to this account would need its credential id on hand,
+        // and this app doesn't persist one (see
+        // `20260909000000_drop_passkey_credential_id.sql`). So the same
+        // physical authenticator *can* end up registered to one account
+        // twice, as two separate rows sharing a public key - a deliberate
+        // consequence of storing nothing to exclude by, not a bug.
+        Vec::new(),
+    )
+    .start_ceremony()
+    .map_err(|e| AppError::Internal(format!("failed to start registration ceremony: {e:?}")))?;
 
-    let webauthn = state.webauthn()?;
-    let builder = webauthn
-        .new_challenge_register_builder(handle.as_bytes(), USER_LABEL, USER_LABEL)?
-        .attestation(AttestationConveyancePreference::None)
-        .credential_algorithms(COSEAlgorithm::secure_algs())
-        // Mandatory: login/start sends an empty allow-list, so a
-        // non-discoverable credential would never be found.
-        .require_resident_key(true)
-        .authenticator_attachment(None)
-        .user_verification_policy(UserVerificationPolicy::Required)
-        .reject_synchronised_authenticators(false)
-        .exclude_credentials(None)
-        .hints(None)
-        .extensions(Some(extensions));
-    let (options, reg_state) = webauthn.generate_challenge_register(builder)?;
+    let options = serde_json::to_value(&client_state)
+        .map_err(|e| AppError::Internal(format!("failed to serialize creation options: {e}")))?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Registration {
         for_user,
@@ -405,58 +447,71 @@ fn start_registration(
 
 /// Verifies a registration response and persists the resulting credential.
 /// Returns the id of the user it now belongs to (freshly created, for a
-/// public sign-up ceremony) plus whether that user was just created -
-/// callers use that to decide between "issue a JWT" and "attach to the
-/// already-authenticated caller".
+/// public sign-up ceremony) plus `for_user` unchanged, so callers can
+/// decide between "issue a JWT" and "attach to the already-authenticated
+/// caller".
 async fn finish_registration(
     state: &AppState,
     ceremony_id: Uuid,
-    credential: &RegisterPublicKeyCredential,
-) -> Result<(i64, Ceremony), AppError> {
+    credential: &Registration,
+) -> Result<(i64, Option<i64>), AppError> {
     let ceremony = state.take_ceremony(ceremony_id)?;
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
     }
-    // Field renamed on binding (`state: ref reg_state`) so it doesn't shadow
-    // the outer `state: &AppState` parameter, which is still needed below.
-    let Ceremony::Registration { state: ref reg_state, .. } = ceremony else {
+    let Ceremony::Registration { for_user, state: reg_state, .. } = ceremony else {
         return Err(AppError::CeremonyNotFound);
     };
 
-    let cred = state.webauthn()?.register_credential(credential, reg_state, None)?;
+    let config = state.webauthn()?;
+    let allowed_origins = config.allowed_origins();
+    let options = RegistrationVerificationOptions::<&str, &str> {
+        allowed_origins: &allowed_origins,
+        ..Default::default()
+    };
+    let registered = reg_state
+        .verify(&config.rp_id, credential, &options)
+        .map_err(|e| AppError::Webauthn(format!("{e:?}")))?;
+
+    // `webauthn_rp`'s own storage format: `StaticState::encode` compresses
+    // EC public keys as it serializes (see `StoredPubKey`'s doc comment),
+    // so this is already the compact on-disk representation, not a
+    // temporary one that needs further massaging. Infallible - `Encode`'s
+    // `Err` type for `StaticState<UncompressedPubKey>` is `Infallible`.
+    let public_key_blob = registered
+        .static_state()
+        .encode()
+        .expect("StaticState::<UncompressedPubKey>::encode is Infallible");
 
     // One transaction for account creation (or reuse) and the passkey row
     // itself, so a failure partway through never leaves one without the
     // other.
     let mut tx = state.pool.begin().await?;
 
-    let user_id = match &ceremony {
-        Ceremony::Registration { for_user: Some(uid), .. } => *uid,
-        Ceremony::Registration { for_user: None, .. } => {
+    let user_id = match for_user {
+        Some(uid) => uid,
+        None => {
             let result = sqlx::query("INSERT INTO users DEFAULT VALUES")
                 .execute(&mut *tx)
                 .await?;
             result.last_insert_rowid()
         }
-        Ceremony::Authentication { .. } => unreachable!("take_ceremony returned the wrong variant"),
     };
 
-    // `cred.cred_id` - the id this authenticator just generated for itself
-    // during registration - is deliberately discarded, not persisted: see
+    // The credential id this authenticator just generated for itself
+    // during registration is deliberately discarded, not persisted: see
     // `20260909000000_drop_passkey_credential_id.sql`. Only the public key
-    // survives; `login_finish` forges a `cred_id` per login attempt instead
-    // of ever storing this one.
-    let public_key_json = serde_json::to_string(&cred.cred)
-        .map_err(|e| AppError::Internal(format!("failed to serialize passkey public key: {e}")))?;
+    // survives; `login_finish` forges a credential id per login attempt
+    // instead of ever storing this one.
     sqlx::query("INSERT INTO passkeys (user_id, public_key) VALUES (?, ?)")
         .bind(user_id)
-        .bind(public_key_json)
+        .bind(public_key_blob)
         .execute(&mut *tx)
         .await?;
 
     tx.commit().await?;
 
-    Ok((user_id, ceremony))
+    Ok((user_id, for_user))
 }
 
 // ---------------------------------------------------------------- public: sign-up
@@ -473,9 +528,8 @@ async fn finish_registration(
 )]
 pub async fn register_start(
     State(state): State<AppState>,
-) -> Result<Json<StartResponse<CreationChallengeResponse>>, AppError> {
-    let handle = Uuid::new_v4();
-    let (ceremony_id, options) = start_registration(&state, handle, None)?;
+) -> Result<Json<StartResponse>, AppError> {
+    let (ceremony_id, options) = start_registration(&state, None)?;
     info!("passkey register/start: ceremony={ceremony_id}");
     Ok(Json(StartResponse { ceremony_id, options }))
 }
@@ -492,9 +546,9 @@ pub async fn register_start(
 )]
 pub async fn register_finish(
     State(state): State<AppState>,
-    AppJson(req): AppJson<FinishRequest<RegisterPublicKeyCredential>>,
+    AppJson(req): AppJson<FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
-    let (user_id, _ceremony) = finish_registration(&state, req.ceremony_id, &req.credential).await?;
+    let (user_id, _for_user) = finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
     info!("passkey register/finish: created user_id={user_id}");
 
     let token = generate_token(user_id)?;
@@ -518,22 +572,14 @@ pub async fn register_finish(
 )]
 pub async fn login_start(
     State(state): State<AppState>,
-) -> Result<Json<StartResponse<RequestChallengeResponse>>, AppError> {
-    let webauthn = state.webauthn()?;
-    let builder = webauthn
-        .new_challenge_authenticate_builder(Vec::new(), Some(UserVerificationPolicy::Required))?
-        .extensions(Some(RequestAuthenticationExtensions {
-            appid: None,
-            uvm: Some(true),
-            hmac_get_secret: None,
-        }))
-        // Moot either way: `login_finish` reconstructs every candidate's
-        // `backup_eligible` from this same assertion (see its comments), so
-        // the mismatch this flag governs never occurs. Left `false` since
-        // there's nothing for it to permit.
-        .allow_backup_eligible_upgrade(false)
-        .hints(None);
-    let (options, auth_state) = webauthn.generate_challenge_authenticate(builder)?;
+) -> Result<Json<StartResponse>, AppError> {
+    let config = state.webauthn()?;
+    let (auth_state, client_state) = DiscoverableCredentialRequestOptions::passkey(&config.rp_id)
+        .start_ceremony()
+        .map_err(|e| AppError::Internal(format!("failed to start authentication ceremony: {e:?}")))?;
+
+    let options = serde_json::to_value(&client_state)
+        .map_err(|e| AppError::Internal(format!("failed to serialize request options: {e}")))?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Authentication {
         state: auth_state,
@@ -556,39 +602,61 @@ pub async fn login_start(
 )]
 pub async fn login_finish(
     State(state): State<AppState>,
-    AppJson(req): AppJson<FinishRequest<PublicKeyCredential>>,
+    AppJson(req): AppJson<
+        FinishRequest<webauthn_rp::response::auth::ser_relaxed::AuthenticationRelaxed<16, true>>,
+    >,
 ) -> Result<Json<AuthResponse>, AppError> {
     let ceremony = state.take_ceremony(req.ceremony_id)?;
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
     }
-    let Ceremony::Authentication { state: mut auth_state, .. } = ceremony else {
+    let Ceremony::Authentication { state: auth_state, .. } = ceremony else {
         return Err(AppError::CeremonyNotFound);
     };
+    let credential: DiscoverableAuthentication16 = req.credential.0;
 
-    // This app doesn't persist a per-credential `backup_eligible` flag (see
-    // `rebuild_credential`), so every candidate below is reconstructed with
-    // *this assertion's own* backup-eligible flag rather than a stored one -
-    // that's what makes the crate's backup-eligibility checks a no-op for
-    // any spec-compliant authenticator instead of a permanent rejection of
-    // every synced/platform passkey. Parsed with the crate's own parser, not
-    // hand-rolled, so it can't drift from what `authenticate_credential`
-    // itself computes from the same bytes.
-    let asserted_backup_eligible = AuthenticatorData::<Authentication>::try_from(
-        req.credential.response.authenticator_data.as_slice(),
-    )
-    .map_err(|_| AppError::BadRequest("malformed authenticatorData".to_string()))?
-    .backup_eligible;
+    let config = state.webauthn()?;
+
+    // `verify` consumes the ceremony state (by design), which doesn't
+    // compose with trying N candidate credentials against the same
+    // challenge - so each candidate below gets its own independently
+    // `Decode`d copy of this same, once-`Encode`d state. See the module
+    // docs.
+    let encoded_state = auth_state
+        .encode()
+        .map_err(|e| AppError::Internal(format!("failed to encode ceremony state: {e:?}")))?;
+
+    // This app doesn't persist a per-credential backup-eligibility flag
+    // (there's nothing stored to compare against), so every candidate
+    // below is reconstructed with *this assertion's own* backup flags
+    // rather than a stored one - that's what makes the crate's
+    // backup-state checks a no-op for any spec-compliant authenticator
+    // instead of a permanent rejection of every synced/platform passkey.
+    // Parsed with the crate's own parser directly from the assertion's
+    // authenticatorData, not hand-rolled, so it can't drift from what
+    // `verify` itself computes from the same bytes.
+    let asserted_backup = AssertionAuthenticatorData::try_from(credential.response().authenticator_data())
+        .map_err(|_| AppError::BadRequest("malformed authenticatorData".to_string()))?
+        .flags()
+        .backup;
+
+    // Similarly, no `UserHandle` is persisted for any account (see the
+    // module docs), so `cred.user_id` below is forged to be exactly the
+    // `userHandle` this assertion itself carries - the equality check
+    // `verify` runs between the two becomes self-referential, and an
+    // attacker can't forge it without also forging a valid signature over
+    // this same assertion.
+    let user_handle = credential.response().user_handle();
 
     // No `credential_id` is stored (see
     // `20260909000000_drop_passkey_credential_id.sql`), so there is nothing
     // to narrow this query - or the loop below - by: every passkey on the
     // server, for every account, is a candidate. Each one is handed to
-    // `authenticate_credential` with its `cred_id` forged to equal this
-    // assertion's own `raw_id` (see `rebuild_credential`), which makes the
-    // crate's internal id-match step trivially pass every candidate through
-    // to a real signature verification against its stored public key. So
-    // this genuinely runs up to N ECDSA verifies per login attempt, not the
+    // `verify` with its credential id forged to equal this assertion's own
+    // `rawId`, which makes the crate's internal id-match step trivially
+    // pass every candidate through to a real signature verification
+    // against its stored public key. So this genuinely runs up to N
+    // signature verifications per login attempt, not the
     // one-verify-plus-cheap-scan an indexed lookup would give - that's the
     // actual cost of not persisting an id to narrow by, not a shortcut. See
     // the session this migration was written in for the accounting of why
@@ -601,14 +669,38 @@ pub async fn login_finish(
     .await?;
     let candidate_count = rows.len();
 
-    let forged_cred_id = CredentialID::from(req.credential.get_credential_id().to_vec());
+    let allowed_origins = config.allowed_origins();
+    let options = AuthenticationVerificationOptions::<&str, &str> {
+        allowed_origins: &allowed_origins,
+        ..Default::default()
+    };
 
+    let raw_id = credential.raw_id();
     let mut matched: Option<(i64, i64, bool)> = None;
     for row in &rows {
-        let public_key: String = row.get("public_key");
-        let candidate = rebuild_credential(forged_cred_id.clone(), &public_key, asserted_backup_eligible)?;
-        auth_state.set_allowed_credentials(vec![candidate]);
-        if state.webauthn()?.authenticate_credential(&req.credential, &auth_state).is_ok() {
+        let public_key: Vec<u8> = row.get("public_key");
+        let static_state = StaticState::<StoredPubKey>::decode(public_key.as_slice())
+            .map_err(|e| AppError::Internal(format!("failed to decode stored passkey public key: {e:?}")))?;
+        // No per-login state is tracked for any of these (see the module
+        // docs): `user_verified: true` and `sign_count: 0` are the values
+        // that make the crate's corresponding checks no-ops given this
+        // app's fixed `UserVerificationRequirement::Required` policy and
+        // lack of any stored counter to compare against; `backup` is the
+        // self-referential value computed above;
+        // `authenticator_attachment: None` is what makes the (default,
+        // `Ignore`) attachment-enforcement check a no-op too.
+        let dynamic_state = DynamicState {
+            user_verified: true,
+            backup: asserted_backup,
+            sign_count: 0,
+            authenticator_attachment: AuthenticatorAttachment::None,
+        };
+        let mut candidate: LoginCredential<'_> =
+            AuthenticatedCredential::new(raw_id, user_handle, static_state, dynamic_state)
+                .map_err(|e| AppError::Internal(format!("failed to reconstruct candidate passkey: {e:?}")))?;
+        let candidate_state = DiscoverableAuthenticationServerState::decode(encoded_state.as_slice())
+            .map_err(|e| AppError::Internal(format!("failed to decode ceremony state: {e:?}")))?;
+        if candidate_state.verify(&config.rp_id, &credential, &mut candidate, &options).is_ok() {
             matched = Some((row.get("id"), row.get("user_id"), row.get("is_admin")));
             break;
         }
@@ -616,8 +708,8 @@ pub async fn login_finish(
     let (passkey_id, user_id, is_admin) = matched.ok_or(AppError::UnknownPasskey)?;
 
     // No per-credential state to persist on success - counter/backup flags
-    // aren't tracked (see rebuild_credential) - just record when this
-    // passkey was last used, for the user's own "my passkeys" list.
+    // aren't tracked (see above) - just record when this passkey was last
+    // used, for the user's own "my passkeys" list.
     sqlx::query("UPDATE passkeys SET last_used_at = datetime('now') WHERE id = ?")
         .bind(passkey_id)
         .execute(&state.pool)
@@ -678,13 +770,8 @@ pub async fn list_passkeys(
 pub async fn add_passkey_start(
     State(state): State<AppState>,
     auth: AuthUser,
-) -> Result<Json<StartResponse<CreationChallengeResponse>>, AppError> {
-    // No persisted per-account handle to reuse (see module docs) - a fresh
-    // one is generated per ceremony purely to satisfy the protocol's
-    // requirement for a `user.id` value; nothing here ever reads it back.
-    let handle = Uuid::new_v4();
-
-    let (ceremony_id, options) = start_registration(&state, handle, Some(auth.0))?;
+) -> Result<Json<StartResponse>, AppError> {
+    let (ceremony_id, options) = start_registration(&state, Some(auth.0))?;
     info!("passkey add/start: user_id={} ceremony={ceremony_id}", auth.0);
     Ok(Json(StartResponse { ceremony_id, options }))
 }
@@ -705,13 +792,9 @@ pub async fn add_passkey_start(
 pub async fn add_passkey_finish(
     State(state): State<AppState>,
     auth: AuthUser,
-    AppJson(req): AppJson<FinishRequest<RegisterPublicKeyCredential>>,
+    AppJson(req): AppJson<FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>>,
 ) -> Result<(StatusCode, Json<PasskeySummary>), AppError> {
-    let (user_id, ceremony) = finish_registration(&state, req.ceremony_id, &req.credential).await?;
-    let for_user = match ceremony {
-        Ceremony::Registration { for_user, .. } => for_user,
-        Ceremony::Authentication { .. } => None,
-    };
+    let (user_id, for_user) = finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
     if for_user != Some(auth.0) {
         warn!("passkey add/finish: ceremony for user_id={for_user:?} finished by user_id={}", auth.0);
         return Err(AppError::Forbidden);
@@ -780,4 +863,3 @@ pub async fn delete_passkey(
     info!("passkey delete: user_id={} removed passkey id={passkey_id}", auth.0);
     Ok(StatusCode::NO_CONTENT)
 }
-
