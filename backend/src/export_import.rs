@@ -393,3 +393,223 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
 
     Ok(UserSettingsExport { core, fsrs_parameters })
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{test_pool, test_user};
+
+    async fn setup_source_user(pool: &SqlitePool, user_id: i64) {
+        sqlx::query(
+            "INSERT INTO users_settings (user_id, daily_new_card_limit, day_boundary_hour) VALUES (?, 7, 2)",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[1.0,2.0,3.0]')")
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .unwrap();
+
+        // Two reviews of card 1 (card 1 ends up "review"), one of card 2.
+        sqlx::query(
+            "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) \
+             VALUES (?, 1, 'good', '2026-01-01 00:00:00', 1, 1, 'learning')",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) \
+             VALUES (?, 1, 'good', '2026-01-04 00:00:00', 3, 2, 'review')",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) \
+             VALUES (?, 2, 'again', '2026-01-02 00:00:00', 1, 1, 'learning')",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 3, 1)")
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn export_then_import_round_trips_settings_history_and_suppressions() {
+        let pool = test_pool().await;
+        let source_id = test_user(&pool).await;
+        setup_source_user(&pool, source_id).await;
+
+        let exported = export_data(State(pool.clone()), AuthUser(source_id)).await.unwrap().0;
+        assert_eq!(exported.review_history.len(), 3);
+        assert_eq!(exported.suppressed_cards, vec![3]);
+
+        let dest_id = test_user(&pool).await;
+        let import_result = import_data(
+            State(pool.clone()),
+            AuthUser(dest_id),
+            AppJson(ImportDataRequest { data: exported, overwrite: false }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(import_result.stats.reviews_imported, 3);
+        assert_eq!(import_result.stats.suppressed_cards_imported, 1);
+        // One derived cards_states row per distinct card_id in the imported
+        // history (cards 1 and 2).
+        assert_eq!(import_result.stats.card_states_derived, 2);
+
+        // Settings round-tripped, including the FSRS parameters.
+        let dest_settings = export_data(State(pool.clone()), AuthUser(dest_id)).await.unwrap().0.settings;
+        assert_eq!(dest_settings.core.daily_new_card_limit, 7);
+        assert_eq!(dest_settings.core.day_boundary_hour, 2);
+        assert_eq!(dest_settings.fsrs_parameters.as_deref(), Some("[1.0,2.0,3.0]"));
+
+        // cards_states derived from the *latest* review per card: card 1's
+        // last review (1/4) had stability 3, not the first review's 1.
+        let (stability, state): (f64, String) = sqlx::query_as(
+            "SELECT stability, state FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(dest_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stability, 3.0);
+        assert_eq!(state, "review");
+
+        let suppressed: Vec<i64> = sqlx::query_scalar(
+            "SELECT card_id FROM users_card_flags WHERE user_id = ? AND suppressed = 1",
+        )
+        .bind(dest_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(suppressed, vec![3]);
+    }
+
+    #[tokio::test]
+    async fn overwrite_clears_existing_data_before_importing() {
+        let pool = test_pool().await;
+        let source_id = test_user(&pool).await;
+        setup_source_user(&pool, source_id).await;
+        let exported = export_data(State(pool.clone()), AuthUser(source_id)).await.unwrap().0;
+
+        let dest_id = test_user(&pool).await;
+        // Pre-existing data that overwrite:true should wipe.
+        sqlx::query(
+            "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, state) \
+             VALUES (?, 10, 'easy', '2020-01-01 00:00:00', 'review')",
+        )
+        .bind(dest_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 10, 1)")
+            .bind(dest_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let _ = import_data(
+            State(pool.clone()),
+            AuthUser(dest_id),
+            AppJson(ImportDataRequest { data: exported, overwrite: true }),
+        )
+        .await
+        .unwrap();
+
+        let has_old_review: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM review_history WHERE user_id = ? AND card_id = 10)",
+        )
+        .bind(dest_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!has_old_review, "overwrite should have cleared the pre-existing review");
+
+        let has_old_suppression: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users_card_flags WHERE user_id = ? AND card_id = 10)",
+        )
+        .bind(dest_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!has_old_suppression, "overwrite should have cleared the pre-existing suppression");
+    }
+
+    #[tokio::test]
+    async fn unknown_card_ids_are_skipped_and_counted_correctly() {
+        let pool = test_pool().await;
+        let dest_id = test_user(&pool).await;
+
+        let data = ExportData {
+            version: "1.0".to_string(),
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            settings: UserSettingsExport {
+                core: crate::user::UserSettingsCore {
+                    show_percentage: true,
+                    red_threshold: 50,
+                    yellow_threshold: 70,
+                    day_boundary_hour: 4,
+                    auto_progress_on_correct: false,
+                    auto_progress_delay: 1500,
+                    desired_retention: 0.9,
+                    daily_new_card_limit: 20,
+                    history_colorized_area: false,
+                    history_colored_dots: false,
+                    history_threshold_lines: false,
+                },
+                fsrs_parameters: None,
+            },
+            review_history: vec![
+                ReviewHistoryExport {
+                    card_id: 1, // real
+                    rating: "good".to_string(),
+                    scheduled_days: None,
+                    elapsed_days: None,
+                    reviewed_at: "2026-01-01 00:00:00".to_string(),
+                    stability: Some(1.0),
+                    difficulty: Some(1.0),
+                    state: Some("learning".to_string()),
+                },
+                ReviewHistoryExport {
+                    card_id: 999999, // doesn't exist
+                    rating: "good".to_string(),
+                    scheduled_days: None,
+                    elapsed_days: None,
+                    reviewed_at: "2026-01-01 00:00:00".to_string(),
+                    stability: Some(1.0),
+                    difficulty: Some(1.0),
+                    state: Some("learning".to_string()),
+                },
+            ],
+            suppressed_cards: vec![2, 999999],
+        };
+
+        let result = import_data(
+            State(pool.clone()),
+            AuthUser(dest_id),
+            AppJson(ImportDataRequest { data, overwrite: false }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(result.stats.reviews_imported, 1);
+        assert_eq!(result.stats.suppressed_cards_imported, 1);
+        assert_eq!(result.stats.card_states_derived, 1);
+    }
+}

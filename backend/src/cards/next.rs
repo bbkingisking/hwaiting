@@ -450,3 +450,291 @@ pub async fn get_next_card(
         next_due_at: None,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- split_sentence -----------------------------------------------------
+
+    #[test]
+    fn splits_target_at_start() {
+        let (before, after) = split_sentence("먹다 좋아해요", "먹다");
+        assert_eq!(before, "");
+        assert_eq!(after, " 좋아해요");
+    }
+
+    #[test]
+    fn splits_target_in_middle() {
+        let (before, after) = split_sentence("저는 먹다 좋아해요", "먹다");
+        assert_eq!(before, "저는 ");
+        assert_eq!(after, " 좋아해요");
+    }
+
+    #[test]
+    fn splits_target_at_end() {
+        let (before, after) = split_sentence("저는 먹다", "먹다");
+        assert_eq!(before, "저는 ");
+        assert_eq!(after, "");
+    }
+
+    #[test]
+    fn falls_back_to_whole_sentence_when_target_absent() {
+        let (before, after) = split_sentence("저는 밥을 먹어요", "먹다");
+        assert_eq!(before, "저는 밥을 먹어요");
+        assert_eq!(after, "");
+    }
+
+    #[test]
+    fn splits_at_first_occurrence_when_target_repeats() {
+        let (before, after) = split_sentence("가다 가다 가다", "가다");
+        assert_eq!(before, "");
+        assert_eq!(after, " 가다 가다");
+    }
+
+    #[test]
+    fn empty_target_splits_at_start() {
+        let (before, after) = split_sentence("안녕하세요", "");
+        assert_eq!(before, "");
+        assert_eq!(after, "안녕하세요");
+    }
+
+    // --- deserialize_id_list --------------------------------------------------
+    //
+    // Called directly with a `StrDeserializer` wrapping the raw `exclude=`
+    // value - the same deserializer kind axum's `Query` extractor (via
+    // `serde_urlencoded`) hands a `#[serde(deserialize_with = ...)]` field,
+    // so this exercises the real code path without pulling in
+    // `serde_urlencoded` as a dev-dependency just to build a query string.
+
+    fn parse_list(raw: &str) -> Result<Vec<i64>, serde::de::value::Error> {
+        use serde::de::IntoDeserializer;
+        let deserializer: serde::de::value::StrDeserializer<'_, serde::de::value::Error> =
+            raw.into_deserializer();
+        deserialize_id_list(deserializer)
+    }
+
+    #[test]
+    fn exclude_single_id() {
+        assert_eq!(parse_list("42").unwrap(), vec![42]);
+    }
+
+    #[test]
+    fn exclude_comma_list() {
+        assert_eq!(parse_list("1,2,3").unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn exclude_tolerates_spaces_around_commas() {
+        assert_eq!(parse_list("1, 2 ,3").unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn exclude_empty_string_is_empty_list() {
+        assert_eq!(parse_list("").unwrap(), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn exclude_trailing_comma_is_silently_ignored() {
+        // Empty segments (from a trailing comma, a leading one, or a
+        // doubled one) are filtered out before parsing, not rejected -
+        // `1,2,` and `1,,2` both silently become `[1, 2]`. Documents the
+        // lenient behavior rather than asserting it's the ideal one.
+        assert_eq!(parse_list("1,2,").unwrap(), vec![1, 2]);
+        assert_eq!(parse_list("1,,2").unwrap(), vec![1, 2]);
+    }
+
+    #[test]
+    fn exclude_non_numeric_is_rejected() {
+        assert!(parse_list("abc").is_err());
+    }
+
+    // --- get_next_card (handler-level, in-process SQLite) --------------------
+
+    use crate::auth::AuthUser;
+    use crate::cards::time::parse_flexible_datetime;
+    use crate::test_support::{test_pool, test_user};
+
+    async fn next_card(pool: &SqlitePool, user_id: i64, exclude: Vec<i64>) -> NextCardEnvelope {
+        get_next_card(State(pool.clone()), AuthUser(user_id), AppQuery(NextCardQuery { exclude }))
+            .await
+            .unwrap()
+            .0
+    }
+
+    /// Marks every seeded card except `keep` as already-reviewed and due far
+    /// in the future - used to isolate a single card as the only "new" (or
+    /// only "due-later") candidate without hand-seeding all 50.
+    async fn bury_every_other_card(pool: &SqlitePool, user_id: i64, keep: i64) {
+        sqlx::query(
+            r#"
+            INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state)
+            SELECT ?, id, 1000, 0, datetime('now'), 'review' FROM cards WHERE id != ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(keep)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn due_card_is_preferred_over_new_cards() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+
+        // Card 2 is already due (last_review + stability in the past);
+        // every other card (including card 1) is untouched, i.e. "new".
+        sqlx::query(
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
+             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review')",
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let envelope = next_card(&pool, user_id, vec![]).await;
+        let card = envelope.card.expect("a card should be due");
+        assert_eq!(card.prompt.front.card_id, 2);
+    }
+
+    #[tokio::test]
+    async fn suppressed_card_is_never_returned() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+
+        // Card 2 is due, but suppressed - it must not come back even though
+        // it would otherwise win on priority.
+        sqlx::query(
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
+             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review')",
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 2, 1)")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let envelope = next_card(&pool, user_id, vec![]).await;
+        let card = envelope.card.expect("some other card should still be available");
+        assert_ne!(card.prompt.front.card_id, 2);
+    }
+
+    #[tokio::test]
+    async fn exclude_param_is_honored() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+
+        // Every card is "new" (no cards_states rows) - excluding all but
+        // card 7 should deterministically return card 7.
+        let exclude: Vec<i64> = (1..=50).filter(|&id| id != 7).collect();
+        let envelope = next_card(&pool, user_id, exclude).await;
+        let card = envelope.card.expect("card 7 should still be selectable");
+        assert_eq!(card.prompt.front.card_id, 7);
+    }
+
+
+    #[tokio::test]
+    async fn daily_new_card_limit_zero_suppresses_all_new_cards() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0)")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // No card has any review_history, so with new cards suppressed and
+        // none due, nothing is available.
+        let envelope = next_card(&pool, user_id, vec![]).await;
+        assert!(envelope.card.is_none());
+    }
+
+    #[tokio::test]
+    async fn prefetch_uses_a_stricter_limit_minus_one_threshold() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 5)")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Cards 2-5 each have exactly one review, timestamped "now" (today) -
+        // 4 new cards reviewed today. A matching cards_states row (as
+        // check_answer would also write) pushes each card's next due date
+        // 10 days out, so none of them come back as "due" and confound the
+        // new-card-limit assertions below.
+        for card_id in 2..=5 {
+            sqlx::query(
+                "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) \
+                 VALUES (?, ?, 'good', datetime('now'), 10, 1, 'learning')",
+            )
+            .bind(user_id)
+            .bind(card_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            sqlx::query(
+                "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
+                 VALUES (?, ?, 10, 1, datetime('now'), 'learning')",
+            )
+            .bind(user_id)
+            .bind(card_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Plain request: threshold is the full limit (5); 4 < 5, so a new
+        // card is still available.
+        let plain = next_card(&pool, user_id, vec![]).await;
+        assert!(plain.card.is_some(), "limit not yet reached for a plain request");
+
+        // Prefetch request (non-empty exclude): threshold is limit - 1 (4);
+        // 4 >= 4, so the prefetch must not hand out a new card even though
+        // the real limit hasn't been hit yet.
+        let prefetch = next_card(&pool, user_id, vec![999]).await;
+        assert!(prefetch.card.is_none(), "prefetch should respect the limit-1 buffer");
+    }
+
+    #[tokio::test]
+    async fn next_due_at_reports_the_earliest_scheduled_due_date() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+
+        // Every card has a cards_states row (so none reads as "new"), and
+        // card 1's is due soonest.
+        bury_every_other_card(&pool, user_id, 1).await;
+        sqlx::query(
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
+             VALUES (?, 1, 3, 0, datetime('now'), 'review')",
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let last_review: String = sqlx::query_scalar(
+            "SELECT last_review FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let expected = (parse_flexible_datetime(&last_review).unwrap() + chrono::Duration::days(3))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+
+        let envelope = next_card(&pool, user_id, vec![]).await;
+        assert!(envelope.card.is_none(), "nothing should be due yet");
+        assert_eq!(envelope.next_due_at, Some(expected));
+    }
+}
