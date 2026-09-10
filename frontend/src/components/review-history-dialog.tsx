@@ -74,7 +74,7 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
-const PRIMARY_POS = ['동사', '명사', '형용사', '부사']
+const PRIMARY_POS = ['Verb', 'Noun', 'Adjective', 'Adverb']
 
 type BreakdownCategory = 'pos' | 'origin_type'
 
