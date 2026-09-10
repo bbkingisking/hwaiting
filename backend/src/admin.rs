@@ -505,53 +505,37 @@ pub async fn edit_card(
         // here unlike the old sentence_inflection_hints: a `targets` row is
         // created unconditionally alongside every sentence now (its `form`
         // is NOT NULL), never left absent the way hint rows used to be.
+        //
+        // Same dynamically-built-SET-clause shape as the cards/
+        // cards_translations updates above, rather than up to six separate
+        // single-column statements against the same row.
         let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
         let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
-        if let Some(ref v) = target {
-            sqlx::query("UPDATE targets SET form = ? WHERE sentence_id = ?")
-                .bind(v.as_str())
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-        }
-        if let Some(v) = speech_level_id {
-            sqlx::query("UPDATE targets SET speech_level_id = ? WHERE sentence_id = ?")
-                .bind(v)
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-        }
-        if let Some(v) = tense_id {
-            sqlx::query("UPDATE targets SET tense_id = ? WHERE sentence_id = ?")
-                .bind(v)
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-        }
-        if let Some(v) = grammar_pattern_id {
-            sqlx::query("UPDATE targets SET grammar_pattern_id = ? WHERE sentence_id = ?")
-                .bind(v)
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-        }
-        // is_honorific/is_humble are NOT NULL, so an explicit null (v: None)
-        // clears to the column's own default (false) rather than being
-        // rejected - there's no NULL state on a boolean column for "clear"
-        // to mean anything else.
-        if let Some(v) = is_honorific {
-            sqlx::query("UPDATE targets SET is_honorific = ? WHERE sentence_id = ?")
-                .bind(v.unwrap_or(false))
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-        }
-        if let Some(v) = is_humble {
-            sqlx::query("UPDATE targets SET is_humble = ? WHERE sentence_id = ?")
-                .bind(v.unwrap_or(false))
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
+        // is_honorific/is_humble are NOT NULL, so an explicit null clears to
+        // the column's own default (false) rather than being rejected -
+        // there's no NULL state on a boolean column for "clear" to mean
+        // anything else.
+        let is_honorific = is_honorific.map(|v| v.unwrap_or(false));
+        let is_humble = is_humble.map(|v| v.unwrap_or(false));
+
+        let mut sets: Vec<&str> = Vec::new();
+        if target.is_some()          { sets.push("form = ?") }
+        if speech_level_id.is_some() { sets.push("speech_level_id = ?") }
+        if tense_id.is_some()        { sets.push("tense_id = ?") }
+        if grammar_pattern_id.is_some() { sets.push("grammar_pattern_id = ?") }
+        if is_honorific.is_some()    { sets.push("is_honorific = ?") }
+        if is_humble.is_some()       { sets.push("is_humble = ?") }
+
+        if !sets.is_empty() {
+            let sql = format!("UPDATE targets SET {} WHERE sentence_id = ?", sets.join(", "));
+            let mut q = sqlx::query(&sql);
+            if let Some(ref v) = target        { q = q.bind(v.as_str()) }
+            if let Some(v) = speech_level_id      { q = q.bind(v) }
+            if let Some(v) = tense_id             { q = q.bind(v) }
+            if let Some(v) = grammar_pattern_id   { q = q.bind(v) }
+            if let Some(v) = is_honorific         { q = q.bind(v) }
+            if let Some(v) = is_humble            { q = q.bind(v) }
+            q.bind(sid).execute(&mut *tx).await?;
         }
 
         // Update alternative targets
