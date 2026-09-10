@@ -60,7 +60,7 @@ export function AppHeader() {
           <DropdownMenuTrigger aria-label="Account menu" className="p-2 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <User className="h-4 w-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] sm:w-48">
             <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
               <BarChart2 className="mr-2 h-4 w-4" />
               Review History
