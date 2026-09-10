@@ -201,13 +201,13 @@ fn jwt_ttl_seconds() -> Option<i64> {
 /// `jwt_ttl_seconds` itself - split out so token generation can be tested
 /// without touching process environment or credential files.
 fn encode_token(user_id: i64, secret: &str, ttl_seconds: Option<i64>) -> Result<String, AppError> {
-    use jsonwebtoken::{encode, EncodingKey, Header};
+    use jsonwebtoken::{encode, EncodingKey};
 
     let exp = ttl_seconds.map(|ttl| (Utc::now() + Duration::seconds(ttl)).timestamp());
 
     let claims = Claims { sub: user_id, exp };
 
-    let mut header = Header::default();
+    let mut header = jsonwebtoken::Header { alg: Algorithm::HS256, ..Default::default() };
     header.alg = Algorithm::HS256;
 
     encode(&header, &claims, &EncodingKey::from_secret(secret.as_bytes()))
