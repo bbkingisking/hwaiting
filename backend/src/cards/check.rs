@@ -263,7 +263,13 @@ pub async fn check_answer(
         "review"
     };
 
-    // Update or insert card state
+    // cards_states (the scheduling state check_answer's own logic above just
+    // computed) and review_history (the record everything else - stats,
+    // export, FSRS optimization - reads back) must land together: one
+    // transaction, so a failure between the two can't leave them
+    // disagreeing about what this review did.
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         r#"
         INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state)
@@ -281,7 +287,7 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(now.to_rfc3339())
     .bind(new_state)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await?;
 
     // Insert into review_history with full FSRS metadata
@@ -299,8 +305,10 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.stability as f64)
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(new_state)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(Json(CheckResponse {
         correct,
