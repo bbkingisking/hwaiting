@@ -198,17 +198,21 @@ pub async fn import_data(
         suppressed_cards_imported: 0,
     };
 
+    // Every card id referenced below (across both the review-history and
+    // suppressed-cards loops) used to get its own `SELECT EXISTS` query, one
+    // round trip per imported row. Loading the whole id set once instead
+    // turns that into a single query no matter how large the import is, with
+    // an in-memory lookup replacing each per-row check.
+    let valid_card_ids: std::collections::HashSet<i64> =
+        sqlx::query_scalar("SELECT id FROM cards")
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+
     // Import review history (must come before cards_states derivation)
     for review in data.review_history {
-        // Check if card exists
-        let card_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)"
-        )
-        .bind(review.card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        if !card_exists {
+        if !valid_card_ids.contains(&review.card_id) {
             warn!("Skipping review for non-existent card_id: {}", review.card_id);
             continue;
         }
@@ -264,15 +268,7 @@ pub async fn import_data(
 
     // Import suppressed cards
     for card_id in data.suppressed_cards {
-        // Check if card exists
-        let card_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)"
-        )
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        if !card_exists {
+        if !valid_card_ids.contains(&card_id) {
             warn!("Skipping suppression for non-existent card_id: {}", card_id);
             continue;
         }
