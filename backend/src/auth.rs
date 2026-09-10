@@ -11,7 +11,7 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Row};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson};
@@ -55,20 +55,14 @@ pub async fn login(
     let username = payload.username.trim();
     let password = payload.password.trim();
 
-    info!("Login attempt for user: {}", username);
-
     // Check if user exists
     let user = sqlx::query("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?")
         .bind(username)
         .fetch_optional(&pool)
         .await?;
 
-    debug!("User lookup result: {}", if user.is_some() { "found" } else { "not found" });
-
     match user {
         Some(row) => {
-            debug!("User found, verifying password");
-
             let user_id: i64 = row.get("id");
             let stored_username: String = row.get("username");
             let password_hash: Option<String> = row.get("password_hash");
@@ -90,7 +84,6 @@ pub async fn login(
                 .is_ok();
 
             if password_matches {
-                info!("Password verified successfully for user: {}", username);
                 // Generate JWT token
                 let token = generate_token(user_id)?;
                 Ok(Json(AuthResponse {
@@ -127,8 +120,6 @@ pub async fn signup(
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
     let username = payload.username.trim();
     let password = payload.password.trim();
-
-    info!("Signup attempt for user: {}", username);
 
     // One transaction for the whole thing: checking for an existing
     // username and creating the user need to see (and commit) a consistent
@@ -265,33 +256,21 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        debug!("AuthUser extractor called");
-
-        // Extract Authorization header
+        // Missing/malformed Authorization header is the routine "not signed
+        // in yet" case, not a notable event - same as AppJson/AppPath/
+        // AppQuery not logging their own routine rejections - so this stays
+        // silent; only decode_token's own outcome is worth a log.
         let auth_header = parts
             .headers
             .get("Authorization")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| {
-                warn!("Missing Authorization header");
-                AppError::InvalidCredentials
-            })?;
+            .ok_or(AppError::InvalidCredentials)?;
 
-        debug!("Authorization header present");
-
-        // Remove "Bearer " prefix
         let token = auth_header
             .strip_prefix("Bearer ")
-            .ok_or_else(|| {
-                warn!("Invalid Authorization header format (missing Bearer prefix)");
-                AppError::InvalidCredentials
-            })?;
-
-        debug!("Token extracted, attempting to decode");
+            .ok_or(AppError::InvalidCredentials)?;
 
         let claims = decode_token(token, &crate::credentials::jwt_secret())?;
-
-        debug!("Token validated successfully for user_id: {}", claims.sub);
         Ok(AuthUser(claims.sub))
     }
 }
@@ -326,7 +305,6 @@ where
             return Err(AppError::Forbidden);
         }
 
-        info!("Admin user {} authenticated", user_id);
         Ok(AdminUser(user_id))
     }
 }
