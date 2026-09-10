@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
+use tracing::error;
 use utoipa::ToSchema;
 
 /// Schema-only mirror of the `{"error": "..."}` envelope every error
@@ -91,18 +92,18 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AppError::Database(ref e) => {
-                eprintln!("Database error: {}", e);
+                error!("Database error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
             }
             AppError::PasswordHash => {
-                eprintln!("Password hash error");
+                error!("Password hash error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error".to_string())
             }
             AppError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
             AppError::Webauthn(ref e) => {
-                eprintln!("Passkey ceremony failed: {:?}", e);
+                error!("Passkey ceremony failed: {:?}", e);
                 (StatusCode::BAD_REQUEST, "Passkey ceremony failed".to_string())
             }
             AppError::CeremonyNotFound => {
@@ -130,7 +131,7 @@ impl IntoResponse for AppError {
                 (StatusCode::BAD_REQUEST, msg.clone())
             }
             AppError::Internal(ref msg) => {
-                eprintln!("Internal error: {}", msg);
+                error!("Internal error: {}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
             }
         };
