@@ -190,119 +190,75 @@ pub async fn update_settings(
     let user_id = auth.0;
     info!("Updating settings for user_id: {}", user_id);
 
-    // Ensure users_settings row exists
-    sqlx::query(
-        r#"
-        INSERT INTO users_settings (user_id)
-        VALUES (?)
-        ON CONFLICT(user_id) DO NOTHING
-        "#
-    )
-    .bind(user_id)
-    .execute(&pool)
-    .await?;
+    let UpdateSettingsRequest {
+        show_percentage,
+        red_threshold,
+        yellow_threshold,
+        day_boundary_hour,
+        auto_progress_on_correct,
+        auto_progress_delay,
+        desired_retention,
+        daily_new_card_limit,
+        history_colorized_area,
+        history_colored_dots,
+        history_threshold_lines,
+    } = payload;
 
-    // Update individual fields if provided
-    if let Some(show_percentage) = payload.show_percentage {
-        sqlx::query("UPDATE users_settings SET show_percentage = ? WHERE user_id = ?")
-            .bind(show_percentage)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
+    // Validate before writing anything, same bounds as before.
+    if let Some(v) = day_boundary_hour && !(0..=23).contains(&v) {
+        return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
+    }
+    if let Some(v) = auto_progress_delay && !(0..=3000).contains(&v) {
+        return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
+    }
+    if let Some(v) = desired_retention && !(0.5..=0.99).contains(&v) {
+        return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
+    }
+    if let Some(v) = daily_new_card_limit && v.is_negative() {
+        return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()));
     }
 
-    if let Some(red_threshold) = payload.red_threshold {
-        sqlx::query("UPDATE users_settings SET red_threshold = ? WHERE user_id = ?")
-            .bind(red_threshold)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
+    // One transaction for the lazy row creation and the update itself, and
+    // one dynamically-built UPDATE for every provided field - same pattern
+    // as admin::edit_card's cards/cards_translations updates - rather than
+    // up to 11 separate unguarded statements against the pool. Atomicity
+    // matters here specifically because there used to be none: a failure
+    // partway through the old field-by-field version could leave settings
+    // half-applied.
+    let mut tx = pool.begin().await?;
+    ensure_settings_row(&mut *tx, user_id).await?;
+
+    let mut sets: Vec<&str> = Vec::new();
+    if show_percentage.is_some()       { sets.push("show_percentage = ?") }
+    if red_threshold.is_some()         { sets.push("red_threshold = ?") }
+    if yellow_threshold.is_some()      { sets.push("yellow_threshold = ?") }
+    if day_boundary_hour.is_some()     { sets.push("day_boundary_hour = ?") }
+    if auto_progress_on_correct.is_some() { sets.push("auto_progress_on_correct = ?") }
+    if auto_progress_delay.is_some()   { sets.push("auto_progress_delay = ?") }
+    if desired_retention.is_some()     { sets.push("desired_retention = ?") }
+    if daily_new_card_limit.is_some()  { sets.push("daily_new_card_limit = ?") }
+    if history_colorized_area.is_some()   { sets.push("history_colorized_area = ?") }
+    if history_colored_dots.is_some()     { sets.push("history_colored_dots = ?") }
+    if history_threshold_lines.is_some()  { sets.push("history_threshold_lines = ?") }
+
+    if !sets.is_empty() {
+        let sql = format!("UPDATE users_settings SET {} WHERE user_id = ?", sets.join(", "));
+        let mut q = sqlx::query(&sql);
+        if let Some(v) = show_percentage       { q = q.bind(v) }
+        if let Some(v) = red_threshold         { q = q.bind(v) }
+        if let Some(v) = yellow_threshold      { q = q.bind(v) }
+        if let Some(v) = day_boundary_hour     { q = q.bind(v) }
+        if let Some(v) = auto_progress_on_correct { q = q.bind(v) }
+        if let Some(v) = auto_progress_delay   { q = q.bind(v) }
+        if let Some(v) = desired_retention     { q = q.bind(v) }
+        if let Some(v) = daily_new_card_limit  { q = q.bind(v) }
+        if let Some(v) = history_colorized_area   { q = q.bind(v) }
+        if let Some(v) = history_colored_dots     { q = q.bind(v) }
+        if let Some(v) = history_threshold_lines  { q = q.bind(v) }
+        q.bind(user_id).execute(&mut *tx).await?;
     }
 
-    if let Some(yellow_threshold) = payload.yellow_threshold {
-        sqlx::query("UPDATE users_settings SET yellow_threshold = ? WHERE user_id = ?")
-            .bind(yellow_threshold)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(day_boundary_hour) = payload.day_boundary_hour {
-        // Validate hour is between 0 and 23
-        if day_boundary_hour < 0 || day_boundary_hour > 23 {
-            return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
-        }
-        sqlx::query("UPDATE users_settings SET day_boundary_hour = ? WHERE user_id = ?")
-            .bind(day_boundary_hour)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(auto_progress_on_correct) = payload.auto_progress_on_correct {
-        sqlx::query("UPDATE users_settings SET auto_progress_on_correct = ? WHERE user_id = ?")
-            .bind(auto_progress_on_correct)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(auto_progress_delay) = payload.auto_progress_delay {
-        if auto_progress_delay < 0 || auto_progress_delay > 3000 {
-            return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
-        }
-        sqlx::query("UPDATE users_settings SET auto_progress_delay = ? WHERE user_id = ?")
-            .bind(auto_progress_delay)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(desired_retention) = payload.desired_retention {
-        if desired_retention < 0.5 || desired_retention > 0.99 {
-            return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
-        }
-        sqlx::query("UPDATE users_settings SET desired_retention = ? WHERE user_id = ?")
-            .bind(desired_retention)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(daily_new_card_limit) = payload.daily_new_card_limit {
-        if daily_new_card_limit.is_negative() {
-            return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()))
-        }
-        sqlx::query("UPDATE users_settings SET daily_new_card_limit = ? WHERE user_id = ?")
-            .bind(daily_new_card_limit)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(v) = payload.history_colorized_area {
-        sqlx::query("UPDATE users_settings SET history_colorized_area = ? WHERE user_id = ?")
-            .bind(v)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(v) = payload.history_colored_dots {
-        sqlx::query("UPDATE users_settings SET history_colored_dots = ? WHERE user_id = ?")
-            .bind(v)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
-
-    if let Some(v) = payload.history_threshold_lines {
-        sqlx::query("UPDATE users_settings SET history_threshold_lines = ? WHERE user_id = ?")
-            .bind(v)
-            .bind(user_id)
-            .execute(&pool)
-            .await?;
-    }
+    tx.commit().await?;
 
     info!("Settings updated successfully");
 
