@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson, AppPath};
 
-use super::{hanja_hints_for, HanjaHint};
+use super::{hanja_hints_for, review_prefs, HanjaHint};
 use super::time::parse_flexible_datetime;
 
 #[derive(Deserialize, ToSchema)]
@@ -206,14 +206,7 @@ pub async fn check_answer(
 
     let fsrs = FSRS::new(Some(params)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
-    // Fetch user's desired retention setting
-    let desired_retention: f64 = sqlx::query_scalar(
-        "SELECT desired_retention FROM users_settings WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?
-    .unwrap_or(0.9);
+    let desired_retention = review_prefs(&pool, user_id).await?.desired_retention;
 
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
