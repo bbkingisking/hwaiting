@@ -354,17 +354,7 @@ pub async fn import_data(
 
 // Helper function to get user settings
 async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettingsExport, AppError> {
-    // Ensure users_settings row exists
-    sqlx::query(
-        r#"
-        INSERT INTO users_settings (user_id)
-        VALUES (?)
-        ON CONFLICT(user_id) DO NOTHING
-        "#
-    )
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    crate::user::ensure_settings_row(pool, user_id).await?;
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
