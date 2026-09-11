@@ -12,7 +12,6 @@ chrono = { version = "0.4.44", features = ["serde"] }
 dotenvy = "0.15.7"
 fsrs = "5.2.0"
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
-libc = "0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sqlx = { version = "0.8.6", features = ["chrono", "runtime-tokio", "sqlite"] }
@@ -40,3 +39,10 @@ uuid = { version = "1.26.0", features = ["v4", "serde"] }
 # brute-force loop can decode a fresh, independent ceremony state per
 # candidate credential - see passkey.rs.
 webauthn_rp = { version = "0.3.0", features = ["serde_relaxed", "serializable_server_state"] }
+
+# Unix-only: needed just for the FD_CLOEXEC fixup on a systemd-handed-over
+# socket fd in main.rs's systemd_activated_unix_socket(), which is itself
+# #[cfg(unix)]-gated - keeping it out of non-Unix dependency graphs entirely
+# rather than pulling it in unused.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
