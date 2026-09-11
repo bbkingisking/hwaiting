@@ -187,31 +187,49 @@ async fn main() -> anyhow::Result<()> {
     //     unset, since neither value is a secret or deployment-specific in a
     //     way that makes a default unsafe - unlike HWAITING_RP_ID/HWAITING_RP_ORIGINS, which
     //     have none.
-    if let Some(std_listener) = systemd_activated_unix_socket() {
-        let listener = tokio::net::UnixListener::from_std(std_listener)?;
-        tracing::info!("Backend listening on systemd-activated unix socket");
-        axum::serve(listener, app).await?;
-    } else if let Some(path) = credentials::unix_socket() {
-        // Remove a stale socket file left behind by an unclean previous exit.
-        let _ = std::fs::remove_file(&path);
-        let listener = tokio::net::UnixListener::bind(&path)?;
-        tracing::info!("Backend listening on unix socket {}", path);
-        axum::serve(listener, app).await?;
-    } else {
-        let host = credentials::host();
-        let port: u16 = credentials::port()
-            .parse()
-            .expect("HWAITING_PORT must be a valid u16 number");
-
-        let addr: SocketAddr = format!("{}:{}", host, port)
-            .parse()
-            .expect("Failed to parse HWAITING_HOST:HWAITING_PORT into SocketAddr");
-
-        tracing::info!("Backend listening on {}", addr);
-
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, app).await?;
+    //
+    // Options 1 and 2 are Unix-only (systemd socket activation and
+    // `std`/`tokio`'s `UnixListener` don't exist elsewhere) and are compiled
+    // out entirely on other platforms - this app deploys exclusively to
+    // Linux systemd units, but it's a public repo, so a Windows checkout
+    // should still get a working TCP-only build rather than a hard compile
+    // error deep in `std::os::unix`.
+    #[cfg(unix)]
+    {
+        if let Some(std_listener) = systemd_activated_unix_socket() {
+            let listener = tokio::net::UnixListener::from_std(std_listener)?;
+            tracing::info!("Backend listening on systemd-activated unix socket");
+            axum::serve(listener, app).await?;
+            return Ok(());
+        } else if let Some(path) = credentials::unix_socket() {
+            // Remove a stale socket file left behind by an unclean previous exit.
+            let _ = std::fs::remove_file(&path);
+            let listener = tokio::net::UnixListener::bind(&path)?;
+            tracing::info!("Backend listening on unix socket {}", path);
+            axum::serve(listener, app).await?;
+            return Ok(());
+        }
     }
+    #[cfg(not(unix))]
+    if credentials::unix_socket().is_some() {
+        tracing::warn!(
+            "HWAITING_UNIX_SOCKET is set but Unix domain sockets aren't supported on this platform - falling back to TCP"
+        );
+    }
+
+    let host = credentials::host();
+    let port: u16 = credentials::port()
+        .parse()
+        .expect("HWAITING_PORT must be a valid u16 number");
+
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("Failed to parse HWAITING_HOST:HWAITING_PORT into SocketAddr");
+
+    tracing::info!("Backend listening on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
@@ -223,6 +241,11 @@ async fn main() -> anyhow::Result<()> {
 /// creates and binds the socket in the host's network namespace before this
 /// process (and its own private network namespace) exists, so the service
 /// itself never calls `socket()`.
+///
+/// Unix-only: `std::os::unix::net` and the `std::os::fd` traits used below
+/// don't exist on other targets, and `libc` (needed only here, for the
+/// `FD_CLOEXEC` fixup) is likewise a Unix-only dependency - see Cargo.toml.
+#[cfg(unix)]
 fn systemd_activated_unix_socket() -> Option<std::os::unix::net::UnixListener> {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
