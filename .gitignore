@@ -2,6 +2,9 @@ backend/target/
 backend/annyeong.db
 card-lookup/
 
+# Its own independent git repo, not part of this one.
+tui/
+
 # Ad-hoc maintenance tooling (content-integrity check, conjugation-matrix
 # generator) -- run by hand against a database, not part of the app or
 # its build/deploy.
