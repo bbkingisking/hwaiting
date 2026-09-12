@@ -819,6 +819,7 @@ pub async fn add_passkey_finish(
 #[utoipa::path(
     delete,
     path = "/api/user/passkeys/{passkey_id}",
+    params(("passkey_id" = i64, Path, description = "Passkey ID")),
     responses(
         (status = 204, description = "Passkey removed"),
         (status = 400, description = "That passkey is the caller's only sign-in method", body = crate::error::ErrorResponse),
