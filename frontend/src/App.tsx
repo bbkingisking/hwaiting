@@ -54,6 +54,10 @@ function AppContent() {
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
+  // Mirror of `card` readable from callbacks without making them unstable
+  // (StatusIndicator's poll effect depends on its onCardsAvailable prop).
+  const cardRef = useRef<CardPrompt | null>(null)
+  cardRef.current = card
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -232,6 +236,15 @@ function AppContent() {
     setStatsKey((prev) => prev + 1)
   }
 
+  // StatusIndicator fires this when the due count goes 0 -> >0 (a review
+  // came due). Only auto-load when nothing is on screen (the "No cards"
+  // view): a card already displayed must never be swapped out from under
+  // the user. Due reviews still take priority the next time a card is
+  // picked - on advance, suppress, or a fresh page load.
+  const handleCardsAvailable = () => {
+    if (!cardRef.current) loadCardCold()
+  }
+
   // EditCardDialog edits the backend's canonical full-card shape (see its
   // doc comment in lib/api.ts), most of which - word, definition, sentence,
   // target, alternatives - isn't part of `card` (CardPrompt) at
@@ -315,7 +328,7 @@ function AppContent() {
           </div>
         )}
       </main>
-      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={loadCardCold} />}
+      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={handleCardsAvailable} />}
       {isAuthenticated && (
         <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
       )}
