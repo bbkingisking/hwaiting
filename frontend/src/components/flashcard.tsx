@@ -153,8 +153,12 @@ function HanjaHintText({
       */}
       <TooltipTrigger
         delay={300}
-        closeOnClick
+        // Tooltips do not open from touch interactions. Keep the usual hover
+        // and focus behaviour, but let a tap toggle this controlled tooltip.
+        closeOnClick={false}
+        onClick={() => setOpen((current) => !current)}
         tabIndex={0}
+        aria-expanded={open}
         className="cursor-help border-b border-dotted border-current"
         render={<span />}
       >
