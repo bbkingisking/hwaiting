@@ -20,6 +20,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useFieldValues } from '@/components/field-values-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
 import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/components/card-theme-decorations'
+import { alignedAnswerCharacters } from '@/lib/answer-diff'
 
 interface FlashcardProps {
   card: CardPrompt
@@ -525,18 +526,23 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
                   // safe throughout this branch - it only renders once
                   // `answered`, which handleSubmit only ever sets alongside
                   // `reveal` itself, in the same synchronous continuation.
-                  <span className="inline-flex flex-wrap items-baseline gap-0">
-                    {submittedAnswer.split('').map((char, i) => (
-                      <span
-                        key={i}
-                        data-correct={char === reveal!.target[i]}
-                        className={char === reveal!.target[i] ? 'text-green-600' : 'text-destructive'}
-                      >
-                        {char}
+                  (() => {
+                    const aligned = alignedAnswerCharacters(submittedAnswer, reveal!.target)
+                    return (
+                      <span className="inline-flex flex-wrap items-baseline gap-0">
+                        {Array.from(submittedAnswer).map((char, i) => (
+                          <span
+                            key={i}
+                            data-correct={aligned[i]}
+                            className={aligned[i] ? 'text-green-600' : 'text-destructive'}
+                          >
+                            {char}
+                          </span>
+                        ))}
+                        <span className="text-muted-foreground/50 ml-1 select-none">({reveal!.target})</span>
                       </span>
-                    ))}
-                    <span className="text-muted-foreground/50 ml-1 select-none">({reveal!.target})</span>
-                  </span>
+                    )
+                  })()
                 )
               ) : null}
               {/*
