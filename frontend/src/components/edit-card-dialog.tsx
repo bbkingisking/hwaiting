@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 
 interface EditCardDialogProps {
   open: boolean
@@ -23,11 +24,7 @@ interface EditCardDialogProps {
 
 interface FormState {
   word: string
-  definition: string
-  pos: string
-  origin_type: string
   hanja: string
-  grade: string
   trans_word: string
   trans_dfn: string
   sentence: string
@@ -44,11 +41,7 @@ interface FormState {
 function toFormState(card: AdminCard): FormState {
   return {
     word: card.word ?? '',
-    definition: card.definition ?? '',
-    pos: card.pos ?? '',
-    origin_type: card.origin_type ?? '',
     hanja: card.hanja ?? '',
-    grade: card.grade ?? '',
     trans_word: card.trans_word ?? '',
     trans_dfn: card.trans_dfn ?? '',
     sentence: card.sentence ?? '',
@@ -110,7 +103,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'full' | 'front' | 'back' | null>(null)
-  const { pos, originType, grade, speechLevel, tense, grammarPattern } = useFieldValues()
+  const { speechLevel, tense, grammarPattern } = useFieldValues()
 
   // Reset form whenever the dialog opens with a (potentially new) card
   useEffect(() => {
@@ -127,9 +120,9 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     }
   }
 
-  function handleCheckboxChange(field: 'is_honorific' | 'is_humble') {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm(prev => ({ ...prev, [field]: e.target.checked }))
+  function handleSwitchChange(field: 'is_honorific' | 'is_humble') {
+    return (checked: boolean) => {
+      setForm(prev => ({ ...prev, [field]: checked }))
     }
   }
 
@@ -139,11 +132,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     try {
       const updates = {
         word: form.word.trim() || undefined,
-        definition: nullIfEmpty(form.definition),
-        pos: nullIfEmpty(form.pos),
-        origin_type: nullIfEmpty(form.origin_type),
         hanja: nullIfEmpty(form.hanja),
-        grade: nullIfEmpty(form.grade),
         trans_word: form.trans_word.trim() || undefined,
         trans_dfn: nullIfEmpty(form.trans_dfn),
         sentence: form.sentence.trim() || undefined,
@@ -178,7 +167,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit card</DialogTitle>
           {krdictLink && (
@@ -213,84 +202,31 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
             {id => <Input id={id} value={card.card_id} readOnly className="text-muted-foreground font-mono" />}
           </Field>
 
-          <Field label="Word (Korean)">
-            {id => <Input id={id} value={form.word} onChange={handleChange('word')} />}
+          <Field label="Target (conjugated form in sentence)">
+            {id => <Input id={id} value={form.target} onChange={handleChange('target')} />}
           </Field>
 
-          <Field label="Definition (Korean)">
+          <Field label="Accepted alternatives (comma-separated)">
             {id => (
-              <textarea
+              <Input
                 id={id}
-                value={form.definition}
-                onChange={handleChange('definition')}
-                rows={2}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                value={form.alternatives}
+                onChange={handleChange('alternatives')}
+                placeholder="e.g. alt1, alt2"
               />
             )}
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Part of speech">
-              {id => <EnumSelect id={id} options={pos} value={form.pos} onChange={handleChange('pos')} />}
-            </Field>
-            <Field label="Grade">
-              {id => <EnumSelect id={id} options={grade} value={form.grade} onChange={handleChange('grade')} />}
-            </Field>
-          </div>
-
-          {/* No separate "hanja reading" field: Korean orthography is
-              phonetic, so the reading of `hanja` is just the card's own
-              `word`, edited above - see the backend's dropped-hanja_eum
-              migration. */}
-          <Field label="Hanja">
-            {id => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
-          </Field>
-
-          <Field label="Origin type">
-            {id => <EnumSelect id={id} options={originType} value={form.origin_type} onChange={handleChange('origin_type')} />}
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Politeness level">
-              {id => <EnumSelect id={id} options={speechLevel} value={form.speech_level} onChange={handleChange('speech_level')} />}
-            </Field>
-            <Field label="Tense">
-              {id => <EnumSelect id={id} options={tense} value={form.tense} onChange={handleChange('tense')} />}
-            </Field>
-          </div>
-
-          {/* Not EnumSelect like politeness/tense above: is_honorific/is_humble
-              aren't lookup-table-backed, just booleans (see migration
-              20240101000025) - and independent of each other, not mutually
-              exclusive, so a pair of checkboxes rather than a single select. */}
-          <div className="flex gap-4">
-            <CheckboxField label="Subject honorific (-시-)" checked={form.is_honorific} onChange={handleCheckboxChange('is_honorific')} />
-            <CheckboxField label="Object honorific (겸양어)" checked={form.is_humble} onChange={handleCheckboxChange('is_humble')} />
-          </div>
-
-          <Field label="Grammar pattern">
-            {id => <EnumSelect id={id} options={grammarPattern} value={form.grammar_pattern} onChange={handleChange('grammar_pattern')} />}
-          </Field>
-
           <div className="border-t pt-3 flex flex-col gap-3">
-            <Field label="Translation word (English)">
-              {id => <Input id={id} value={form.trans_word} onChange={handleChange('trans_word')} />}
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Word (Korean)">
+                {id => <Input id={id} value={form.word} onChange={handleChange('word')} />}
+              </Field>
+              <Field label="Translation word (English)">
+                {id => <Input id={id} value={form.trans_word} onChange={handleChange('trans_word')} />}
+              </Field>
+            </div>
 
-            <Field label="Translation definition (English)">
-              {id => (
-                <textarea
-                  id={id}
-                  value={form.trans_dfn}
-                  onChange={handleChange('trans_dfn')}
-                  rows={2}
-                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-                />
-              )}
-            </Field>
-          </div>
-
-          <div className="border-t pt-3 flex flex-col gap-3">
             <Field label="Sentence (Korean)">
               {id => (
                 <textarea
@@ -299,21 +235,6 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
                   onChange={handleChange('sentence')}
                   rows={2}
                   className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-                />
-              )}
-            </Field>
-
-            <Field label="Target (conjugated form in sentence)">
-              {id => <Input id={id} value={form.target} onChange={handleChange('target')} />}
-            </Field>
-
-            <Field label="Accepted alternatives (comma-separated)">
-              {id => (
-                <Input
-                  id={id}
-                  value={form.alternatives}
-                  onChange={handleChange('alternatives')}
-                  placeholder="e.g. alt1, alt2"
                 />
               )}
             </Field>
@@ -329,6 +250,46 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
                 />
               )}
             </Field>
+
+            <Field label="Translation definition (English)">
+              {id => (
+                <textarea
+                  id={id}
+                  value={form.trans_dfn}
+                  onChange={handleChange('trans_dfn')}
+                  rows={2}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                />
+              )}
+            </Field>
+          </div>
+
+          {/* Korean orthography is phonetic, so a separate Hanja reading is
+              unnecessary: the card's Korean word supplies that reading. */}
+          <div className="border-t pt-3">
+            <Field label="Hanja">
+              {id => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
+            </Field>
+          </div>
+
+          <div className="border-t pt-3 flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Tense">
+                {id => <EnumSelect id={id} options={tense} value={form.tense} onChange={handleChange('tense')} />}
+              </Field>
+              <Field label="Politeness level">
+                {id => <EnumSelect id={id} options={speechLevel} value={form.speech_level} onChange={handleChange('speech_level')} />}
+              </Field>
+            </div>
+
+            <Field label="Grammar pattern">
+              {id => <EnumSelect id={id} options={grammarPattern} value={form.grammar_pattern} onChange={handleChange('grammar_pattern')} />}
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SwitchField label="Subject honorific" checked={form.is_honorific} onCheckedChange={handleSwitchChange('is_honorific')} />
+              <SwitchField label="Object honorific" checked={form.is_humble} onCheckedChange={handleSwitchChange('is_humble')} />
+            </div>
           </div>
 
           {error && (
@@ -372,18 +333,17 @@ function Field({ label, children }: { label: string; children: (id: string) => R
   )
 }
 
-function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+function SwitchField({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
   const id = useId()
   return (
-    <div className="flex items-center gap-1.5">
-      <input
-        id={id}
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className="h-4 w-4 rounded border-input"
-      />
+    <div className="flex min-h-9 items-center justify-between rounded-md border border-input bg-muted/30 px-3">
       <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        size="sm"
+      />
     </div>
   )
 }
