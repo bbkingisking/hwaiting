@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import type { Settings } from './types'
+import { parseDueAt } from './review-timing'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -32,16 +33,11 @@ export function krdictUrl(krdictId: number | null | undefined): string | null {
 
 // Format time until a due date in a human-readable format
 export function formatTimeUntil(isoTimestamp: string): string | null {
-  // Zone-less SQLite datetimes ("YYYY-MM-DD HH:MM:SS") are UTC; without the
-  // T/Z normalization, browsers parse them as local time (or reject them).
-  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(isoTimestamp)
-    ? isoTimestamp.replace(' ', 'T') + 'Z'
-    : isoTimestamp
-  const now = new Date()
-  const due = new Date(normalized)
-  if (Number.isNaN(due.getTime())) return null
-  const diffMs = due.getTime() - now.getTime()
+  const dueAt = parseDueAt(isoTimestamp)
+  if (!Number.isFinite(dueAt)) return null
+  const diffMs = dueAt - Date.now()
   if (diffMs <= 0) return null
+  if (diffMs < 60000) return '<1m'
   const diffMinutes = Math.floor(diffMs / 60000)
   const hours = Math.floor(diffMinutes / 60)
   const minutes = diffMinutes % 60
