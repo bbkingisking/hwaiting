@@ -46,3 +46,6 @@ webauthn_rp = { version = "0.3.0", features = ["serde_relaxed", "serializable_se
 # rather than pulling it in unused.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+chrono-tz = "0.10.4"
