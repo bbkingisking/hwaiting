@@ -65,6 +65,7 @@ impl Modify for SecurityAddon {
     ),
     components(schemas(
         crate::error::ErrorResponse,
+        crate::error::StaleReviewResponse,
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,

@@ -170,7 +170,7 @@ pub async fn import_data(
     }
 
     // Begin transaction
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
     // If overwrite, delete existing data
     if payload.overwrite {
@@ -181,7 +181,12 @@ pub async fn import_data(
             .execute(&mut *tx)
             .await?;
         
-        sqlx::query("DELETE FROM cards_states WHERE user_id = ?")
+        // Keep revision tombstones so an old prompt cannot become valid again
+        // after an overwrite removes this card's review history.
+        sqlx::query(
+            "UPDATE cards_states SET stability = 0, difficulty = 0, last_review = NULL,
+             state = 'new', review_revision = review_revision + 1 WHERE user_id = ?",
+        )
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
@@ -241,8 +246,8 @@ pub async fn import_data(
     // Derive cards_states from the last review_history entry per card
     let derived_result = sqlx::query(
         r#"
-        INSERT INTO cards_states (card_id, user_id, stability, difficulty, last_review, state)
-        SELECT rh.card_id, ?, rh.stability, rh.difficulty, rh.reviewed_at, rh.state
+        INSERT INTO cards_states (card_id, user_id, stability, difficulty, last_review, state, review_revision)
+        SELECT rh.card_id, ?, rh.stability, rh.difficulty, rh.reviewed_at, rh.state, 1
         FROM review_history rh
         INNER JOIN (
             SELECT card_id, MAX(reviewed_at) AS max_reviewed
@@ -255,7 +260,8 @@ pub async fn import_data(
             stability = excluded.stability,
             difficulty = excluded.difficulty,
             last_review = excluded.last_review,
-            state = excluded.state
+            state = excluded.state,
+            review_revision = cards_states.review_revision + 1
         "#
     )
     .bind(user_id)
@@ -597,5 +603,60 @@ mod tests {
         assert_eq!(result.stats.reviews_imported, 1);
         assert_eq!(result.stats.suppressed_cards_imported, 1);
         assert_eq!(result.stats.card_states_derived, 1);
+    }
+
+    #[tokio::test]
+    async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
+        let pool = test_pool().await;
+        let source_id = test_user(&pool).await;
+        setup_source_user(&pool, source_id).await;
+        let dest_id = test_user(&pool).await;
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 10, 3, 2, '2026-01-01', 'review', 7)")
+            .bind(dest_id).execute(&pool).await.unwrap();
+        // Card 1 initially has no row (revision zero). Merging must invalidate
+        // that prompt; later merges and overwrites must keep advancing it.
+        let mut previous_revision = 0;
+        for overwrite in [false, false, true, true] {
+            let data = export_data(State(pool.clone()), AuthUser(source_id))
+                .await
+                .unwrap()
+                .0;
+            let _ = import_data(
+                State(pool.clone()),
+                AuthUser(dest_id),
+                AppJson(ImportDataRequest { data, overwrite }),
+            )
+            .await
+            .unwrap();
+            let revision: i64 = sqlx::query_scalar(
+                "SELECT review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+            )
+            .bind(dest_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(revision > previous_revision);
+            previous_revision = revision;
+        }
+        // Card 10 is absent from the import: its learning history is cleared,
+        // but its revision must survive so a prompt with revision 7 stays stale.
+        let (revision, last_review, stability, state): (i64, Option<String>, f64, String) = sqlx::query_as(
+            "SELECT review_revision, last_review, stability, state FROM cards_states WHERE user_id = ? AND card_id = 10")
+            .bind(dest_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(revision, 9);
+        assert_eq!(last_review, None);
+        assert_eq!(stability, 0.0);
+        assert_eq!(state, "new");
+        let stale = crate::cards::check_answer(
+            State(pool.clone()),
+            crate::error::AppPath(10),
+            AuthUser(dest_id),
+            AppJson(crate::cards::CheckRequest {
+                answer: "test".into(),
+                review_revision: 7,
+            }),
+        )
+        .await;
+        assert!(matches!(stale, Err(AppError::StaleReview)));
     }
 }

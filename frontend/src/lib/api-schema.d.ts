@@ -687,6 +687,11 @@ export interface components {
         };
         CheckRequest: {
             answer: string;
+            /**
+             * Format: int64
+             * @description Revision returned with the due card; stale revisions cannot record a review.
+             */
+            review_revision: number;
         };
         CheckResponse: components["schemas"]["CardReveal"] & {
             correct: boolean;
@@ -891,6 +896,11 @@ export interface components {
             difficulty?: number | null;
             /** Format: int64 */
             guess_count: number;
+            /**
+             * Format: int64
+             * @description Return unchanged when submitting an answer.
+             */
+            review_revision: number;
             /** Format: int64 */
             wrong_guess_count: number;
         };
@@ -929,6 +939,11 @@ export interface components {
         SignupRequest: {
             password: string;
             username: string;
+        };
+        /** @description Machine-readable response for a rejected stale answer. */
+        StaleReviewResponse: {
+            code: string;
+            error: string;
         };
         StatsResponse: {
             /** Format: int64 */
@@ -1808,6 +1823,15 @@ export interface operations {
                     "application/json": components["schemas"]["CheckResponse"];
                 };
             };
+            /** @description Invalid request, including missing review_revision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Missing/invalid JWT */
             401: {
                 headers: {
@@ -1824,6 +1848,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Review state changed since the card was fetched */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleReviewResponse"];
                 };
             };
         };
@@ -2173,7 +2206,10 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description Passkey ID */
+                passkey_id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;

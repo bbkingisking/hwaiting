@@ -19,8 +19,18 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+/// Machine-readable response for a rejected stale answer.
+#[derive(Serialize, ToSchema)]
+pub struct StaleReviewResponse {
+    pub error: String,
+    pub code: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("Card review state has changed")]
+    StaleReview,
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
@@ -91,6 +101,15 @@ impl From<argon2::password_hash::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
+            AppError::StaleReview => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(StaleReviewResponse {
+                        error: "Card review state has changed".to_string(),
+                        code: "stale_review".to_string(),
+                    }),
+                ).into_response();
+            }
             AppError::Database(ref e) => {
                 error!("Database error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())

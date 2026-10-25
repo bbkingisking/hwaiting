@@ -18,6 +18,8 @@ use super::time::parse_flexible_datetime;
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
     pub answer: String,
+    /// Revision returned with the due card; stale revisions cannot record a review.
+    pub review_revision: i64,
 }
 
 /// The card fields disclosed once an answer is graded, shared with the
@@ -104,6 +106,8 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
+        (status = 400, description = "Invalid request, including missing review_revision", body = crate::error::ErrorResponse),
+        (status = 409, description = "Review state changed since the card was fetched", body = crate::error::StaleReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
@@ -182,17 +186,6 @@ pub async fn check_answer(
     // are never produced by this handler.
     let rating_str = if correct { "good" } else { "again" };
 
-    // Get existing card state if any
-    let card_state_row = sqlx::query(
-        "SELECT stability, difficulty, last_review
-         FROM cards_states
-         WHERE user_id = ? AND card_id = ?",
-    )
-    .bind(user_id)
-    .bind(card_id)
-    .fetch_optional(&pool)
-    .await?;
-
     // Load user's optimized FSRS parameters, or fall back to defaults
     let params_json: Option<String> = sqlx::query_scalar(
         "SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?"
@@ -206,9 +199,29 @@ pub async fn check_answer(
         .and_then(|json| serde_json::from_str(&json).ok());
     let params: &[f32] = custom_params.as_deref().unwrap_or(&default_params);
 
-    let fsrs = FSRS::new(Some(params)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
-
     let desired_retention = review_prefs(&pool, user_id).await?.desired_retention;
+
+    // Reserve the SQLite writer before reading scheduling state. A concurrent
+    // answer waits, then sees the committed revision instead of the old state.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let card_state_row = sqlx::query(
+        "SELECT stability, difficulty, last_review, review_revision
+         FROM cards_states WHERE user_id = ? AND card_id = ?",
+    )
+    .bind(user_id)
+    .bind(card_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let revision = card_state_row
+        .as_ref()
+        .map(|row| row.get::<i64, _>("review_revision"))
+        .unwrap_or(0);
+    if payload.review_revision != revision {
+        tx.rollback().await?;
+        return Err(AppError::StaleReview);
+    }
+
+    let fsrs = FSRS::new(Some(params)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
@@ -265,17 +278,16 @@ pub async fn check_answer(
     // export, FSRS optimization - reads back) must land together: one
     // transaction, so a failure between the two can't leave them
     // disagreeing about what this review did.
-    let mut tx = pool.begin().await?;
-
     sqlx::query(
         r#"
-        INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, card_id) DO UPDATE SET
             stability = excluded.stability,
             difficulty = excluded.difficulty,
             last_review = excluded.last_review,
-            state = excluded.state
+            state = excluded.state,
+            review_revision = excluded.review_revision
         "#,
     )
     .bind(user_id)
@@ -284,6 +296,7 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(now.to_rfc3339())
     .bind(new_state)
+    .bind(revision + 1)
     .execute(&mut *tx)
     .await?;
 
@@ -395,7 +408,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target }),
+            AppJson(CheckRequest { answer: target, review_revision: 0 }),
         )
         .await
         .unwrap();
@@ -435,7 +448,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: "definitely wrong".to_string() }),
+            AppJson(CheckRequest { answer: "definitely wrong".to_string(), review_revision: 0 }),
         )
         .await
         .unwrap();
@@ -461,7 +474,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target }),
+            AppJson(CheckRequest { answer: target, review_revision: 0 }),
         )
         .await
         .unwrap();
@@ -472,7 +485,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: "definitely wrong".to_string() }),
+            AppJson(CheckRequest { answer: "definitely wrong".to_string(), review_revision: 1 }),
         )
         .await
         .unwrap();
@@ -519,7 +532,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target }),
+            AppJson(CheckRequest { answer: target, review_revision: 0 }),
         )
         .await
         .unwrap();
@@ -529,5 +542,110 @@ mod tests {
         let (stability, _, _, state) = card_state(&pool, user_id, card_id).await;
         assert_eq!(state.as_deref(), Some("learning"));
         assert!(stability.is_some());
+    }
+
+    async fn revision_for(pool: &SqlitePool, user_id: i64, card_id: i64) -> i64 {
+        sqlx::query_scalar(
+            "SELECT review_revision FROM cards_states WHERE user_id = ? AND card_id = ?",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn stale_answer_preserves_state_and_history() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let answer = target_for(&pool, 1).await;
+        let _ = check_answer(
+            State(pool.clone()),
+            AppPath(1),
+            AuthUser(user_id),
+            AppJson(CheckRequest {
+                answer,
+                review_revision: 0,
+            }),
+        )
+        .await
+        .unwrap();
+        let before = card_state(&pool, user_id, 1).await;
+        let result = check_answer(
+            State(pool.clone()),
+            AppPath(1),
+            AuthUser(user_id),
+            AppJson(CheckRequest {
+                answer: "wrong".into(),
+                review_revision: 0,
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::StaleReview)));
+        assert_eq!(card_state(&pool, user_id, 1).await, before);
+        assert_eq!(revision_for(&pool, user_id, 1).await, 1);
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn simultaneous_answers_only_record_one_review_per_revision() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let answer = target_for(&pool, 1).await;
+        // Exercise both an absent state row and the existing row it creates.
+        for revision in 0..2 {
+            let submit = || {
+                check_answer(
+                    State(pool.clone()),
+                    AppPath(1),
+                    AuthUser(user_id),
+                    AppJson(CheckRequest {
+                        answer: answer.clone(),
+                        review_revision: revision,
+                    }),
+                )
+            };
+            let (first, second) = tokio::join!(submit(), submit());
+            assert!(matches!(
+                (&first, &second),
+                (Ok(_), Err(AppError::StaleReview)) | (Err(AppError::StaleReview), Ok(_))
+            ));
+            assert_eq!(revision_for(&pool, user_id, 1).await, revision + 1);
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ?")
+                    .bind(user_id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(count, revision + 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_revision_is_a_bad_request_and_stale_error_has_a_code() {
+        use axum::{
+            body::{Body, to_bytes},
+            extract::FromRequest,
+            http::{Request, StatusCode},
+            response::IntoResponse,
+        };
+        let request = Request::builder()
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"answer":"test"}"#))
+            .unwrap();
+        let parsed = AppJson::<CheckRequest>::from_request(request, &()).await;
+        assert!(matches!(parsed, Err(AppError::BadRequest(_))));
+        let response = AppError::StaleReview.into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "stale_review");
     }
 }

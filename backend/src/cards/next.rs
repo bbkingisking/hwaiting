@@ -91,6 +91,8 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
 pub struct NextCardResponse {
     #[serde(flatten)]
     prompt: CardPrompt,
+    /// Return unchanged when submitting an answer.
+    review_revision: i64,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
@@ -237,7 +239,8 @@ pub async fn get_next_card(
             sl.slug as speech_level, tn.slug as tense,
             tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern,
-            cs.difficulty, cs.last_review, cs.stability
+            cs.difficulty, cs.last_review, cs.stability,
+            COALESCE(cs.review_revision, 0) AS review_revision
         FROM cards c
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
@@ -427,6 +430,7 @@ pub async fn get_next_card(
                 },
                 hanja_hint_words,
             },
+            review_revision: row.get("review_revision"),
             difficulty,
             guess_count,
             wrong_guess_count,
@@ -720,5 +724,50 @@ mod tests {
         let envelope = next_card(&pool, user_id, vec![]).await;
         assert!(envelope.card.is_none(), "nothing should be due yet");
         assert_eq!(envelope.next_due_at, Some(expected));
+    }
+
+    #[tokio::test]
+    async fn prompts_return_current_revision_and_due_again_accepts_it() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        bury_every_other_card(&pool, user_id, 1).await;
+        let fetch = || {
+            get_next_card(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppQuery(NextCardQuery::default()),
+            )
+        };
+        let card = fetch().await.unwrap().0.card.unwrap();
+        assert_eq!(card.review_revision, 0);
+        assert_eq!(fetch().await.unwrap().0.card.unwrap().review_revision, 0);
+        let answer: String = sqlx::query_scalar("SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = 1")
+            .fetch_one(&pool).await.unwrap();
+        let _ = super::super::check::check_answer(
+            State(pool.clone()),
+            crate::error::AppPath(1),
+            AuthUser(user_id),
+            crate::error::AppJson(super::super::check::CheckRequest {
+                answer: answer.clone(),
+                review_revision: 0,
+            }),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE cards_states SET last_review = '2000-01-01T00:00:00Z' WHERE user_id = ? AND card_id = 1")
+            .bind(user_id).execute(&pool).await.unwrap();
+        let card = fetch().await.unwrap().0.card.unwrap();
+        assert_eq!(card.review_revision, 1);
+        let _ = super::super::check::check_answer(
+            State(pool.clone()),
+            crate::error::AppPath(1),
+            AuthUser(user_id),
+            crate::error::AppJson(super::super::check::CheckRequest {
+                answer,
+                review_revision: card.review_revision,
+            }),
+        )
+        .await
+        .unwrap();
     }
 }

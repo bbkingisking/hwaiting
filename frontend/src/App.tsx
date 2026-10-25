@@ -39,6 +39,7 @@ function AppContent() {
   // moments earlier in the same batch.
   const [error, setError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   // Checking an answer is the one network call left in the review loop that
   // can't be hidden behind a prefetch - the DOM stays put while it's in
   // flight (Flashcard disables the Check button itself), and this publishes
@@ -60,6 +61,7 @@ function AppContent() {
   cardRef.current = card
 
   useEffect(() => {
+    setReviewNotice(null)
     if (!isAuthenticated) {
       setAuthDialogOpen(true)
     } else {
@@ -145,6 +147,7 @@ function AppContent() {
   // card-to-card transition — the old card stays visible until
   // the new one arrives, so there's no flash.
   const advanceToNextCard = async () => {
+    setReviewNotice(null)
     setError(null)
     setNoCards(false)
 
@@ -195,19 +198,20 @@ function AppContent() {
   // doc comment in lib/types.ts for the bug that came from doing that).
   // Throws on failure so Flashcard's handleSubmit can leave the card
   // unanswered and let the user retry, rather than showing a reveal that
-  // never arrived.
-  const handleCheck = async (answer: string): Promise<{ correct: boolean; reveal: CardReveal }> => {
+  // never arrived. Returns null after recovering from a stale review.
+  const handleCheck = async (answer: string): Promise<{ correct: boolean; reveal: CardReveal } | null> => {
     if (!card) throw new Error('No card to check')
     const cardId = card.card_id
 
     setSubmitError(null)
+    setReviewNotice(null)
     setChecking(true)
 
     try {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
-      const { correct, ...reveal } = await checkAnswer(cardId, answer)
+      const { correct, ...reveal } = await checkAnswer(cardId, answer, card.review_revision)
       setLastCheckMs(performance.now() - startedAt)
       // Bumped only now, not before the request: StatusIndicator remounts
       // on this key change and fetches stats on mount, and check_answer is
@@ -219,6 +223,16 @@ function AppContent() {
       setStatsKey((prev) => prev + 1)
       return { correct, reveal }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && err.code === 'stale_review') {
+        setReviewNotice('This card was updated elsewhere. Your answer wasn’t recorded.')
+        setLastCheckMs(null)
+        // Discard the stale prompt even if the fresh fetch fails, and bypass
+        // the prefetch cache because other cards may have changed too.
+        setCard(null)
+        await loadCardCold()
+        setStatsKey((prev) => prev + 1)
+        return null
+      }
       if (err instanceof ApiError) {
         setSubmitError(`Failed to check answer: ${err.message}`)
       } else {
@@ -269,6 +283,9 @@ function AppContent() {
         className="ct-page min-h-screen flex flex-col items-center justify-center p-6"
       >
         <h1 className="sr-only">Hwaiting — Korean review</h1>
+        {isAuthenticated && reviewNotice && (
+          <p role="status" className="text-muted-foreground text-sm mb-4">{reviewNotice}</p>
+        )}
         {!isAuthenticated ? (
           <div role="status" className="text-center text-muted-foreground">
             <p>Please log in to continue</p>
