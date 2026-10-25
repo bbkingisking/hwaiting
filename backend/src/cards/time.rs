@@ -65,16 +65,8 @@ pub(super) fn logical_today_start(day_boundary_hour: i64) -> chrono::DateTime<Ut
     logical_day_start(&Local::now(), day_boundary_hour, 0)
 }
 
-/// The user's current logical *date* (no time-of-day component): the date
-/// half of [`logical_day_start_naive`]. `stats::query_summary`'s streak
-/// calculation needs exactly this - "is the most recent reviewed day the
-/// same logical day as right now" - without the UTC conversion
-/// `logical_today_start` does for the rest of the boundary, since streaks
-/// compare against `date()`-truncated SQLite output rather than a UTC
-/// instant. Sharing this with `logical_day_start_naive` rather than letting
-/// the streak code re-derive "today, or yesterday before the boundary hour"
-/// on its own is what keeps the two from silently disagreeing about which
-/// day a 3am review lands on.
+/// Logical date for a local wall-clock timestamp. Shared by current-day
+/// streak checks and historical review grouping so they use the same boundary.
 pub(super) fn logical_today_date(now_local: NaiveDateTime, day_boundary_hour: i64) -> NaiveDate {
     logical_day_start_naive(now_local, day_boundary_hour).date()
 }
@@ -98,18 +90,13 @@ pub(super) fn logical_next_start(day_boundary_hour: i64) -> chrono::DateTime<Utc
     logical_day_start(&Local::now(), day_boundary_hour, 1)
 }
 
-/// The `{:+} minutes` arithmetic behind [`logical_day_shift`], taking the
-/// caller's UTC offset directly instead of reading it from `Local::now()` -
-/// split out for the same testability reason as `logical_day_start_naive`.
-fn logical_day_shift_for_offset(utc_offset_minutes: i64, day_boundary_hour: i64) -> String {
-    format!("{:+} minutes", utc_offset_minutes - day_boundary_hour * 60)
-}
-
-/// SQLite datetime modifier that shifts a UTC `reviewed_at` so that date()
-/// yields its logical day — the same boundary as `logical_today_start`.
-pub(super) fn logical_day_shift(day_boundary_hour: i64) -> String {
-    let utc_offset_minutes = i64::from(Local::now().offset().local_minus_utc()) / 60;
-    logical_day_shift_for_offset(utc_offset_minutes, day_boundary_hour)
+/// Assign a stored UTC instant using the timezone rules at that instant,
+/// rather than applying today's offset to historical reviews.
+pub(super) fn review_day<Tz: TimeZone>(
+    reviewed_at: &str, day_boundary_hour: i64, zone: &Tz,
+) -> Result<NaiveDate, chrono::ParseError> {
+    let local = parse_flexible_datetime(reviewed_at)?.with_timezone(zone);
+    Ok(logical_today_date(local.naive_local(), day_boundary_hour))
 }
 
 /// Truncated integer accuracy percentage; None when there are no reviews.
@@ -213,11 +200,12 @@ mod tests {
         for instant in ["2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z"] {
             let now = utc(instant).with_timezone(&zone);
             assert_eq!(logical_day_start(&now, 1, 0), utc("2026-10-25T00:00:00Z"));
+            assert_eq!(review_day(instant, 1, &zone).unwrap(), ndt(2026, 10, 25, 0, 0, 0).date());
         }
     }
 
     #[test]
-    fn missing_boundary_moves_forward() {
+    fn missing_boundary_moves_forward_and_agrees_with_review_day() {
         let zone = chrono_tz::Europe::London;
         assert_eq!(resolve_local(&zone, ndt(2026, 3, 29, 1, 0, 0)), utc("2026-03-29T01:00:00Z"));
         for (instant, expected) in [
@@ -227,21 +215,25 @@ mod tests {
             let now = utc(instant).with_timezone(&zone);
             let start = logical_day_start(&now, 1, 0);
             assert_eq!(start, utc(expected));
+            assert_eq!(review_day(instant, 1, &zone).unwrap(), start.with_timezone(&zone).date_naive());
         }
     }
 
-    // --- logical_day_shift_for_offset ----------------------------------------
-
     #[test]
-    fn day_shift_positive_offset() {
-        // UTC+9 (KST), 4am boundary: 9*60 - 4*60 = 300
-        assert_eq!(logical_day_shift_for_offset(9 * 60, 4), "+300 minutes");
-    }
-
-    #[test]
-    fn day_shift_negative_offset() {
-        // UTC-5 (US Eastern standard), 4am boundary: -5*60 - 4*60 = -540
-        assert_eq!(logical_day_shift_for_offset(-5 * 60, 4), "-540 minutes");
+    fn historical_review_days_follow_each_instants_offset() {
+        let zone = chrono_tz::Europe::London;
+        for (instant, expected) in [
+            ("2026-03-28T03:59:59Z", "2026-03-27"),
+            ("2026-03-28T04:00:00Z", "2026-03-28"),
+            ("2026-03-29T02:59:59Z", "2026-03-28"),
+            ("2026-03-29T03:00:00Z", "2026-03-29"),
+            ("2026-10-24T02:59:59Z", "2026-10-23"),
+            ("2026-10-24T03:00:00Z", "2026-10-24"),
+            ("2026-10-25T03:59:59Z", "2026-10-24"),
+            ("2026-10-25T04:00:00Z", "2026-10-25"),
+        ] {
+            assert_eq!(review_day(instant, 4, &zone).unwrap().to_string(), expected);
+        }
     }
 
     // --- sqlite_datetime -------------------------------------------------------
