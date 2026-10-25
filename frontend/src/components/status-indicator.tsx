@@ -1,39 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { getStats } from '@/lib/api'
-import { cn, formatTimeUntil, getPercentageColor } from '@/lib/utils'
+import { cn, getPercentageColor } from '@/lib/utils'
 import { useSettings } from '@/components/settings-provider'
+import { useTimeUntil } from '@/hooks/use-time-until'
+import { parseDueAt, scheduleReviewRefresh } from '@/lib/review-timing'
 
-export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () => void }) {
+export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
+  nextCardDueAt?: string | null
+  onCardsAvailable?: () => void
+}) {
   const { settings } = useSettings()
   const [dueCount, setDueCount] = useState<number | null>(null)
   const [percentage, setPercentage] = useState<number | null>(null)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [newTodayCount, setNewTodayCount] = useState<number | null>(null)
-  const prevDueRef = useRef(dueCount)
+  const remaining = useTimeUntil(dueCount === 0 ? nextCardDueAt ?? nextDueAt : null)
 
-  useEffect(() => {
-    fetchStats()
-    // Refresh stats every 30 seconds
-    const interval = setInterval(fetchStats, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Update tab title with due count
-  useEffect(() => {
-    if (dueCount !== null) {
-      document.title = dueCount > 0 ? `(${dueCount}) Hwaiting` : 'Hwaiting'
-    }
-  }, [dueCount])
-
-  // Notify parent when cards transition from 0 to due
-  useEffect(() => {
-    if (prevDueRef.current !== null && prevDueRef.current === 0 && dueCount !== null && dueCount > 0) {
-      onCardsAvailable?.()
-    }
-    prevDueRef.current = dueCount
-  }, [dueCount, onCardsAvailable])
-
-  const fetchStats = async () => {
+  const fetchStats = useEffectEvent(async () => {
     try {
       const stats = await getStats()
       setDueCount(stats.due_count)
@@ -43,7 +26,29 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
     } catch (err) {
       console.error('Failed to fetch stats:', err)
     }
-  }
+  })
+
+  useEffect(() => {
+    fetchStats()
+  }, [])
+
+  // The empty-state deadline also accounts for the daily new-card reset.
+  const deadline = [nextCardDueAt, nextDueAt]
+    .filter((value): value is string => value !== null && Number.isFinite(parseDueAt(value)))
+    .sort((a, b) => parseDueAt(a) - parseDueAt(b))[0] ?? null
+  const refresh = useEffectEvent(() => {
+    fetchStats()
+    onCardsAvailable?.()
+  })
+
+  useEffect(() => scheduleReviewRefresh(deadline, refresh), [deadline])
+
+  // Update tab title with due count
+  useEffect(() => {
+    if (dueCount !== null) {
+      document.title = dueCount > 0 ? `(${dueCount}) Hwaiting` : 'Hwaiting'
+    }
+  }, [dueCount])
 
   return (
     <footer
@@ -53,15 +58,7 @@ export function StatusIndicator({ onCardsAvailable }: { onCardsAvailable?: () =>
       {dueCount !== null && (
         <span>
           Due: {dueCount}
-          {(() => {
-            if (dueCount === 0 && nextDueAt) {
-              const formatted = formatTimeUntil(nextDueAt)
-              if (formatted) {
-                return <span className="ml-1">({formatted})</span>
-              }
-            }
-            return null
-          })()}
+          {remaining && <span className="ml-1">({remaining})</span>}
         </span>
       )}
       {newTodayCount !== null && (

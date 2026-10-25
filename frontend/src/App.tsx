@@ -14,7 +14,7 @@ import { DebugStatusBar } from '@/components/debug-status-bar'
 import { getNextCard, checkAnswer, ApiError } from '@/lib/api'
 import type { NextCardEnvelope, AdminCard } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
-import { formatTimeUntil } from '@/lib/utils'
+import { NextDueCountdown } from '@/components/next-due-countdown'
 
 // Tracks a background fetch for the next card.
 type PrefetchSlot = {
@@ -55,11 +55,6 @@ function AppContent() {
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
-  // Mirror of `card` readable from callbacks without making them unstable
-  // (StatusIndicator's poll effect depends on its onCardsAvailable prop).
-  const cardRef = useRef<CardPrompt | null>(null)
-  cardRef.current = card
-
   useEffect(() => {
     setReviewNotice(null)
     if (!isAuthenticated) {
@@ -219,7 +214,7 @@ function AppContent() {
       // the request even started meant the stats fetch usually won the race
       // against its own write and rendered the accuracy from before this
       // card, correcting itself only on the next unrelated fetch (a manual
-      // refresh, or the 30s poll).
+      // refresh, or the next scheduled refresh).
       setStatsKey((prev) => prev + 1)
       return { correct, reveal }
     } catch (err) {
@@ -250,13 +245,10 @@ function AppContent() {
     setStatsKey((prev) => prev + 1)
   }
 
-  // StatusIndicator fires this when the due count goes 0 -> >0 (a review
-  // came due). Only auto-load when nothing is on screen (the "No cards"
-  // view): a card already displayed must never be swapped out from under
-  // the user. Due reviews still take priority the next time a card is
-  // picked - on advance, suppress, or a fresh page load.
+  // Recheck the empty state at a deadline or when returning after it passed.
+  // A card already on screen must never be swapped out from under the user.
   const handleCardsAvailable = () => {
-    if (!cardRef.current) loadCardCold()
+    if (noCards && !card && !loading) loadCardCold()
   }
 
   // EditCardDialog edits the backend's canonical full-card shape (see its
@@ -304,10 +296,7 @@ function AppContent() {
               />
             </div>
             <p className="mb-2">No cards to review right now</p>
-            {nextDueAt && (() => {
-              const formatted = formatTimeUntil(nextDueAt)
-              return formatted ? <p className="text-sm">Next in {formatted}</p> : null
-            })()}
+            <NextDueCountdown dueAt={nextDueAt} />
           </div>
         ) : error && !card ? (
           <div className="text-center">
@@ -345,7 +334,13 @@ function AppContent() {
           </div>
         )}
       </main>
-      {isAuthenticated && <StatusIndicator key={statsKey} onCardsAvailable={handleCardsAvailable} />}
+      {isAuthenticated && (
+        <StatusIndicator
+          key={statsKey}
+          nextCardDueAt={noCards ? nextDueAt : null}
+          onCardsAvailable={handleCardsAvailable}
+        />
+      )}
       {isAuthenticated && (
         <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
       )}
