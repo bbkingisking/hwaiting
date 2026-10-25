@@ -22,7 +22,7 @@ type ReviewResponse = Schemas['ReviewResponse']
 type UserProfile = Schemas['UserProfile']
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message)
     this.name = 'ApiError'
   }
@@ -47,7 +47,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new ApiError(response.status, error.error || `HTTP ${response.status}`)
+    throw new ApiError(response.status, error.error || `HTTP ${response.status}`, error.code)
   }
 
   if (response.status === 204) {
@@ -101,9 +101,9 @@ export async function getFieldValues(): Promise<FieldValues> {
 // Grades `answer` against `cardId` server-side, records the FSRS review,
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
-export async function checkAnswer(cardId: number, answer: string): Promise<CheckResponse> {
+export async function checkAnswer(cardId: number, answer: string, reviewRevision: number): Promise<CheckResponse> {
   const url = `${apiBase()}/api/cards/${cardId}/check`
-  const body: CheckRequest = { answer }
+  const body: CheckRequest = { answer, review_revision: reviewRevision }
   return fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify(body),

@@ -28,7 +28,8 @@ interface FlashcardProps {
   // whether it was correct and the card's secret half. Callers hold the
   // reveal themselves (see the `reveal` state below) rather than expecting
   // it to show up in `card` - see CardReveal's doc comment in lib/types.ts.
-  onCheck: (answer: string) => Promise<{ correct: boolean; reveal: CardReveal }>
+  // Null means a stale review was handled without recording this answer.
+  onCheck: (answer: string) => Promise<{ correct: boolean; reveal: CardReveal } | null>
   // Moves to the next card. Never itself talks to the network on the warm
   // path - see startPrefetch in App.tsx.
   onAdvance: () => void | Promise<void>
@@ -268,11 +269,12 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     // Keyboard stays open across cards on mobile (see below), so the check
     // button can end up hidden behind it once the new card's content settles.
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
-    // Keyed on card_id, not `card` itself: an admin edit saved mid-review
+    // Keyed on card_id and revision, not `card` itself: an admin edit saved mid-review
     // (see onCardUpdated below) also produces a new `card` object for the
     // *same* card, which must not look like a new card arriving and wipe
-    // out the answer/reveal being displayed.
-  }, [card.card_id])
+    // out the answer/reveal being displayed. A refreshed revision of the same
+    // card does start a new attempt after a stale submission.
+  }, [card.card_id, card.review_revision])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -302,7 +304,11 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     setSubmittedAnswer(trimmed)
     setChecking(true)
     try {
-      const { correct: isCorrect, reveal: revealData } = await onCheck(trimmed)
+      const result = await onCheck(trimmed)
+      // A stale review was handled by loading a fresh prompt. It has no reveal
+      // and must not trigger correctness feedback or auto-progress.
+      if (result === null) return
+      const { correct: isCorrect, reveal: revealData } = result
       setCorrect(isCorrect)
       setReveal(revealData)
 
