@@ -40,14 +40,14 @@ fn logical_day_start_naive(now_local: NaiveDateTime, day_boundary_hour: i64) -> 
 /// deterministic); a gap is walked forward hour by hour to the first
 /// wall-clock time that does exist, mirroring how a real clock crossing
 /// the gap behaves.
-fn resolve_local(naive: NaiveDateTime) -> chrono::DateTime<Utc> {
-    match Local.from_local_datetime(&naive) {
+fn resolve_local<Tz: TimeZone>(zone: &Tz, naive: NaiveDateTime) -> chrono::DateTime<Utc> {
+    match zone.from_local_datetime(&naive) {
         chrono::LocalResult::Single(dt) => dt.with_timezone(&Utc),
         chrono::LocalResult::Ambiguous(earlier, _later) => earlier.with_timezone(&Utc),
         chrono::LocalResult::None => {
             for hours in 1..=4 {
                 let shifted = naive + chrono::Duration::hours(hours);
-                if let chrono::LocalResult::Single(dt) = Local.from_local_datetime(&shifted) {
+                if let chrono::LocalResult::Single(dt) = zone.from_local_datetime(&shifted) {
                     return dt.with_timezone(&Utc);
                 }
             }
@@ -62,7 +62,7 @@ fn resolve_local(naive: NaiveDateTime) -> chrono::DateTime<Utc> {
 /// Start of the user's current logical day: `day_boundary_hour` o'clock local
 /// time, today if that moment has passed, otherwise yesterday.
 pub(super) fn logical_today_start(day_boundary_hour: i64) -> chrono::DateTime<Utc> {
-    resolve_local(logical_day_start_naive(Local::now().naive_local(), day_boundary_hour))
+    logical_day_start(&Local::now(), day_boundary_hour, 0)
 }
 
 /// The user's current logical *date* (no time-of-day component): the date
@@ -82,6 +82,20 @@ pub(super) fn logical_today_date(now_local: NaiveDateTime, day_boundary_hour: i6
 /// Format a UTC datetime for comparison against SQLite datetime() values.
 pub(super) fn sqlite_datetime(dt: chrono::DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// Resolve a calendar day's boundary in the supplied timezone. Calendar
+/// offsets preserve the boundary hour across 23- and 25-hour days.
+pub(super) fn logical_day_start<Tz: TimeZone>(
+    now: &chrono::DateTime<Tz>, day_boundary_hour: i64, days: i64,
+) -> chrono::DateTime<Utc> {
+    let naive = logical_day_start_naive(now.naive_local(), day_boundary_hour)
+        + chrono::Duration::days(days);
+    resolve_local(&now.timezone(), naive)
+}
+
+pub(super) fn logical_next_start(day_boundary_hour: i64) -> chrono::DateTime<Utc> {
+    logical_day_start(&Local::now(), day_boundary_hour, 1)
 }
 
 /// The `{:+} minutes` arithmetic behind [`logical_day_shift`], taking the
@@ -173,13 +187,48 @@ mod tests {
         assert_eq!(logical_day_start_naive(now, 4), ndt(2026, 2, 28, 4, 0, 0));
     }
 
-    // resolve_local's gap/ambiguous-instant handling (the actual DST-panic
-    // fix) isn't covered by a test: exercising it needs a wall-clock time
-    // that's genuinely a gap or overlap in the *test runner's own* local
-    // zone, which isn't something a portable unit test can assume or fake
-    // without pulling in a timezone-injection dependency. The unambiguous
-    // case is implicitly covered by every logical_today_start caller in the
-    // handler-level tests elsewhere in this crate.
+    fn utc(s: &str) -> chrono::DateTime<Utc> {
+        parse_flexible_datetime(s).unwrap()
+    }
+
+    #[test]
+    fn next_boundary_tracks_short_and_long_calendar_days() {
+        let zone = chrono_tz::Europe::London;
+        for (now, expected, hours) in [
+            ("2026-03-28T12:00:00Z", "2026-03-29T03:00:00Z", 23),
+            ("2026-10-24T12:00:00Z", "2026-10-25T04:00:00Z", 25),
+        ] {
+            let now = utc(now).with_timezone(&zone);
+            let start = logical_day_start(&now, 4, 0);
+            let next = logical_day_start(&now, 4, 1);
+            assert_eq!(next, utc(expected));
+            assert_eq!((next - start).num_hours(), hours);
+        }
+    }
+
+    #[test]
+    fn boundary_inside_repeated_hour_uses_first_occurrence() {
+        let zone = chrono_tz::Europe::London;
+        assert_eq!(resolve_local(&zone, ndt(2026, 10, 25, 1, 0, 0)), utc("2026-10-25T00:00:00Z"));
+        for instant in ["2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z"] {
+            let now = utc(instant).with_timezone(&zone);
+            assert_eq!(logical_day_start(&now, 1, 0), utc("2026-10-25T00:00:00Z"));
+        }
+    }
+
+    #[test]
+    fn missing_boundary_moves_forward() {
+        let zone = chrono_tz::Europe::London;
+        assert_eq!(resolve_local(&zone, ndt(2026, 3, 29, 1, 0, 0)), utc("2026-03-29T01:00:00Z"));
+        for (instant, expected) in [
+            ("2026-03-29T00:59:59Z", "2026-03-28T01:00:00Z"),
+            ("2026-03-29T01:00:00Z", "2026-03-29T01:00:00Z"),
+        ] {
+            let now = utc(instant).with_timezone(&zone);
+            let start = logical_day_start(&now, 1, 0);
+            assert_eq!(start, utc(expected));
+        }
+    }
 
     // --- logical_day_shift_for_offset ----------------------------------------
 

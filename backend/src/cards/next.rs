@@ -11,7 +11,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::error::{AppError, AppQuery};
 
 use super::{hanja_hints_for, review_prefs, ReviewPrefs};
-use super::time::{logical_today_start, sqlite_datetime};
+use super::time::{logical_next_start, logical_today_start, sqlite_datetime};
 
 /// The card fields visible before an answer is checked, shared with the
 /// admin-editing shape - see `cards::Card`'s doc comment - and with
@@ -335,7 +335,7 @@ pub async fn get_next_card(
             .fetch_one(&pool)
             .await?;
 
-            (new_cards_waiting > 0).then(|| logical_today_start(day_boundary_hour) + chrono::Duration::days(1))
+            (new_cards_waiting > 0).then(|| logical_next_start(day_boundary_hour))
         } else {
             None
         };
