@@ -6,10 +6,10 @@ export const KEYS = {
 
 // Local storage keys
 export const STORAGE_KEYS = {
-  SETTINGS: 'annyeong-settings',
+  SETTINGS: 'hwaiting-settings',
   THEME: 'theme',
-  CARD_THEME: 'annyeong-card-theme',
-  DEBUG_STATUS_BAR: 'annyeong-debug-status-bar',
+  CARD_THEME: 'hwaiting-card-theme',
+  DEBUG_STATUS_BAR: 'hwaiting-debug-status-bar',
 } as const
 
 // Default settings values

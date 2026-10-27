@@ -1,5 +1,5 @@
 backend/target/
-backend/annyeong.db
+backend/hwaiting.db
 card-lookup/
 
 # Its own independent git repo, not part of this one.

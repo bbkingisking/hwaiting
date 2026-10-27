@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::debug!("Starting Annyeong backend...");
+    tracing::debug!("Starting Hwaiting backend...");
 
     // Initialize database
     let pool = db::init().await?;
