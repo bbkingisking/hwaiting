@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { listSuppressedCards } from '@/lib/api'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,22 +28,6 @@ export function AppHeader() {
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [hanjaDrillsOpen, setHanjaDrillsOpen] = useState(false)
-  const [hasSuppressedCards, setHasSuppressedCards] = useState(false)
-
-  const checkSuppressedCards = () => {
-    listSuppressedCards()
-      .then(response => setHasSuppressedCards(response.cards.length > 0))
-      .catch(err => console.error('Error checking suppressed cards:', err))
-  }
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      checkSuppressedCards()
-    } else {
-      setHasSuppressedCards(false)
-    }
-  }, [isAuthenticated])
-
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark')
   }
@@ -81,12 +64,10 @@ export function AppHeader() {
                 Conjugation Tables
               </DropdownMenuItem>
             )}
-            {hasSuppressedCards && (
-              <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
-                <EyeOff className="mr-2 h-4 w-4" />
-                Suppressed Cards
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
+              <EyeOff className="mr-2 h-4 w-4" />
+              Suppressed Cards
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -122,15 +103,9 @@ export function AppHeader() {
       )}
       <ReviewHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <HanjaDrillsDialog open={hanjaDrillsOpen} onOpenChange={setHanjaDrillsOpen} />
-      <SuppressedCardsDialog 
-        open={suppressedCardsOpen} 
-        onOpenChange={(open) => {
-          setSuppressedCardsOpen(open)
-          if (!open) {
-            // Refresh the check when dialog closes
-            checkSuppressedCards()
-          }
-        }} 
+      <SuppressedCardsDialog
+        open={suppressedCardsOpen}
+        onOpenChange={setSuppressedCardsOpen}
       />
     </>
   )
