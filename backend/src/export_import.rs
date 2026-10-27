@@ -203,6 +203,11 @@ pub async fn import_data(
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
+
+        sqlx::query("DELETE FROM users_fsrs_parameters WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     let mut stats = ImportStats {
@@ -577,6 +582,38 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(suppressed, vec![3]);
+    }
+
+    #[tokio::test]
+    async fn import_fsrs_parameters_respects_overwrite_and_backup_defaults() {
+        let pool = test_pool().await;
+        let source_id = test_user(&pool).await;
+        setup_source_user(&pool, source_id).await;
+
+        for overwrite in [false, true] {
+            for replacement in [None, Some("[4.0,5.0,6.0]")] {
+                let dest_id = test_user(&pool).await;
+                sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[7.0,8.0,9.0]')")
+                    .bind(dest_id).execute(&pool).await.unwrap();
+                let mut data = export_data(State(pool.clone()), AuthUser(source_id))
+                    .await.unwrap().0;
+                data.settings.fsrs_parameters = replacement.map(str::to_owned);
+
+                let _ = import_data(
+                    State(pool.clone()), AuthUser(dest_id),
+                    AppJson(ImportDataRequest { data, overwrite }),
+                ).await.unwrap();
+
+                let settings = get_user_settings(&pool, dest_id).await.unwrap();
+                let expected = replacement.or_else(|| {
+                    if overwrite { None } else { Some("[7.0,8.0,9.0]") }
+                });
+                assert_eq!(settings.fsrs_parameters.as_deref(), expected);
+                // Clearing the destination must leave other users' parameters intact.
+                let source = get_user_settings(&pool, source_id).await.unwrap();
+                assert_eq!(source.fsrs_parameters.as_deref(), Some("[1.0,2.0,3.0]"));
+            }
+        }
     }
 
     #[tokio::test]
