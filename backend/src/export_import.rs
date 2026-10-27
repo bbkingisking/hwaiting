@@ -148,7 +148,7 @@ pub async fn export_data(
     request_body = ImportDataRequest,
     responses(
         (status = 200, description = "Data imported (cards_states derived from imported review_history)", body = ImportDataResponse),
-        (status = 400, description = "Unsupported export version or malformed request", body = crate::error::ErrorResponse),
+        (status = 400, description = "Unsupported export version, out-of-range settings, or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -168,6 +168,14 @@ pub async fn import_data(
     if data.version != "1.0" {
         return Err(AppError::BadRequest(format!("Unsupported export version: {}", data.version)));
     }
+
+    // Reject invalid settings before an overwrite can replace any existing data.
+    crate::user::validate_settings_values(
+        Some(data.settings.core.day_boundary_hour),
+        Some(data.settings.core.auto_progress_delay),
+        Some(data.settings.core.desired_retention),
+        Some(data.settings.core.daily_new_card_limit),
+    )?;
 
     // Begin transaction
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -436,6 +444,85 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn invalid_settings_match_patch_and_preserve_existing_data() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        setup_source_user(&pool, user_id).await;
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 1, 3, 2, '2026-01-04', 'review', 7)")
+            .bind(user_id).execute(&pool).await.unwrap();
+
+        let before = serde_json::to_value(
+            export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0,
+        ).unwrap();
+        for (field, value) in [
+            ("day_boundary_hour", serde_json::json!(-1)),
+            ("day_boundary_hour", serde_json::json!(24)),
+            ("auto_progress_delay", serde_json::json!(-1)),
+            ("auto_progress_delay", serde_json::json!(3001)),
+            ("desired_retention", serde_json::json!(0.49)),
+            ("desired_retention", serde_json::json!(1.0)),
+            ("daily_new_card_limit", serde_json::json!(-1)),
+        ] {
+            let patch: crate::user::UpdateSettingsRequest = serde_json::from_value(
+                serde_json::json!({field: value}),
+            ).unwrap();
+            let patch_error = match crate::user::update_settings(
+                State(pool.clone()), AuthUser(user_id), AppJson(patch),
+            ).await {
+                Err(AppError::BadRequest(message)) => message,
+                _ => panic!("PATCH should reject {field}={value}"),
+            };
+            for overwrite in [false, true] {
+                let mut invalid = before.clone();
+                invalid["settings"][field] = value.clone();
+                // A successful overwrite would remove the existing history/flags.
+                invalid["review_history"] = serde_json::json!([]);
+                invalid["suppressed_cards"] = serde_json::json!([]);
+                match import_data(
+                    State(pool.clone()), AuthUser(user_id),
+                    AppJson(ImportDataRequest {
+                        data: serde_json::from_value(invalid).unwrap(), overwrite,
+                    }),
+                ).await {
+                    Err(AppError::BadRequest(message)) => assert_eq!(message, patch_error),
+                    _ => panic!("import should reject {field}={value}"),
+                }
+                let mut after = serde_json::to_value(
+                    export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0,
+                ).unwrap();
+                after["exported_at"] = before["exported_at"].clone();
+                assert_eq!(after, before, "invalid import must preserve existing data");
+                let state: (f64, f64, String, String, i64) = sqlx::query_as(
+                    "SELECT stability, difficulty, last_review, state, review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+                ).bind(user_id).fetch_one(&pool).await.unwrap();
+                assert_eq!(state, (3.0, 2.0, "2026-01-04".into(), "review".into(), 7));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn imports_accept_settings_at_validation_boundaries() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        for (hour, delay, retention, limit) in [(0, 0, 0.5, 0), (23, 3000, 0.99, i64::MAX)] {
+            let mut data = export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+            data.settings.core.day_boundary_hour = hour;
+            data.settings.core.auto_progress_delay = delay;
+            data.settings.core.desired_retention = retention;
+            data.settings.core.daily_new_card_limit = limit;
+            let _ = import_data(
+                State(pool.clone()), AuthUser(user_id),
+                AppJson(ImportDataRequest { data, overwrite: true }),
+            ).await.unwrap();
+            let settings = get_user_settings(&pool, user_id).await.unwrap().core;
+            assert_eq!(settings.day_boundary_hour, hour);
+            assert_eq!(settings.auto_progress_delay, delay);
+            assert_eq!(settings.desired_retention, retention);
+            assert_eq!(settings.daily_new_card_limit, limit);
+        }
     }
 
     #[tokio::test]

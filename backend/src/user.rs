@@ -65,6 +65,29 @@ pub struct UserSettingsCore {
     pub history_threshold_lines: bool,
 }
 
+/// Shared bounds for partial settings updates and full data imports.
+pub(crate) fn validate_settings_values(
+    day_boundary_hour: Option<i64>,
+    auto_progress_delay: Option<i64>,
+    desired_retention: Option<f64>,
+    daily_new_card_limit: Option<i64>,
+) -> Result<(), AppError> {
+    if let Some(v) = day_boundary_hour && !(0..=23).contains(&v) {
+        return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
+    }
+    if let Some(v) = auto_progress_delay && !(0..=3000).contains(&v) {
+        return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
+    }
+    if let Some(v) = desired_retention && !(0.5..=0.99).contains(&v) {
+        return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
+    }
+    if let Some(v) = daily_new_card_limit && v.is_negative() {
+        return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()));
+    }
+
+    Ok(())
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct UserSettings {
     #[serde(flatten)]
@@ -204,19 +227,12 @@ pub async fn update_settings(
         history_threshold_lines,
     } = payload;
 
-    // Validate before writing anything, same bounds as before.
-    if let Some(v) = day_boundary_hour && !(0..=23).contains(&v) {
-        return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
-    }
-    if let Some(v) = auto_progress_delay && !(0..=3000).contains(&v) {
-        return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
-    }
-    if let Some(v) = desired_retention && !(0.5..=0.99).contains(&v) {
-        return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
-    }
-    if let Some(v) = daily_new_card_limit && v.is_negative() {
-        return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()));
-    }
+    validate_settings_values(
+        day_boundary_hour,
+        auto_progress_delay,
+        desired_retention,
+        daily_new_card_limit,
+    )?;
 
     // One transaction for the lazy row creation and the update itself, and
     // one dynamically-built UPDATE for every provided field - same pattern
