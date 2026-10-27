@@ -29,7 +29,7 @@ class ApiError extends Error {
 }
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('annyeong-token')
+  const token = localStorage.getItem('hwaiting-token')
 
   if (!token) {
     throw new ApiError(401, 'Not authenticated')

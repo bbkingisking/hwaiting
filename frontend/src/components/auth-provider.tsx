@@ -30,7 +30,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const TOKEN_KEY = 'annyeong-token'
+const TOKEN_KEY = 'hwaiting-token'
 
 function requireWebAuthnSupport() {
   if (!window.PublicKeyCredential) {
@@ -53,8 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Leftovers from the old username/password build, which cached these
     // directly - harmless to leave, but there's no reason to.
-    localStorage.removeItem('annyeong-username')
-    localStorage.removeItem('annyeong-isadmin')
+    localStorage.removeItem('hwaiting-username')
+    localStorage.removeItem('hwaiting-isadmin')
 
     // The JWT itself carries no is_admin claim (see backend auth::Claims),
     // so that has to come from a profile fetch rather than being cached
