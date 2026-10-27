@@ -2,9 +2,19 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
+  const { stdout } = await promisify(execFile)('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: __dirname,
+    encoding: 'utf8',
+  })
+
   return {
+  define: {
+    'import.meta.env.VITE_BUILD_HASH': JSON.stringify(stdout.trim()),
+  },
   plugins: [
     react(),
     tailwindcss(),
