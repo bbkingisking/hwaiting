@@ -179,6 +179,7 @@ function AppContent() {
         setError('Failed to load next card')
       }
       console.error('Error fetching next card:', err)
+      throw err
     }
   }
 

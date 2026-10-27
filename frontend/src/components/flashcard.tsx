@@ -31,7 +31,7 @@ interface FlashcardProps {
   // Null means a stale review was handled without recording this answer.
   onCheck: (answer: string) => Promise<{ correct: boolean; reveal: CardReveal } | null>
   // Moves to the next card. Never itself talks to the network on the warm
-  // path - see startPrefetch in App.tsx.
+  // path - see startPrefetch in App.tsx. Rejects if fetching the next card fails.
   onAdvance: () => void | Promise<void>
   onSuppress?: () => void
   onCardUpdated?: (updates: Partial<AdminCard>) => void
@@ -247,6 +247,9 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     setAdvancing(true)
     try {
       await onAdvance()
+    } catch (err) {
+      // The parent displays the error; keep Next available for another attempt.
+      console.error('Error advancing to next card:', err)
     } finally {
       setAdvancing(false)
     }
@@ -317,8 +320,16 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
         hasAutoProgressedRef.current = true
         setIsAutoProgressing(true)
         // Use configurable delay before progressing
-        setTimeout(() => {
-          onAdvance()
+        setTimeout(async () => {
+          try {
+            await onAdvance()
+          } catch (err) {
+            // The answer was already recorded. Reveal it and allow a manual
+            // retry of advancement without submitting the answer again.
+            setIsAutoProgressing(false)
+            setAnswered(true)
+            console.error('Error auto-progressing to next card:', err)
+          }
         }, settings.autoProgressDelay)
       } else {
         // Only set answered state if not auto-progressing
