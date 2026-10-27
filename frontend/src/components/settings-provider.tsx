@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Settings } from '@/lib/types'
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
 import { getUserSettings, updateUserSettings } from '@/lib/api'
@@ -37,6 +37,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(() => ({ ...defaultSettings, debugStatusBar: readDebugStatusBar() }))
+  const settingsRef = useRef(settings)
   const { isAuthenticated } = useAuth()
 
   // Fetch settings from backend when authenticated
@@ -48,7 +49,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const fetchSettings = async () => {
       try {
         const userSettings = await getUserSettings()
-        setSettings({
+        const fetchedSettings: Settings = {
           showPercentage: userSettings.show_percentage,
           redThreshold: userSettings.red_threshold,
           yellowThreshold: userSettings.yellow_threshold,
@@ -63,7 +64,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           hasFsrsParameters: userSettings.has_fsrs_parameters,
           // Not part of the backend response - see readDebugStatusBar.
           debugStatusBar: readDebugStatusBar(),
-        })
+        }
+        settingsRef.current = fetchedSettings
+        setSettings(fetchedSettings)
       } catch (err) {
         console.error('Failed to fetch settings:', err)
       }
@@ -79,36 +82,37 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(STORAGE_KEYS.DEBUG_STATUS_BAR, String(updates.debugStatusBar))
     }
 
-    // Optimistic update
-    setSettings((prev) => {
-      const updated = { ...prev, ...updates }
+    // Normalize once so the optimistic state and API payload agree. The ref
+    // includes earlier updates even when React batches their renders.
+    const normalizedUpdates = { ...updates }
+    const updated = { ...settingsRef.current, ...normalizedUpdates }
+    if (updates.redThreshold !== undefined && updated.redThreshold >= updated.yellowThreshold) {
+      updated.redThreshold = Math.max(0, updated.yellowThreshold - 5)
+      normalizedUpdates.redThreshold = updated.redThreshold
+    }
+    if (updates.yellowThreshold !== undefined && updated.yellowThreshold <= updated.redThreshold) {
+      updated.yellowThreshold = Math.min(100, updated.redThreshold + 5)
+      normalizedUpdates.yellowThreshold = updated.yellowThreshold
+    }
 
-      // Validate that redThreshold < yellowThreshold
-      if (updates.redThreshold !== undefined && updated.redThreshold >= updated.yellowThreshold) {
-        updated.redThreshold = Math.max(0, updated.yellowThreshold - 5)
-      }
-      if (updates.yellowThreshold !== undefined && updated.yellowThreshold <= updated.redThreshold) {
-        updated.yellowThreshold = Math.min(100, updated.redThreshold + 5)
-      }
-
-      return updated
-    })
+    settingsRef.current = updated
+    setSettings(updated)
 
     // Sync to backend if authenticated
     if (isAuthenticated) {
       try {
         await updateUserSettings({
-          show_percentage: updates.showPercentage,
-          red_threshold: updates.redThreshold,
-          yellow_threshold: updates.yellowThreshold,
-          day_boundary_hour: updates.dayBoundaryHour,
-          auto_progress_on_correct: updates.autoProgressOnCorrect,
-          auto_progress_delay: updates.autoProgressDelay,
-          desired_retention: updates.desiredRetention,
-          daily_new_card_limit: updates.dailyNewCardLimit,
-          history_colorized_area: updates.historyColorizedArea,
-          history_colored_dots: updates.historyColoredDots,
-          history_threshold_lines: updates.historyThresholdLines,
+          show_percentage: normalizedUpdates.showPercentage,
+          red_threshold: normalizedUpdates.redThreshold,
+          yellow_threshold: normalizedUpdates.yellowThreshold,
+          day_boundary_hour: normalizedUpdates.dayBoundaryHour,
+          auto_progress_on_correct: normalizedUpdates.autoProgressOnCorrect,
+          auto_progress_delay: normalizedUpdates.autoProgressDelay,
+          desired_retention: normalizedUpdates.desiredRetention,
+          daily_new_card_limit: normalizedUpdates.dailyNewCardLimit,
+          history_colorized_area: normalizedUpdates.historyColorizedArea,
+          history_colored_dots: normalizedUpdates.historyColoredDots,
+          history_threshold_lines: normalizedUpdates.historyThresholdLines,
         })
       } catch (err) {
         console.error('Failed to update settings:', err)
