@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     http::{header, HeaderValue, Method},
     routing::{delete, get, patch, post, put},
     Router,
@@ -105,7 +106,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/user/settings", get(user::get_settings))
         .route("/user/settings", patch(user::update_settings))
         .route("/user/export", get(export_import::export_data))
-        .route("/user/import", post(export_import::import_data))
+        .route(
+            "/user/import",
+            // Backups include the user's full review history and can exceed
+            // Axum's default 2 MiB limit. Allow up to 64 MiB for restores.
+            post(export_import::import_data).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+        )
         .route("/user/passkeys", get(passkey::list_passkeys))
         .route("/user/passkeys/register/start", post(passkey::add_passkey_start))
         .route("/user/passkeys/register/finish", post(passkey::add_passkey_finish))
