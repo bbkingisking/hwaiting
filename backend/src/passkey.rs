@@ -834,16 +834,19 @@ pub async fn delete_passkey(
     auth: AuthUser,
     AppPath(passkey_id): AppPath<i64>,
 ) -> Result<StatusCode, AppError> {
+    // Serialize the sign-in-method check with deletion across connections.
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+
     // A password gives the account a fallback sign-in method, so only
     // block deleting the last passkey when it's the *only* one.
     let has_password: bool = sqlx::query_scalar("SELECT password_hash IS NOT NULL FROM users WHERE id = ?")
         .bind(auth.0)
-        .fetch_one(&state.pool)
+        .fetch_one(&mut *tx)
         .await?;
     if !has_password {
         let passkey_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
             .bind(auth.0)
-            .fetch_one(&state.pool)
+            .fetch_one(&mut *tx)
             .await?;
         if passkey_count <= 1 {
             return Err(AppError::BadRequest(
@@ -855,11 +858,13 @@ pub async fn delete_passkey(
     let result = sqlx::query("DELETE FROM passkeys WHERE id = ? AND user_id = ?")
         .bind(passkey_id)
         .bind(auth.0)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+
+    tx.commit().await?;
 
     info!("passkey delete: user_id={} removed passkey id={passkey_id}", auth.0);
     Ok(StatusCode::NO_CONTENT)
@@ -868,6 +873,39 @@ pub async fn delete_passkey(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn concurrent_deletions_preserve_a_passwordless_sign_in_method() {
+        let pool = crate::test_support::test_pool().await;
+        let user_id = crate::test_support::test_user(&pool).await;
+        let ids: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO passkeys (user_id, public_key) VALUES (?, X'01'), (?, X'02') RETURNING id",
+        )
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let state = AppState {
+            pool: pool.clone(),
+            webauthn: None,
+            ceremonies: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        let (first, second) = tokio::join!(
+            delete_passkey(State(state.clone()), AuthUser(user_id), AppPath(ids[0])),
+            delete_passkey(State(state), AuthUser(user_id), AppPath(ids[1])),
+        );
+        let results = [first, second];
+        assert_eq!(results.iter().filter(|r| matches!(r, Ok(StatusCode::NO_CONTENT))).count(), 1);
+        assert_eq!(results.iter().filter(|r| matches!(r, Err(AppError::BadRequest(_)))).count(), 1);
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 1);
+    }
 
     #[test]
     fn accepts_plain_https_origin() {
