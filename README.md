@@ -5,10 +5,10 @@ FSRS-backed vocab builder for Korean. Uses a “blanked sentences” card paradi
 Clone, build backend, build frontend, launch:
 
 ```sh
-git clone "https://github.com/bbkingisking/hwaiting" && cd hwaiting
-cd backend && cargo build --release && cd ..
-cd frontend && npm install && npm run build && cd ..
-HWAITING_ADMIN_PASSWORD=password HWAITING_JWT_SECRET=$(openssl rand -base64 32) HWAITING_STATIC_DIR=./frontend/dist ./backend/target/release/hwaiting
+git clone "https://github.com/bbkingisking/hwaiting"
+cargo build --release --manifest-path hwaiting/backend/Cargo.toml
+npm --prefix hwaiting/frontend install && npm --prefix hwaiting/frontend run build
+HWAITING_ADMIN_PASSWORD=password HWAITING_JWT_SECRET=$(openssl rand -base64 32) HWAITING_STATIC_DIR=./hwaiting/frontend/dist ./hwaiting/backend/target/release/hwaiting
 ```
 
 Assuming defaults (see Configuration below) don't clash with anything else on your system, you should get a fully running instance with 50 cards on http://127.0.0.1:3000 that you can login with username `admin` and the password you passed to the `HWAITING_ADMIN_PASSWORD` variable. 
