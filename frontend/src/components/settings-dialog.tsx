@@ -32,7 +32,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
-  const { token, isAdmin, passkeysEnabled } = useAuth()
+  const { token, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -308,23 +308,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
                 </div>
 
-                {isAdmin && (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="debug-status-bar" className="flex-1">
-                        Debug info
-                      </Label>
-                      <Switch
-                        id="debug-status-bar"
-                        checked={settings.debugStatusBar}
-                        onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Show the card ID, answer-check time, and build version at the bottom left. Saved to this browser only.
-                    </p>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="debug-status-bar" className="flex-1">
+                      Debug info
+                    </Label>
+                    <Switch
+                      id="debug-status-bar"
+                      checked={settings.debugStatusBar}
+                      onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
+                    />
                   </div>
-                )}
+                  <p className="text-xs text-muted-foreground">
+                    Show the card ID, answer-check time, and build version at the bottom left. Saved to this browser only.
+                  </p>
+                </div>
               </section>
 
               <section aria-labelledby="settings-themes-heading" className="flex flex-col gap-4">
