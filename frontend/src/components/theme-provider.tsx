@@ -4,18 +4,15 @@ import { STORAGE_KEYS } from '@/lib/constants'
 
 interface ThemeContextValue {
   theme: Theme
+  resolvedTheme: 'light' | 'dark'
   setTheme: (theme: Theme) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function getSystemTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function applyTheme(theme: Theme) {
-  const resolved = theme === 'system' ? getSystemTheme() : theme
-  document.documentElement.classList.toggle('dark', resolved === 'dark')
 }
 
 export function ThemeProvider({ children, defaultTheme = 'system' }: { children: ReactNode; defaultTheme?: Theme }) {
@@ -23,24 +20,25 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: { children:
     if (typeof window === 'undefined') return defaultTheme
     return (localStorage.getItem(STORAGE_KEYS.THEME) as Theme) || defaultTheme
   })
+  const [systemTheme, setSystemTheme] = useState(getSystemTheme)
+  const resolvedTheme = theme === 'system' ? systemTheme : theme
 
   useEffect(() => {
-    applyTheme(theme)
+    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark')
     localStorage.setItem(STORAGE_KEYS.THEME, theme)
-  }, [theme])
+  }, [theme, resolvedTheme])
 
   useEffect(() => {
-    if (theme !== 'system') return
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = () => applyTheme('system')
+    const handler = () => setSystemTheme(mq.matches ? 'dark' : 'light')
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
-  }, [theme])
+  }, [])
 
   const setTheme = (t: Theme) => setThemeState(t)
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   )
