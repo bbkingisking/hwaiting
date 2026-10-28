@@ -511,7 +511,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
           <p lang="ko" className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
             {before}
             <span className="inline-flex flex-col items-center relative pt-5">
-              {card.hanja && (
+              {settings.showHanjaHints && card.hanja && (
                 // role + aria-label only — the classes here are what keep the
                 // hint centred above the blank as the blank moves around the
                 // sentence, so they are deliberately left alone.

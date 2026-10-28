@@ -40,7 +40,7 @@ pub struct UserProfile {
 /// The `users_settings` row proper - every field shared verbatim between the
 /// live API response (`UserSettings`, below) and data export/import
 /// (`export_import::UserSettingsExport`). Split out so both flatten this
-/// struct instead of hand-declaring the same 11 fields a second time: the
+/// struct instead of hand-declaring the same settings fields a second time: the
 /// export path used to be its own independently-declared struct that merely
 /// happened to agree with `UserSettings`, the same silent-drift risk
 /// `cards::Card` used to carry before it was unified from
@@ -49,10 +49,13 @@ pub struct UserProfile {
 /// silently vanish from export, or from the live API, with no compiler
 /// error either way. `sqlx::FromRow` lets both `get_settings` (below) and
 /// `export_import::get_user_settings` read a row straight into this shape
-/// too, rather than each hand-repeating the same 11 `row.get(...)` calls.
+/// too, rather than each hand-repeating the same `row.get(...)` calls.
 #[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema, Debug, PartialEq)]
 pub struct UserSettingsCore {
     pub show_percentage: bool,
+    /// Controls Hanja hint visibility on review cards.
+    #[schema(default = true)]
+    pub show_hanja_hints: bool,
     pub red_threshold: i64,
     pub yellow_threshold: i64,
     pub day_boundary_hour: i64,
@@ -103,6 +106,7 @@ pub struct UserSettings {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
     pub show_percentage: Option<bool>,
+    pub show_hanja_hints: Option<bool>,
     pub red_threshold: Option<i64>,
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
@@ -172,7 +176,7 @@ pub async fn get_settings(
 
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
+        SELECT show_percentage, show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
         WHERE user_id = ?
         "#
@@ -215,6 +219,7 @@ pub async fn update_settings(
 
     let UpdateSettingsRequest {
         show_percentage,
+        show_hanja_hints,
         red_threshold,
         yellow_threshold,
         day_boundary_hour,
@@ -237,7 +242,7 @@ pub async fn update_settings(
     // One transaction for the lazy row creation and the update itself, and
     // one dynamically-built UPDATE for every provided field - same pattern
     // as admin::edit_card's cards/cards_translations updates - rather than
-    // up to 11 separate unguarded statements against the pool. Atomicity
+    // multiple separate unguarded statements against the pool. Atomicity
     // matters here specifically because there used to be none: a failure
     // partway through the old field-by-field version could leave settings
     // half-applied.
@@ -246,6 +251,7 @@ pub async fn update_settings(
 
     let mut sets: Vec<&str> = Vec::new();
     if show_percentage.is_some()       { sets.push("show_percentage = ?") }
+    if show_hanja_hints.is_some()      { sets.push("show_hanja_hints = ?") }
     if red_threshold.is_some()         { sets.push("red_threshold = ?") }
     if yellow_threshold.is_some()      { sets.push("yellow_threshold = ?") }
     if day_boundary_hour.is_some()     { sets.push("day_boundary_hour = ?") }
@@ -261,6 +267,7 @@ pub async fn update_settings(
         let sql = format!("UPDATE users_settings SET {} WHERE user_id = ?", sets.join(", "));
         let mut q = sqlx::query(&sql);
         if let Some(v) = show_percentage       { q = q.bind(v) }
+        if let Some(v) = show_hanja_hints      { q = q.bind(v) }
         if let Some(v) = red_threshold         { q = q.bind(v) }
         if let Some(v) = yellow_threshold      { q = q.bind(v) }
         if let Some(v) = day_boundary_hour     { q = q.bind(v) }
@@ -279,4 +286,53 @@ pub async fn update_settings(
     info!("Settings updated successfully");
 
     Ok(Json(UpdateSettingsResponse { success: true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{test_pool, test_user};
+
+    #[tokio::test]
+    async fn hanja_hint_preference_defaults_on_and_partial_updates_preserve_it() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let other_user_id = test_user(&pool).await;
+
+        let initial = get_settings(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+        assert!(initial.core.show_hanja_hints);
+
+        for patch in [
+            serde_json::json!({ "show_hanja_hints": false }),
+            serde_json::json!({ "show_percentage": false }),
+            serde_json::json!({}),
+        ] {
+            let response = update_settings(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(serde_json::from_value(patch).unwrap()),
+            )
+            .await
+            .unwrap();
+            assert!(response.success);
+            let saved = get_settings(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+            assert!(!saved.core.show_hanja_hints);
+            assert_eq!(saved.core.daily_new_card_limit, initial.core.daily_new_card_limit);
+        }
+
+        let other = get_settings(State(pool.clone()), AuthUser(other_user_id)).await.unwrap().0;
+        assert!(other.core.show_hanja_hints);
+
+        let response = update_settings(
+            State(pool.clone()),
+            AuthUser(user_id),
+            AppJson(serde_json::from_value(serde_json::json!({ "show_hanja_hints": true })).unwrap()),
+        )
+        .await
+        .unwrap();
+        assert!(response.success);
+        let restored = get_settings(State(pool), AuthUser(user_id)).await.unwrap().0;
+        assert!(restored.core.show_hanja_hints);
+        assert!(!restored.core.show_percentage);
+    }
 }

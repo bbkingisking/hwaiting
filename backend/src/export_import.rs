@@ -26,7 +26,7 @@ pub struct ExportData {
 // `fsrs_parameters` carries the actual fitted parameters so they round-trip
 // through an export, where `user::UserSettings` only exposes whether they're
 // set (see UserSettingsCore's doc comment for why this used to be a second
-// hand-declared copy of the same 11 fields).
+// hand-declared copy of the same settings fields).
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct UserSettingsExport {
     #[serde(flatten)]
@@ -310,13 +310,14 @@ pub async fn import_data(
     // Import settings
     sqlx::query(
         r#"
-        INSERT INTO users_settings (user_id, show_percentage, red_threshold, yellow_threshold,
+        INSERT INTO users_settings (user_id, show_percentage, show_hanja_hints, red_threshold, yellow_threshold,
                                    day_boundary_hour, auto_progress_on_correct, auto_progress_delay,
                                    desired_retention, daily_new_card_limit,
                                    history_colorized_area, history_colored_dots, history_threshold_lines)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             show_percentage = excluded.show_percentage,
+            show_hanja_hints = excluded.show_hanja_hints,
             red_threshold = excluded.red_threshold,
             yellow_threshold = excluded.yellow_threshold,
             day_boundary_hour = excluded.day_boundary_hour,
@@ -331,6 +332,7 @@ pub async fn import_data(
     )
     .bind(user_id)
     .bind(data.settings.core.show_percentage)
+    .bind(data.settings.core.show_hanja_hints)
     .bind(data.settings.core.red_threshold)
     .bind(data.settings.core.yellow_threshold)
     .bind(data.settings.core.day_boundary_hour)
@@ -377,7 +379,7 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
-        SELECT show_percentage, red_threshold, yellow_threshold, day_boundary_hour,
+        SELECT show_percentage, show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
                history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
@@ -536,7 +538,14 @@ mod tests {
         let source_id = test_user(&pool).await;
         setup_source_user(&pool, source_id).await;
 
+        sqlx::query("UPDATE users_settings SET show_hanja_hints = 0 WHERE user_id = ?")
+            .bind(source_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
         let exported = export_data(State(pool.clone()), AuthUser(source_id)).await.unwrap().0;
+        assert!(!exported.settings.core.show_hanja_hints);
         assert_eq!(exported.review_history.len(), 3);
         assert_eq!(exported.suppressed_cards, vec![3]);
 
@@ -560,6 +569,7 @@ mod tests {
         let dest_settings = export_data(State(pool.clone()), AuthUser(dest_id)).await.unwrap().0.settings;
         assert_eq!(dest_settings.core.daily_new_card_limit, 7);
         assert_eq!(dest_settings.core.day_boundary_hour, 2);
+        assert!(!dest_settings.core.show_hanja_hints);
         assert_eq!(dest_settings.fsrs_parameters.as_deref(), Some("[1.0,2.0,3.0]"));
 
         // cards_states derived from the *latest* review per card: card 1's
@@ -677,6 +687,7 @@ mod tests {
             settings: UserSettingsExport {
                 core: crate::user::UserSettingsCore {
                     show_percentage: true,
+                    show_hanja_hints: true,
                     red_threshold: 50,
                     yellow_threshold: 70,
                     day_boundary_hour: 4,

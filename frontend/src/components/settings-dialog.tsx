@@ -249,6 +249,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <AccordionItem value="card-look">
             <AccordionTrigger>Card look</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="show-hanja-hints" className="flex-1">
+                    Show Hanja hints
+                  </Label>
+                  <Switch
+                    id="show-hanja-hints"
+                    checked={settings.showHanjaHints}
+                    onCheckedChange={(checked) => updateSettings({ showHanjaHints: checked })}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Show Hanja hints above the answer, including related words and readings
+                </p>
+              </div>
+
               <div className="flex items-center justify-between">
                 <Label htmlFor="show-percentage" className="flex-1">
                   Show difficulty score
