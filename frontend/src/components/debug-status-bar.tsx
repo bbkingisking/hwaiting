@@ -26,13 +26,13 @@ export function DebugStatusBar({
       className="flex flex-wrap justify-center gap-x-1 text-xs text-muted-foreground/50 font-mono select-none lg:col-start-1 lg:row-start-1 lg:justify-start lg:justify-self-start"
     >
       <span className="whitespace-nowrap">
-        <span className="lg:hidden">b:</span><span className="hidden lg:inline">build:</span> {import.meta.env.VITE_BUILD_HASH}
+        build: {import.meta.env.VITE_BUILD_HASH}
       </span>
       <span className="whitespace-nowrap">
-        · <span className="lg:hidden">t:</span><span className="hidden lg:inline">last check:</span> {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'}
+        · latency: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'}
       </span>
       <span className="whitespace-nowrap">
-        · <span className="lg:hidden">c:</span><span className="hidden lg:inline">current card:</span> {cardId ?? '—'}
+        · card: {cardId ?? '—'}
       </span>
     </div>
   )
