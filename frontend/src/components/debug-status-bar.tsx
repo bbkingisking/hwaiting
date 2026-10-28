@@ -25,7 +25,7 @@ export function DebugStatusBar({
       aria-hidden
       className="fixed bottom-4 left-4 text-xs text-muted-foreground/50 font-mono select-none"
     >
-      card: {cardId ?? '—'} · check: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'} · build: {import.meta.env.VITE_BUILD_HASH}
+      build hash: {import.meta.env.VITE_BUILD_HASH} · last check: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'} · current card: {cardId ?? '—'}
     </div>
   )
 }
