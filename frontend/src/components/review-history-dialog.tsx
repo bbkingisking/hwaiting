@@ -202,6 +202,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
         cards_mastered: summary.cards_review,
         cards_relearning: summary.cards_relearning,
         cards_unseen: summary.cards_unseen,
+        cards_suppressed: summary.cards_suppressed,
         studying_since: summary.first_review_date,
       },
       recent_days: days.map(d => ({
@@ -418,6 +419,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                 <SummaryStat label="Relearning" value={summary.cards_relearning.toLocaleString()} />
               )}
               <SummaryStat label="Unseen Cards" value={summary.cards_unseen.toLocaleString()} />
+              <SummaryStat label="Suppressed Cards" value={summary.cards_suppressed.toLocaleString()} />
 
               {summary.first_review_date && (
                 <SummaryStat label="Studying Since" value={formatFirstDate(summary.first_review_date)} />

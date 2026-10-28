@@ -96,6 +96,7 @@ pub struct HistorySummary {
     pub cards_review: i64,
     pub cards_relearning: i64,
     pub cards_unseen: i64,
+    pub cards_suppressed: i64,
     pub total_accuracy: f64,
     pub avg_reviews_per_day: f64,
     pub first_review_date: Option<String>,
@@ -405,6 +406,13 @@ async fn query_summary(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) 
     .fetch_one(pool)
     .await?;
 
+    let cards_suppressed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users_card_flags WHERE user_id = ? AND suppressed = 1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
     let dates = query_review_dates(pool, user_id, day_boundary_hour, &Local).await?;
 
     // Compute today in the user's boundary-adjusted timezone - the same
@@ -422,6 +430,7 @@ async fn query_summary(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) 
         cards_review,
         cards_relearning,
         cards_unseen,
+        cards_suppressed,
         total_accuracy,
         avg_reviews_per_day,
         first_review_date,
@@ -735,6 +744,45 @@ mod tests {
         assert_eq!(stats.reviews_today, 1);
         assert_eq!(stats.correct_today, 0);
         assert_eq!(stats.percentage, Some(0));
+    }
+
+    #[tokio::test]
+    async fn history_counts_only_the_users_currently_suppressed_cards() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let other_user_id = test_user(&pool).await;
+
+        let history = get_history(State(pool.clone()), crate::auth::AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(history.summary.cards_suppressed, 0);
+
+        // Suppression includes both reviewed and unseen cards, and excludes
+        // cards that were unsuppressed or belong to another user.
+        insert_review(&pool, user_id, 1, "good", "review", "2026-03-15 12:00:00").await;
+        for (owner, card_id, suppressed) in [
+            (user_id, 1, 1),
+            (user_id, 2, 1),
+            (user_id, 3, 0),
+            (other_user_id, 3, 1),
+        ] {
+            sqlx::query(
+                "INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, ?, ?)",
+            )
+            .bind(owner)
+            .bind(card_id)
+            .bind(suppressed)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let history = get_history(State(pool.clone()), crate::auth::AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(history.summary.cards_suppressed, 2);
     }
 
     #[tokio::test]
