@@ -320,7 +320,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Show the card ID, answer-check time, and build version at the bottom left. Saved to this browser only.
+                    Show the build version, answer-check time, and card ID. Saved to this browser only.
                   </p>
                 </div>
               </section>

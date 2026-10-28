@@ -336,14 +336,14 @@ function AppContent() {
         )}
       </main>
       {isAuthenticated && (
-        <StatusIndicator
-          key={statsKey}
-          nextCardDueAt={noCards ? nextDueAt : null}
-          onCardsAvailable={handleCardsAvailable}
-        />
-      )}
-      {isAuthenticated && (
-        <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
+        <div className="fixed inset-x-4 bottom-4 grid justify-items-center gap-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end">
+          <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
+          <StatusIndicator
+            key={statsKey}
+            nextCardDueAt={noCards ? nextDueAt : null}
+            onCardsAvailable={handleCardsAvailable}
+          />
+        </div>
       )}
     </>
   )

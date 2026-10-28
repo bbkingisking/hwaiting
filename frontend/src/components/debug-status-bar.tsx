@@ -23,9 +23,17 @@ export function DebugStatusBar({
   return (
     <div
       aria-hidden
-      className="fixed bottom-4 left-4 text-xs text-muted-foreground/50 font-mono select-none"
+      className="flex flex-wrap justify-center gap-x-1 text-xs text-muted-foreground/50 font-mono select-none lg:col-start-1 lg:row-start-1 lg:justify-start lg:justify-self-start"
     >
-      build hash: {import.meta.env.VITE_BUILD_HASH} · last check: {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'} · current card: {cardId ?? '—'}
+      <span className="whitespace-nowrap">
+        <span className="lg:hidden">b:</span><span className="hidden lg:inline">build:</span> {import.meta.env.VITE_BUILD_HASH}
+      </span>
+      <span className="whitespace-nowrap">
+        · <span className="lg:hidden">t:</span><span className="hidden lg:inline">last check:</span> {lastCheckMs !== null ? `${Math.round(lastCheckMs)}ms` : '—'}
+      </span>
+      <span className="whitespace-nowrap">
+        · <span className="lg:hidden">c:</span><span className="hidden lg:inline">current card:</span> {cardId ?? '—'}
+      </span>
     </div>
   )
 }
