@@ -52,7 +52,6 @@ pub struct UserProfile {
 /// too, rather than each hand-repeating the same `row.get(...)` calls.
 #[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema, Debug, PartialEq)]
 pub struct UserSettingsCore {
-    pub show_percentage: bool,
     /// Controls Hanja hint visibility on review cards.
     #[schema(default = true)]
     pub show_hanja_hints: bool,
@@ -105,7 +104,6 @@ pub struct UserSettings {
 
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
-    pub show_percentage: Option<bool>,
     pub show_hanja_hints: Option<bool>,
     pub red_threshold: Option<i64>,
     pub yellow_threshold: Option<i64>,
@@ -176,7 +174,7 @@ pub async fn get_settings(
 
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
-        SELECT show_percentage, show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
         WHERE user_id = ?
         "#
@@ -218,7 +216,6 @@ pub async fn update_settings(
     info!("Updating settings for user_id: {}", user_id);
 
     let UpdateSettingsRequest {
-        show_percentage,
         show_hanja_hints,
         red_threshold,
         yellow_threshold,
@@ -250,7 +247,6 @@ pub async fn update_settings(
     ensure_settings_row(&mut *tx, user_id).await?;
 
     let mut sets: Vec<&str> = Vec::new();
-    if show_percentage.is_some()       { sets.push("show_percentage = ?") }
     if show_hanja_hints.is_some()      { sets.push("show_hanja_hints = ?") }
     if red_threshold.is_some()         { sets.push("red_threshold = ?") }
     if yellow_threshold.is_some()      { sets.push("yellow_threshold = ?") }
@@ -266,7 +262,6 @@ pub async fn update_settings(
     if !sets.is_empty() {
         let sql = format!("UPDATE users_settings SET {} WHERE user_id = ?", sets.join(", "));
         let mut q = sqlx::query(&sql);
-        if let Some(v) = show_percentage       { q = q.bind(v) }
         if let Some(v) = show_hanja_hints      { q = q.bind(v) }
         if let Some(v) = red_threshold         { q = q.bind(v) }
         if let Some(v) = yellow_threshold      { q = q.bind(v) }
@@ -304,7 +299,7 @@ mod tests {
 
         for patch in [
             serde_json::json!({ "show_hanja_hints": false }),
-            serde_json::json!({ "show_percentage": false }),
+            serde_json::json!({ "history_colored_dots": true }),
             serde_json::json!({}),
         ] {
             let response = update_settings(
@@ -333,6 +328,6 @@ mod tests {
         assert!(response.success);
         let restored = get_settings(State(pool), AuthUser(user_id)).await.unwrap().0;
         assert!(restored.core.show_hanja_hints);
-        assert!(!restored.core.show_percentage);
+        assert!(restored.core.history_colored_dots);
     }
 }

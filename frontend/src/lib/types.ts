@@ -2,7 +2,6 @@ import type { components } from './api-schema'
 
 // Settings types
 export interface Settings {
-  showPercentage: boolean
   showHanjaHints: boolean
   redThreshold: number
   yellowThreshold: number

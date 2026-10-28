@@ -1021,7 +1021,6 @@ export interface components {
             /** Format: int64 */
             red_threshold?: number | null;
             show_hanja_hints?: boolean | null;
-            show_percentage?: boolean | null;
             /** Format: int64 */
             yellow_threshold?: number | null;
         };
@@ -1083,7 +1082,6 @@ export interface components {
              * @default true
              */
             show_hanja_hints: boolean;
-            show_percentage: boolean;
             /** Format: int64 */
             yellow_threshold: number;
         };

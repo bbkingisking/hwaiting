@@ -10,7 +10,6 @@ interface SettingsContextType {
 }
 
 const defaultSettings: Settings = {
-  showPercentage: DEFAULT_SETTINGS.SHOW_PERCENTAGE,
   showHanjaHints: DEFAULT_SETTINGS.SHOW_HANJA_HINTS,
   redThreshold: DEFAULT_SETTINGS.RED_THRESHOLD,
   yellowThreshold: DEFAULT_SETTINGS.YELLOW_THRESHOLD,
@@ -51,7 +50,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       try {
         const userSettings = await getUserSettings()
         const fetchedSettings: Settings = {
-          showPercentage: userSettings.show_percentage,
           showHanjaHints: userSettings.show_hanja_hints,
           redThreshold: userSettings.red_threshold,
           yellowThreshold: userSettings.yellow_threshold,
@@ -104,7 +102,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (isAuthenticated) {
       try {
         await updateUserSettings({
-          show_percentage: normalizedUpdates.showPercentage,
           show_hanja_hints: normalizedUpdates.showHanjaHints,
           red_threshold: normalizedUpdates.redThreshold,
           yellow_threshold: normalizedUpdates.yellowThreshold,

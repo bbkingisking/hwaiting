@@ -264,59 +264,50 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   Show Hanja hints above the answer, including related words and readings
                 </p>
               </div>
+            </AccordionContent>
+          </AccordionItem>
 
-              <div className="flex items-center justify-between">
-                <Label htmlFor="show-percentage" className="flex-1">
-                  Show difficulty score
-                </Label>
-                <Switch
-                  id="show-percentage"
-                  checked={settings.showPercentage}
-                  onCheckedChange={(checked) => updateSettings({ showPercentage: checked })}
+          {/* Accuracy colours */}
+          <AccordionItem value="accuracy-colours">
+            <AccordionTrigger>Accuracy colours</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label id="red-threshold-label">Red threshold (below)</Label>
+                  <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
+                </div>
+                <Slider
+                  aria-labelledby="red-threshold-label"
+                  min={THRESHOLD_CONSTRAINTS.MIN}
+                  max={THRESHOLD_CONSTRAINTS.MAX}
+                  step={THRESHOLD_CONSTRAINTS.STEP}
+                  value={settings.redThreshold}
+                  onValueChange={(value) => updateSettings({ redThreshold: value as number })}
+                  className="**:[[data-slot=slider-thumb]]:bg-destructive"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Overall accuracy in the footer is red below this percentage
+                </p>
               </div>
 
-              {settings.showPercentage && (
-                <>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label id="red-threshold-label">Red threshold (below)</Label>
-                      <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
-                    </div>
-                    <Slider
-                      aria-labelledby="red-threshold-label"
-                      min={THRESHOLD_CONSTRAINTS.MIN}
-                      max={THRESHOLD_CONSTRAINTS.MAX}
-                      step={THRESHOLD_CONSTRAINTS.STEP}
-                      value={settings.redThreshold}
-                      onValueChange={(value) => updateSettings({ redThreshold: value as number })}
-                      className="**:[[data-slot=slider-thumb]]:bg-destructive"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Cards below this percentage will be red
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
-                      <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
-                    </div>
-                    <Slider
-                      aria-labelledby="yellow-threshold-label"
-                      min={THRESHOLD_CONSTRAINTS.MIN}
-                      max={THRESHOLD_CONSTRAINTS.MAX}
-                      step={THRESHOLD_CONSTRAINTS.STEP}
-                      value={settings.yellowThreshold}
-                      onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
-                      className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Cards below this percentage will be yellow
-                    </p>
-                  </div>
-                </>
-              )}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
+                  <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
+                </div>
+                <Slider
+                  aria-labelledby="yellow-threshold-label"
+                  min={THRESHOLD_CONSTRAINTS.MIN}
+                  max={THRESHOLD_CONSTRAINTS.MAX}
+                  step={THRESHOLD_CONSTRAINTS.STEP}
+                  value={settings.yellowThreshold}
+                  onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
+                  className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Overall accuracy is yellow between the two thresholds, and green at or above this value
+                </p>
+              </div>
             </AccordionContent>
           </AccordionItem>
 

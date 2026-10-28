@@ -14,7 +14,6 @@ export const STORAGE_KEYS = {
 
 // Default settings values
 export const DEFAULT_SETTINGS = {
-  SHOW_PERCENTAGE: true,
   SHOW_HANJA_HINTS: true,
   RED_THRESHOLD: 50,
   YELLOW_THRESHOLD: 70,
