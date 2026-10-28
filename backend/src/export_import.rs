@@ -310,13 +310,12 @@ pub async fn import_data(
     // Import settings
     sqlx::query(
         r#"
-        INSERT INTO users_settings (user_id, show_percentage, show_hanja_hints, red_threshold, yellow_threshold,
+        INSERT INTO users_settings (user_id, show_hanja_hints, red_threshold, yellow_threshold,
                                    day_boundary_hour, auto_progress_on_correct, auto_progress_delay,
                                    desired_retention, daily_new_card_limit,
                                    history_colorized_area, history_colored_dots, history_threshold_lines)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
-            show_percentage = excluded.show_percentage,
             show_hanja_hints = excluded.show_hanja_hints,
             red_threshold = excluded.red_threshold,
             yellow_threshold = excluded.yellow_threshold,
@@ -331,7 +330,6 @@ pub async fn import_data(
         "#
     )
     .bind(user_id)
-    .bind(data.settings.core.show_percentage)
     .bind(data.settings.core.show_hanja_hints)
     .bind(data.settings.core.red_threshold)
     .bind(data.settings.core.yellow_threshold)
@@ -379,7 +377,7 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
-        SELECT show_percentage, show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour,
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
                history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
@@ -686,7 +684,6 @@ mod tests {
             exported_at: chrono::Utc::now().to_rfc3339(),
             settings: UserSettingsExport {
                 core: crate::user::UserSettingsCore {
-                    show_percentage: true,
                     show_hanja_hints: true,
                     red_threshold: 50,
                     yellow_threshold: 70,
