@@ -1,8 +1,8 @@
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
 
-// Admin-only debug aid, toggled in Settings -> Admin stuff -> Debug status
-// bar (device-local, see DEFAULT_SETTINGS.DEBUG_STATUS_BAR). Shows the build,
+// Admin-only debug aid, toggled in Settings -> Appearance -> Status bar ->
+// Debug info (device-local, see DEFAULT_SETTINGS.DEBUG_STATUS_BAR). Shows the build,
 // card ID, and last answer-check round trip, in ms - the one network call left in
 // the review loop that isn't hidden behind a prefetch (see App.tsx's
 // handleCheck and the aria-busy comment on <main>).

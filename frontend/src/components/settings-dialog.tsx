@@ -198,9 +198,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Accordion className="overflow-y-auto pr-1">
-          {/* App Behavior */}
-          <AccordionItem value="app-behavior">
-            <AccordionTrigger>App behavior</AccordionTrigger>
+          {/* General */}
+          <AccordionItem value="general">
+            <AccordionTrigger>General</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -242,104 +242,122 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </AccordionContent>
           </AccordionItem>
 
-          {/* Card Look */}
-          <AccordionItem value="card-look">
-            <AccordionTrigger>Card look</AccordionTrigger>
-            <AccordionContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="show-hanja-hints" className="flex-1">
-                    Show Hanja hints
-                  </Label>
-                  <Switch
-                    id="show-hanja-hints"
-                    checked={settings.showHanjaHints}
-                    onCheckedChange={(checked) => updateSettings({ showHanjaHints: checked })}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Show Hanja hints above the answer, including related words and readings
-                </p>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          {/* Accuracy colours */}
-          <AccordionItem value="accuracy-colours">
-            <AccordionTrigger>Accuracy colours</AccordionTrigger>
-            <AccordionContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <Label id="red-threshold-label">Red threshold (below)</Label>
-                  <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
-                </div>
-                <Slider
-                  aria-labelledby="red-threshold-label"
-                  min={THRESHOLD_CONSTRAINTS.MIN}
-                  max={THRESHOLD_CONSTRAINTS.MAX}
-                  step={THRESHOLD_CONSTRAINTS.STEP}
-                  value={settings.redThreshold}
-                  onValueChange={(value) => updateSettings({ redThreshold: value as number })}
-                  className="**:[[data-slot=slider-thumb]]:bg-destructive"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Overall accuracy in the footer is red below this percentage
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
-                  <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
-                </div>
-                <Slider
-                  aria-labelledby="yellow-threshold-label"
-                  min={THRESHOLD_CONSTRAINTS.MIN}
-                  max={THRESHOLD_CONSTRAINTS.MAX}
-                  step={THRESHOLD_CONSTRAINTS.STEP}
-                  value={settings.yellowThreshold}
-                  onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
-                  className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Overall accuracy is yellow between the two thresholds, and green at or above this value
-                </p>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          {/* Themes */}
-          <AccordionItem value="themes">
-            <AccordionTrigger>Themes</AccordionTrigger>
-            <AccordionContent>
-              <div role="group" aria-label="Card theme" className="grid grid-cols-2 gap-2">
-                {CARD_THEMES.map((cardTheme) => (
-                  <button
-                    key={cardTheme.id}
-                    type="button"
-                    aria-pressed={cardThemeId === cardTheme.id}
-                    onClick={() => setCardThemeId(cardTheme.id)}
-                    className={cn(
-                      'flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent',
-                      cardThemeId === cardTheme.id
-                        ? 'border-primary ring-1 ring-primary'
-                        : 'border-border',
-                    )}
-                  >
-                    <span
-                      className="h-6 w-6 shrink-0 rounded-full border border-black/10"
-                      style={{
-                        background: cardTheme.swatch.bg,
-                        boxShadow: `inset 0 0 0 2px ${cardTheme.swatch.accent}`,
-                      }}
+          {/* Appearance */}
+          <AccordionItem value="appearance">
+            <AccordionTrigger>Appearance</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-6">
+              <section aria-labelledby="settings-cards-heading" className="flex flex-col gap-4">
+                <h4 id="settings-cards-heading" className="font-semibold">Cards</h4>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="show-hanja-hints" className="flex-1">
+                      Hanja hints
+                    </Label>
+                    <Switch
+                      id="show-hanja-hints"
+                      checked={settings.showHanjaHints}
+                      onCheckedChange={(checked) => updateSettings({ showHanjaHints: checked })}
                     />
-                    <span className="truncate">{cardTheme.name}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                Changes how the review card looks. Saved to this browser only.
-              </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Show Hanja hints above the answer, including related words and readings
+                  </p>
+                </div>
+              </section>
+
+              <section aria-labelledby="settings-status-bar-heading" className="flex flex-col gap-4">
+                <h4 id="settings-status-bar-heading" className="font-semibold">Status bar</h4>
+                <div role="group" aria-labelledby="settings-accuracy-colours-heading" className="flex flex-col gap-4">
+                  <h5 id="settings-accuracy-colours-heading" className="font-medium">Accuracy colours</h5>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label id="red-threshold-label">Red threshold (below)</Label>
+                      <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
+                    </div>
+                    <Slider
+                      aria-labelledby="red-threshold-label"
+                      min={THRESHOLD_CONSTRAINTS.MIN}
+                      max={THRESHOLD_CONSTRAINTS.MAX}
+                      step={THRESHOLD_CONSTRAINTS.STEP}
+                      value={settings.redThreshold}
+                      onValueChange={(value) => updateSettings({ redThreshold: value as number })}
+                      className="**:[[data-slot=slider-thumb]]:bg-destructive"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Overall accuracy in the status bar is red below this percentage
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
+                      <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
+                    </div>
+                    <Slider
+                      aria-labelledby="yellow-threshold-label"
+                      min={THRESHOLD_CONSTRAINTS.MIN}
+                      max={THRESHOLD_CONSTRAINTS.MAX}
+                      step={THRESHOLD_CONSTRAINTS.STEP}
+                      value={settings.yellowThreshold}
+                      onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
+                      className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Overall accuracy is yellow between the two thresholds, and green at or above this value
+                    </p>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="debug-status-bar" className="flex-1">
+                        Debug info
+                      </Label>
+                      <Switch
+                        id="debug-status-bar"
+                        checked={settings.debugStatusBar}
+                        onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Show the card ID, answer-check time, and build version at the bottom left. Saved to this browser only.
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              <section aria-labelledby="settings-themes-heading" className="flex flex-col gap-4">
+                <h4 id="settings-themes-heading" className="font-semibold">Themes</h4>
+                <div role="group" aria-label="Card theme" className="grid grid-cols-2 gap-2">
+                  {CARD_THEMES.map((cardTheme) => (
+                    <button
+                      key={cardTheme.id}
+                      type="button"
+                      aria-pressed={cardThemeId === cardTheme.id}
+                      onClick={() => setCardThemeId(cardTheme.id)}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent',
+                        cardThemeId === cardTheme.id
+                          ? 'border-primary ring-1 ring-primary'
+                          : 'border-border',
+                      )}
+                    >
+                      <span
+                        className="h-6 w-6 shrink-0 rounded-full border border-black/10"
+                        style={{
+                          background: cardTheme.swatch.bg,
+                          boxShadow: `inset 0 0 0 2px ${cardTheme.swatch.accent}`,
+                        }}
+                      />
+                      <span className="truncate">{cardTheme.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Changes how the review card looks. Saved to this browser only.
+                </p>
+              </section>
             </AccordionContent>
           </AccordionItem>
 
@@ -474,9 +492,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </AccordionContent>
           </AccordionItem>
 
-          {/* Data */}
+          {/* Import/export data */}
           <AccordionItem value="data">
-            <AccordionTrigger>Data</AccordionTrigger>
+            <AccordionTrigger>Import/export data</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-4">
               <div className="flex gap-2">
                 <Button
@@ -567,30 +585,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             </AccordionContent>
           </AccordionItem>
-          )}
-
-          {/* Admin Section */}
-          {isAdmin && (
-            <AccordionItem value="admin">
-              <AccordionTrigger>Admin stuff</AccordionTrigger>
-              <AccordionContent className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="debug-status-bar" className="flex-1">
-                      Debug status bar
-                    </Label>
-                    <Switch
-                      id="debug-status-bar"
-                      checked={settings.debugStatusBar}
-                      onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Show the last answer-check round-trip time, bottom left. Saved to this browser only.
-                  </p>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
           )}
         </Accordion>
       </DialogContent>
