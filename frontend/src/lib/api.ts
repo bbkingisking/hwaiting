@@ -14,7 +14,6 @@ type Schemas = components['schemas']
 type EditCardRequest = Schemas['UpdateCardRequest']
 type EditCardResponse = Schemas['EditCardResponse']
 
-type CardResponse = Schemas['NextCardResponse']
 type NextCardEnvelope = Schemas['NextCardEnvelope']
 type CheckRequest = Schemas['CheckRequest']
 type CheckResponse = Schemas['CheckResponse']
@@ -89,7 +88,7 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
 }
 
 export type FieldValue = Schemas['FieldValue']
-export type FieldValues = Schemas['FieldValues']
+type FieldValues = Schemas['FieldValues']
 export type InflectionFormValue = Schemas['InflectionFormValue']
 export type CardInflection = Schemas['CardInflection']
 
@@ -189,7 +188,6 @@ export async function addPasskey(): Promise<PasskeySummary> {
   })
 }
 
-type ImportStats = Schemas['ImportStats']
 type ImportResponse = Schemas['ImportDataResponse']
 
 export async function importUserData(file: File, overwrite: boolean = false): Promise<ImportResponse> {
@@ -224,8 +222,7 @@ type StatsResponse = Schemas['StatsResponse']
 export type DayHistory = Schemas['DayHistory']
 export type HistorySummary = Schemas['HistorySummary']
 export type BreakdownRow = Schemas['BreakdownRow']
-export type HistoryBreakdownResponse = Schemas['HistoryBreakdownResponse']
-export type HistoryResponse = Schemas['HistoryResponse']
+type HistoryResponse = Schemas['HistoryResponse']
 
 // Was three separate round-trips (getReviewHistory/getHistorySummary/
 // getHistoryBreakdown) for data the stats page always fetched together;
@@ -323,26 +320,11 @@ export async function resetFsrsParameters(): Promise<{ success: boolean }> {
 
 export { ApiError }
 export type {
-  EditCardRequest,
-  EditCardResponse,
-  CardResponse,
   NextCardEnvelope,
-  CheckRequest,
   CheckResponse,
-  ReviewResponse,
-  UserProfile,
   ImportResponse,
-  ImportStats,
-  StatsResponse,
-  UserSettings,
-  UpdateSettingsRequest,
   SuppressedCard,
-  SuppressedCardsResponse,
   HanjaDrill,
-  HanjaDrillResponse,
   AdminCard,
-  SearchCardsResponse,
-  CardInflectionsResponse,
   PasskeySummary,
-  ListPasskeysResponse,
 }
