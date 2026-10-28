@@ -53,7 +53,7 @@ export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
   return (
     <footer
       aria-label="Review stats"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 text-sm text-muted-foreground"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground lg:col-start-2 lg:row-start-1"
     >
       {dueCount !== null && (
         <span>
