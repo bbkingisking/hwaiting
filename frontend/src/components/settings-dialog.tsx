@@ -20,6 +20,7 @@ import {
 import { useSettings } from '@/components/settings-provider'
 import { useAuth } from '@/components/auth-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
+import { useTheme } from '@/components/theme-provider'
 import { CARD_THEMES } from '@/lib/card-themes'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
 import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
@@ -34,6 +35,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
   const { token, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -246,6 +248,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <AccordionItem value="appearance">
             <AccordionTrigger>Appearance</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="dark-mode" className="flex-1">Dark mode</Label>
+                <Switch
+                  id="dark-mode"
+                  checked={resolvedTheme === 'dark'}
+                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                />
+              </div>
+
               <section aria-labelledby="settings-cards-heading" className="flex flex-col gap-4">
                 <h4 id="settings-cards-heading" className="font-semibold">Cards</h4>
                 <div className="flex flex-col gap-2">

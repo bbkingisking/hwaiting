@@ -13,14 +13,10 @@ import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
 import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
 import { HanjaDrillsDialog } from '@/components/hanja-drills-dialog'
-import { Settings, Moon, Sun, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User } from 'lucide-react'
-import { useTheme } from '@/components/theme-provider'
-
-
+import { Settings, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User } from 'lucide-react'
 
 export function AppHeader() {
   const { isAuthenticated, isAdmin, logout } = useAuth()
-  const { theme, setTheme } = useTheme()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
@@ -28,9 +24,6 @@ export function AppHeader() {
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [hanjaDrillsOpen, setHanjaDrillsOpen] = useState(false)
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
-  }
 
   if (!isAuthenticated) {
     return null
@@ -71,19 +64,6 @@ export function AppHeader() {
             <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={toggleTheme}>
-              {theme === 'dark' ? (
-                <>
-                  <Sun className="mr-2 h-4 w-4" />
-                  Light Mode
-                </>
-              ) : (
-                <>
-                  <Moon className="mr-2 h-4 w-4" />
-                  Dark Mode
-                </>
-              )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout}>
