@@ -14,7 +14,7 @@ export type CardThemeId =
   | 'wildwest'
   | 'ancientchina'
 
-export interface CardThemeDef {
+interface CardThemeDef {
   id: CardThemeId
   name: string
   fontUrl?: string

@@ -6,7 +6,6 @@ export const KEYS = {
 
 // Local storage keys
 export const STORAGE_KEYS = {
-  SETTINGS: 'hwaiting-settings',
   THEME: 'theme',
   CARD_THEME: 'hwaiting-card-theme',
   DEBUG_STATUS_BAR: 'hwaiting-debug-status-bar',

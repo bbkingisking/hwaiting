@@ -153,10 +153,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         type: 'success',
         text: `Optimized from ${result.review_count} reviews`
       })
-      // Refresh settings to pick up hasFsrsParameters change
-      // The settings provider will re-fetch on next render, but we can force it
-      // by updating the flag directly
-      updateSettings({ hasFsrsParameters: true } as any)
+      updateSettings({ hasFsrsParameters: true })
     } catch (error) {
       console.error('Failed to optimize FSRS parameters:', error)
       setOptimizeMessage({
@@ -172,7 +169,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     try {
       await resetFsrsParameters()
       setOptimizeMessage(null)
-      updateSettings({ hasFsrsParameters: false } as any)
+      updateSettings({ hasFsrsParameters: false })
     } catch (error) {
       console.error('Failed to reset FSRS parameters:', error)
     }
