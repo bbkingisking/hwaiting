@@ -799,6 +799,8 @@ export interface components {
             /** Format: int64 */
             cards_review: number;
             /** Format: int64 */
+            cards_suppressed: number;
+            /** Format: int64 */
             cards_unseen: number;
             /** Format: int64 */
             current_streak: number;
