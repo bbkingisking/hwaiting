@@ -51,16 +51,53 @@ test('15 minutes of waiting makes no requests before a single due refresh', cont
   assert.equal(calls, 1)
 })
 
-test('hidden deadlines wait for the user to return, coalescing focus events', context => {
+test('hidden tabs refresh at the deadline without polling, coalescing immediate return events', context => {
   let calls = 0
   schedule('2026-10-25T12:15:00Z', () => calls++)
   document.visibilityState = 'hidden'
-  context.mock.timers.tick(16 * 60000)
+  document.dispatchEvent(new Event('visibilitychange'))
+  context.mock.timers.tick(15 * 60000)
+  assert.equal(calls, 0)
+  context.mock.timers.tick(1000)
+  assert.equal(calls, 1)
+  document.visibilityState = 'visible'
+  document.dispatchEvent(new Event('visibilitychange'))
+  window.dispatchEvent(new Event('focus'))
+  assert.equal(calls, 1)
+  document.visibilityState = 'hidden'
+  document.dispatchEvent(new Event('visibilitychange'))
+  context.mock.timers.tick(60 * 60000)
+  assert.equal(calls, 1)
+})
+
+test('returning catches up when a background timer has been suspended', context => {
+  let calls = 0
+  schedule('2026-10-25T12:15:00Z', () => calls++)
+  document.visibilityState = 'hidden'
+  // Move the clock without executing timers, as if the browser suspended them.
+  context.mock.timers.setTime(start + 16 * 60000)
+  document.dispatchEvent(new Event('visibilitychange'))
+  window.dispatchEvent(new Event('focus'))
   assert.equal(calls, 0)
   document.visibilityState = 'visible'
   document.dispatchEvent(new Event('visibilitychange'))
   window.dispatchEvent(new Event('focus'))
   assert.equal(calls, 1)
+  context.mock.timers.tick(0)
+  assert.equal(calls, 1)
+})
+
+test('returning later can refresh again after a background check', context => {
+  let calls = 0
+  schedule('2026-10-25T12:15:00Z', () => calls++)
+  document.visibilityState = 'hidden'
+  context.mock.timers.tick(15 * 60000 + 1000)
+  assert.equal(calls, 1)
+  context.mock.timers.tick(5 * 60000)
+  document.visibilityState = 'visible'
+  document.dispatchEvent(new Event('visibilitychange'))
+  window.dispatchEvent(new Event('focus'))
+  assert.equal(calls, 2)
 })
 
 test('returning after five minutes leaves a 70-minute deadline untouched', context => {

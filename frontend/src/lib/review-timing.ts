@@ -7,14 +7,13 @@ export function parseDueAt(timestamp: string): number {
 }
 
 // Refresh at the deadline, or on return if the deadline has passed. Never poll.
-// Hidden tabs wait until visible, since their timers may be suspended anyway.
+// Background timers may be delayed; returning to the tab is a fallback.
 export function scheduleReviewRefresh(timestamp: string | null, refresh: () => void): () => void {
   const dueAt = timestamp ? parseDueAt(timestamp) : NaN
   let timer: ReturnType<typeof setTimeout> | undefined
   let lastRefresh = -Infinity
 
-  const refreshVisible = () => {
-    if (document.visibilityState === 'hidden') return
+  const refreshIfDue = () => {
     const now = Date.now()
     if (!Number.isFinite(dueAt) || now < dueAt + 1000) return
     // Focus, visibilitychange and a suspended timer can all fire together.
@@ -23,13 +22,17 @@ export function scheduleReviewRefresh(timestamp: string | null, refresh: () => v
     refresh()
   }
 
+  const refreshVisible = () => {
+    if (document.visibilityState !== 'hidden') refreshIfDue()
+  }
+
   const schedule = () => {
     if (!Number.isFinite(dueAt)) return
     // Allow the server to cross the due second before asking for the card.
     const remaining = dueAt + 1000 - Date.now()
     timer = setTimeout(() => {
       if (Date.now() < dueAt + 1000) schedule()
-      else refreshVisible()
+      else refreshIfDue()
     }, Math.min(Math.max(remaining, 0), 2 ** 31 - 1))
   }
 
