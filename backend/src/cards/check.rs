@@ -301,7 +301,7 @@ pub async fn check_answer(
     .await?;
 
     // Insert into review_history with full FSRS metadata
-    sqlx::query(
+    let review_id = sqlx::query(
         r#"
         INSERT INTO review_history (user_id, card_id, rating, scheduled_days, elapsed_days, stability, difficulty, state)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -316,7 +316,19 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(new_state)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .last_insert_rowid();
+
+    if !correct {
+        sqlx::query(
+            "INSERT INTO wrong_answers (review_id, target_sentence_id, answer) VALUES (?, ?, ?)",
+        )
+        .bind(review_id)
+        .bind(sentence_id)
+        .bind(payload.answer.trim())
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
 

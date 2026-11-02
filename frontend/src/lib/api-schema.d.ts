@@ -931,6 +931,7 @@ export interface components {
             /** Format: double */
             stability?: number | null;
             state?: string | null;
+            wrong_answer?: null | components["schemas"]["WrongAnswerExport"];
         };
         ReviewResponse: {
             success: boolean;
@@ -1089,6 +1090,11 @@ export interface components {
         };
         UserSettingsExport: components["schemas"]["UserSettingsCore"] & {
             fsrs_parameters?: string | null;
+        };
+        WrongAnswerExport: {
+            answer: string;
+            /** Format: int64 */
+            target_sentence_id: number;
         };
     };
     responses: never;
