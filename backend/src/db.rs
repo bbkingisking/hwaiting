@@ -42,9 +42,7 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
 
     // Run migrations
     debug!("Running database migrations...");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
     debug!("Database migrations complete");
 
     // Seed admin user if doesn't exist
@@ -58,8 +56,8 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
 
 async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
     use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
         Argon2,
+        password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
     };
 
     // Get admin credentials from environment or systemd credential store
@@ -67,12 +65,11 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
     let admin_password = crate::credentials::admin_password();
 
     // Check if admin user already exists
-    let admin_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"
-    )
-    .bind(&admin_username)
-    .fetch_one(pool)
-    .await?;
+    let admin_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
+            .bind(&admin_username)
+            .fetch_one(pool)
+            .await?;
 
     if admin_exists {
         debug!("Admin user already exists, skipping seed");
@@ -89,13 +86,11 @@ async fn seed_admin_user(pool: &SqlitePool) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
-    sqlx::query(
-        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)"
-    )
-    .bind(&admin_username)
-    .bind(&password_hash)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)")
+        .bind(&admin_username)
+        .bind(&password_hash)
+        .execute(pool)
+        .await?;
 
     info!("Admin user created successfully");
 

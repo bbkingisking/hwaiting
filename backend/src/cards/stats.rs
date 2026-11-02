@@ -3,20 +3,20 @@
 //! streaks, and the by-POS/origin accuracy breakdown. None of these affect
 //! scheduling; they all read what [`super::check::check_answer`] already wrote.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use chrono::{Local, TimeZone};
-use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
+use std::collections::{BTreeMap, BTreeSet};
 use utoipa::ToSchema;
 
 use crate::error::AppError;
 
 use super::time::{
-    accuracy_percentage, logical_day_start, logical_today_date, logical_today_start,
-    parse_flexible_datetime, review_day, sqlite_datetime, CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL,
+    CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL, accuracy_percentage, logical_day_start,
+    logical_today_date, logical_today_start, parse_flexible_datetime, review_day, sqlite_datetime,
 };
-use super::{review_prefs, ReviewPrefs, MASTERED_STATE};
+use super::{MASTERED_STATE, ReviewPrefs, review_prefs};
 
 /// Current-streak and longest-streak, from the sorted, deduplicated list of
 /// logical days the user reviewed on and today's own logical date. Split out
@@ -136,7 +136,11 @@ pub async fn get_stats(
     let user_id = auth.0;
 
     // daily_new_card_limit: 0 = suppress all new cards.
-    let ReviewPrefs { day_boundary_hour, daily_new_card_limit, .. } = review_prefs(&pool, user_id).await?;
+    let ReviewPrefs {
+        day_boundary_hour,
+        daily_new_card_limit,
+        ..
+    } = review_prefs(&pool, user_id).await?;
 
     // Start of the user's current logical day, as UTC for database comparison
     let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
@@ -160,9 +164,7 @@ pub async fn get_stats(
     };
 
     let new_count: i64 = if daily_new_card_limit == 0 {
-        sqlx::query_scalar(new_count_query)
-            .fetch_one(&pool)
-            .await?
+        sqlx::query_scalar(new_count_query).fetch_one(&pool).await?
     } else {
         sqlx::query_scalar(new_count_query)
             .bind(user_id)
@@ -250,7 +252,7 @@ pub async fn get_stats(
             AND rh2.card_id = rh.card_id
             AND rh2.reviewed_at < ?
         )
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&today_start)
@@ -269,12 +271,19 @@ pub async fn get_stats(
     }))
 }
 
-async fn query_timeseries(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) -> Result<Vec<DayHistory>, AppError> {
+async fn query_timeseries(
+    pool: &SqlitePool,
+    user_id: i64,
+    day_boundary_hour: i64,
+) -> Result<Vec<DayHistory>, AppError> {
     query_timeseries_at(pool, user_id, day_boundary_hour, &Local::now()).await
 }
 
 async fn query_timeseries_at<Tz: TimeZone>(
-    pool: &SqlitePool, user_id: i64, day_boundary_hour: i64, now: &chrono::DateTime<Tz>,
+    pool: &SqlitePool,
+    user_id: i64,
+    day_boundary_hour: i64,
+    now: &chrono::DateTime<Tz>,
 ) -> Result<Vec<DayHistory>, AppError> {
     let window_start = sqlite_datetime(logical_day_start(now, day_boundary_hour, -4));
     let rows = sqlx::query(&format!(
@@ -301,27 +310,44 @@ async fn query_timeseries_at<Tz: TimeZone>(
         counts.0 += row.get::<i64, _>("total");
         counts.1 += row.get::<i64, _>("correct");
     }
-    Ok(days.into_iter().map(|(day, (total, correct))| DayHistory {
-        date: day.to_string(), total, correct,
-        percentage: accuracy_percentage(correct, total).unwrap_or(0),
-    }).collect())
+    Ok(days
+        .into_iter()
+        .map(|(day, (total, correct))| DayHistory {
+            date: day.to_string(),
+            total,
+            correct,
+            percentage: accuracy_percentage(correct, total).unwrap_or(0),
+        })
+        .collect())
 }
 
 async fn query_review_dates<Tz: TimeZone>(
-    pool: &SqlitePool, user_id: i64, day_boundary_hour: i64, zone: &Tz,
+    pool: &SqlitePool,
+    user_id: i64,
+    day_boundary_hour: i64,
+    zone: &Tz,
 ) -> Result<Vec<chrono::NaiveDate>, AppError> {
     let timestamps = sqlx::query_scalar::<_, String>(
         "SELECT DISTINCT reviewed_at FROM review_history WHERE user_id = ?",
-    ).bind(user_id).fetch_all(pool).await?;
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
     let mut dates = BTreeSet::new();
     for timestamp in timestamps {
-        dates.insert(review_day(&timestamp, day_boundary_hour, zone)
-            .map_err(|e| AppError::Internal(format!("Invalid review timestamp: {e}")))?);
+        dates.insert(
+            review_day(&timestamp, day_boundary_hour, zone)
+                .map_err(|e| AppError::Internal(format!("Invalid review timestamp: {e}")))?,
+        );
     }
     Ok(dates.into_iter().collect())
 }
 
-async fn query_summary(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) -> Result<HistorySummary, AppError> {
+async fn query_summary(
+    pool: &SqlitePool,
+    user_id: i64,
+    day_boundary_hour: i64,
+) -> Result<HistorySummary, AppError> {
     // Query 1: Aggregate review stats. Accuracy only counts post-first-exposure
     // reviews (same rule as the status bar); the volume stats count everything.
     let stats_row = sqlx::query(&format!(
@@ -439,7 +465,10 @@ async fn query_summary(pool: &SqlitePool, user_id: i64, day_boundary_hour: i64) 
     })
 }
 
-async fn query_breakdown(pool: &SqlitePool, user_id: i64) -> Result<HistoryBreakdownResponse, AppError> {
+async fn query_breakdown(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<HistoryBreakdownResponse, AppError> {
     // pop.slug/ot.slug are ascii identifiers as of migration 20240101000043
     // (the human-readable text moved to parts_of_speech_labels/
     // origin_types_labels), so the breakdown's `label` needs the same
@@ -551,7 +580,9 @@ pub async fn get_history(
     // Fetched once here rather than by query_timeseries/query_summary each -
     // both need the same day_boundary_hour, and re-fetching it a second time
     // for the same request bought nothing.
-    let ReviewPrefs { day_boundary_hour, .. } = review_prefs(&pool, user_id).await?;
+    let ReviewPrefs {
+        day_boundary_hour, ..
+    } = review_prefs(&pool, user_id).await?;
 
     let (timeseries, summary, breakdown) = tokio::try_join!(
         query_timeseries(&pool, user_id, day_boundary_hour),
@@ -635,7 +666,14 @@ mod tests {
 
     use crate::test_support::{test_pool, test_user};
 
-    async fn insert_review(pool: &SqlitePool, user_id: i64, card_id: i64, rating: &str, state: &str, reviewed_at: &str) {
+    async fn insert_review(
+        pool: &SqlitePool,
+        user_id: i64,
+        card_id: i64,
+        rating: &str,
+        state: &str,
+        reviewed_at: &str,
+    ) {
         sqlx::query(
             "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, state) VALUES (?, ?, ?, ?, ?)",
         )
@@ -664,18 +702,42 @@ mod tests {
             insert_review(&pool, user_id, 1, rating, state, timestamp).await;
         }
         let zone = chrono_tz::Europe::London;
-        let now = parse_flexible_datetime("2026-10-27T12:00:00Z").unwrap().with_timezone(&zone);
+        let now = parse_flexible_datetime("2026-10-27T12:00:00Z")
+            .unwrap()
+            .with_timezone(&zone);
         let days = query_timeseries_at(&pool, user_id, 4, &now).await.unwrap();
-        let counts: Vec<_> = days.iter().map(|day| (day.date.as_str(), day.total, day.correct, day.percentage)).collect();
-        assert_eq!(counts, vec![("2026-10-23", 1, 1, 100), ("2026-10-24", 3, 2, 66), ("2026-10-25", 1, 1, 100)]);
+        let counts: Vec<_> = days
+            .iter()
+            .map(|day| (day.date.as_str(), day.total, day.correct, day.percentage))
+            .collect();
+        assert_eq!(
+            counts,
+            vec![
+                ("2026-10-23", 1, 1, 100),
+                ("2026-10-24", 3, 2, 66),
+                ("2026-10-25", 1, 1, 100)
+            ]
+        );
         // A window starting before the fall-back must include 4am BST,
         // rather than starting an hour late after subtracting 96 hours.
-        let later = parse_flexible_datetime("2026-10-28T12:00:00Z").unwrap().with_timezone(&zone);
-        let later_days = query_timeseries_at(&pool, user_id, 4, &later).await.unwrap();
+        let later = parse_flexible_datetime("2026-10-28T12:00:00Z")
+            .unwrap()
+            .with_timezone(&zone);
+        let later_days = query_timeseries_at(&pool, user_id, 4, &later)
+            .await
+            .unwrap();
         assert_eq!(later_days[0].date, "2026-10-24");
         assert_eq!(later_days[0].total, 3);
         let dates = query_review_dates(&pool, user_id, 4, &zone).await.unwrap();
-        assert_eq!(dates, vec![d("2026-10-23"), d("2026-10-24"), d("2026-10-25"), d("2026-10-26")]);
+        assert_eq!(
+            dates,
+            vec![
+                d("2026-10-23"),
+                d("2026-10-24"),
+                d("2026-10-25"),
+                d("2026-10-26")
+            ]
+        );
         assert_eq!(compute_streaks(&dates, d("2026-10-26")), (4, 4));
     }
 
@@ -683,13 +745,22 @@ mod tests {
     async fn spring_history_window_starts_at_local_boundary() {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
-        for timestamp in ["2026-03-28 03:30:00", "2026-03-28 04:00:00", "2026-03-29 03:30:00"] {
+        for timestamp in [
+            "2026-03-28 03:30:00",
+            "2026-03-28 04:00:00",
+            "2026-03-29 03:30:00",
+        ] {
             insert_review(&pool, user_id, 1, "good", "review", timestamp).await;
         }
         let zone = chrono_tz::Europe::London;
-        let now = parse_flexible_datetime("2026-04-01T12:00:00Z").unwrap().with_timezone(&zone);
+        let now = parse_flexible_datetime("2026-04-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&zone);
         let days = query_timeseries_at(&pool, user_id, 4, &now).await.unwrap();
-        let counts: Vec<_> = days.iter().map(|day| (day.date.as_str(), day.total)).collect();
+        let counts: Vec<_> = days
+            .iter()
+            .map(|day| (day.date.as_str(), day.total))
+            .collect();
         assert_eq!(counts, vec![("2026-03-28", 1), ("2026-03-29", 1)]);
     }
 

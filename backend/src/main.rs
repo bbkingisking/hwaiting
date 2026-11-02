@@ -1,11 +1,11 @@
 use axum::{
-    extract::DefaultBodyLimit,
-    http::{header, HeaderValue, Method},
-    routing::{delete, get, patch, post, put},
     Router,
+    extract::DefaultBodyLimit,
+    http::{HeaderValue, Method, header},
+    routing::{delete, get, patch, post, put},
 };
-use std::net::SocketAddr;
 use std::env;
+use std::net::SocketAddr;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -86,8 +86,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/capabilities", get(passkey::capabilities))
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
-        .route("/auth/passkey/register/start", post(passkey::register_start))
-        .route("/auth/passkey/register/finish", post(passkey::register_finish))
+        .route(
+            "/auth/passkey/register/start",
+            post(passkey::register_start),
+        )
+        .route(
+            "/auth/passkey/register/finish",
+            post(passkey::register_finish),
+        )
         .route("/auth/passkey/login/start", post(passkey::login_start))
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
         .route("/cards/next", get(cards::get_next_card))
@@ -101,7 +107,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/cards/stats", get(cards::get_stats))
         .route("/cards/history", get(cards::get_history))
         .route("/cards/fsrs-parameters", post(cards::optimize_fsrs))
-        .route("/cards/fsrs-parameters", delete(cards::reset_fsrs_parameters))
+        .route(
+            "/cards/fsrs-parameters",
+            delete(cards::reset_fsrs_parameters),
+        )
         .route("/user/me", get(user::get_profile))
         .route("/user/settings", get(user::get_settings))
         .route("/user/settings", patch(user::update_settings))
@@ -113,13 +122,25 @@ async fn main() -> anyhow::Result<()> {
             post(export_import::import_data).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route("/user/passkeys", get(passkey::list_passkeys))
-        .route("/user/passkeys/register/start", post(passkey::add_passkey_start))
-        .route("/user/passkeys/register/finish", post(passkey::add_passkey_finish))
-        .route("/user/passkeys/{passkey_id}", delete(passkey::delete_passkey))
+        .route(
+            "/user/passkeys/register/start",
+            post(passkey::add_passkey_start),
+        )
+        .route(
+            "/user/passkeys/register/finish",
+            post(passkey::add_passkey_finish),
+        )
+        .route(
+            "/user/passkeys/{passkey_id}",
+            delete(passkey::delete_passkey),
+        )
         .route("/admin/users", get(admin::list_users))
         .route("/admin/cards/search", get(admin::search_cards))
         .route("/admin/cards/{card_id}", patch(admin::edit_card))
-        .route("/admin/cards/{card_id}/inflections", get(admin::get_card_inflections))
+        .route(
+            "/admin/cards/{card_id}/inflections",
+            get(admin::get_card_inflections),
+        )
         .route("/health", get(health_check))
         .with_state(state);
 
@@ -134,12 +155,14 @@ async fn main() -> anyhow::Result<()> {
         Some(static_dir) => {
             tracing::info!("Serving static files from {}", static_dir);
             let index_path = format!("{}/index.html", static_dir);
-            let serve_dir = ServeDir::new(&static_dir)
-                .not_found_service(ServeFile::new(index_path));
+            let serve_dir =
+                ServeDir::new(&static_dir).not_found_service(ServeFile::new(index_path));
             app = app.fallback_service(serve_dir);
         }
         None => {
-            tracing::info!("HWAITING_STATIC_DIR not set - running in API-only mode (no static file serving)");
+            tracing::info!(
+                "HWAITING_STATIC_DIR not set - running in API-only mode (no static file serving)"
+            );
         }
     }
 
@@ -154,8 +177,12 @@ async fn main() -> anyhow::Result<()> {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(|s| {
-                    s.parse::<HeaderValue>()
-                        .unwrap_or_else(|e| panic!("Invalid origin '{}' in HWAITING_CORS_ALLOWED_ORIGINS: {}", s, e))
+                    s.parse::<HeaderValue>().unwrap_or_else(|e| {
+                        panic!(
+                            "Invalid origin '{}' in HWAITING_CORS_ALLOWED_ORIGINS: {}",
+                            s, e
+                        )
+                    })
                 })
                 .collect();
 
@@ -175,7 +202,9 @@ async fn main() -> anyhow::Result<()> {
             app = app.layer(cors);
         }
         None => {
-            tracing::info!("HWAITING_CORS_ALLOWED_ORIGINS not set - no CORS layer added (same-origin only)");
+            tracing::info!(
+                "HWAITING_CORS_ALLOWED_ORIGINS not set - no CORS layer added (same-origin only)"
+            );
         }
     }
 
@@ -371,4 +400,3 @@ ENVIRONMENT VARIABLES:
 async fn health_check() -> &'static str {
     "OK"
 }
-

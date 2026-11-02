@@ -1,7 +1,7 @@
 //! Per-card moderation/curation actions that sit outside the FSRS review
 //! flow: content-review comments and the suppress/unsuppress rotation flags.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
@@ -108,7 +108,10 @@ pub async fn suppress_card(
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
-    info!("Suppressing card for user_id: {}, card_id: {}", user_id, card_id);
+    info!(
+        "Suppressing card for user_id: {}, card_id: {}",
+        user_id, card_id
+    );
 
     // Insert or update users_card_flags to mark as suppressed
     sqlx::query(
@@ -206,7 +209,10 @@ pub async fn unsuppress_card(
     auth: crate::auth::AuthUser,
 ) -> Result<Json<ReviewResponse>, AppError> {
     let user_id = auth.0;
-    info!("Unsuppressing card for user_id: {}, card_id: {}", user_id, card_id);
+    info!(
+        "Unsuppressing card for user_id: {}, card_id: {}",
+        user_id, card_id
+    );
 
     sqlx::query(
         r#"

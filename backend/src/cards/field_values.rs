@@ -5,10 +5,10 @@
 //! about e.g. grammar patterns isn't forced to also fetch (and pay the
 //! query cost for) the other five.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{
-    de::{value::StrDeserializer, IntoDeserializer},
     Deserialize, Serialize,
+    de::{IntoDeserializer, value::StrDeserializer},
 };
 use sqlx::{Row, SqlitePool};
 use utoipa::{IntoParams, ToSchema};
@@ -178,7 +178,11 @@ async fn fetch_field_values(
     } else {
         "NULL AS tooltip"
     };
-    let rank_expr = if has_rank { "t.rank AS rank" } else { "NULL AS rank" };
+    let rank_expr = if has_rank {
+        "t.rank AS rank"
+    } else {
+        "NULL AS rank"
+    };
     // `grammar_patterns_endings` (migration 20240101000040) is one row per
     // literal ending - `json_group_array` folds a pattern's rows into a
     // JSON array in the same `ORDER BY id` they were seeded in, so
@@ -340,7 +344,10 @@ mod tests {
 
     #[test]
     fn tolerates_surrounding_whitespace() {
-        assert_eq!(parse_fields(" pos , grade ").unwrap(), vec![FieldName::Pos, FieldName::Grade]);
+        assert_eq!(
+            parse_fields(" pos , grade ").unwrap(),
+            vec![FieldName::Pos, FieldName::Grade]
+        );
     }
 
     #[test]

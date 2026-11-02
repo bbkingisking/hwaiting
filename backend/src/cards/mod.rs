@@ -137,7 +137,10 @@ pub struct Card {
 /// separate pool queries used to open, where the delete would land between
 /// the check and this fetch and the endpoint would return 200 with an empty
 /// list instead of 404.
-pub(crate) async fn inflections_for<'e, E>(executor: E, card_id: i64) -> Result<Vec<CardInflection>, AppError>
+pub(crate) async fn inflections_for<'e, E>(
+    executor: E,
+    card_id: i64,
+) -> Result<Vec<CardInflection>, AppError>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
@@ -171,8 +174,10 @@ where
 /// from `hanja_hints_for` so the character-matching rule can be tested
 /// without a database.
 fn shares_hanja_character(a: &str, b: &str) -> bool {
-    let a_chars: std::collections::HashSet<char> =
-        a.chars().filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c)).collect();
+    let a_chars: std::collections::HashSet<char> = a
+        .chars()
+        .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c))
+        .collect();
     if a_chars.is_empty() {
         return false;
     }
@@ -192,7 +197,9 @@ async fn hanja_hints_for(
     card_id: i64,
     hanja: &Option<String>,
 ) -> Result<Vec<HanjaHint>, AppError> {
-    let Some(current_hanja) = hanja else { return Ok(vec![]) };
+    let Some(current_hanja) = hanja else {
+        return Ok(vec![]);
+    };
     if current_hanja.is_empty() {
         return Ok(vec![]);
     }
@@ -208,7 +215,7 @@ async fn hanja_hints_for(
           AND cs.card_id != ?
           AND c.hanja IS NOT NULL
           AND c.hanja != ''
-        "#
+        "#,
     )
     .bind(eng_id)
     .bind(user_id)

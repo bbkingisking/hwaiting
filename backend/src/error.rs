@@ -1,10 +1,10 @@
 use axum::{
-    extract::{FromRequest, FromRequestParts, OptionalFromRequest, Path, Query, Request},
-    http::{request::Parts, StatusCode},
-    response::{IntoResponse, Response},
     Json,
+    extract::{FromRequest, FromRequestParts, OptionalFromRequest, Path, Query, Request},
+    http::{StatusCode, request::Parts},
+    response::{IntoResponse, Response},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 use tracing::error;
 use utoipa::ToSchema;
@@ -108,50 +108,61 @@ impl IntoResponse for AppError {
                         error: "Card review state has changed".to_string(),
                         code: "stale_review".to_string(),
                     }),
-                ).into_response();
+                )
+                    .into_response();
             }
             AppError::Database(ref e) => {
                 error!("Database error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
             }
             AppError::PasswordHash => {
                 error!("Password hash error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Authentication error".to_string(),
+                )
             }
             AppError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
             AppError::Webauthn(ref e) => {
                 error!("Passkey ceremony failed: {:?}", e);
-                (StatusCode::BAD_REQUEST, "Passkey ceremony failed".to_string())
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Passkey ceremony failed".to_string(),
+                )
             }
-            AppError::CeremonyNotFound => {
-                (StatusCode::BAD_REQUEST, "Unknown or already-used passkey ceremony".to_string())
-            }
-            AppError::CeremonyExpired => {
-                (StatusCode::GONE, "Passkey ceremony expired, please try again".to_string())
-            }
-            AppError::UnknownPasskey => {
-                (StatusCode::UNAUTHORIZED, "No account for that passkey".to_string())
-            }
-            AppError::PasskeysDisabled => {
-                (StatusCode::NOT_IMPLEMENTED, "Passkey sign-in is not configured on this server".to_string())
-            }
+            AppError::CeremonyNotFound => (
+                StatusCode::BAD_REQUEST,
+                "Unknown or already-used passkey ceremony".to_string(),
+            ),
+            AppError::CeremonyExpired => (
+                StatusCode::GONE,
+                "Passkey ceremony expired, please try again".to_string(),
+            ),
+            AppError::UnknownPasskey => (
+                StatusCode::UNAUTHORIZED,
+                "No account for that passkey".to_string(),
+            ),
+            AppError::PasskeysDisabled => (
+                StatusCode::NOT_IMPLEMENTED,
+                "Passkey sign-in is not configured on this server".to_string(),
+            ),
             AppError::UsernameExists => {
                 (StatusCode::CONFLICT, "Username already exists".to_string())
             }
-            AppError::Forbidden => {
-                (StatusCode::FORBIDDEN, "Forbidden".to_string())
-            }
-            AppError::NotFound => {
-                (StatusCode::NOT_FOUND, "Not found".to_string())
-            }
-            AppError::BadRequest(ref msg) => {
-                (StatusCode::BAD_REQUEST, msg.clone())
-            }
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
+            AppError::NotFound => (StatusCode::NOT_FOUND, "Not found".to_string()),
+            AppError::BadRequest(ref msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Internal(ref msg) => {
                 error!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
         };
 

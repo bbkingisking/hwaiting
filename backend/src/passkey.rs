@@ -64,9 +64,9 @@
 //! up by.
 
 use axum::{
+    Json,
     extract::{FromRef, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -80,25 +80,25 @@ use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use webauthn_rp::{
+    AuthenticatedCredential, DiscoverableAuthentication16, DiscoverableAuthenticationServerState,
+    Registration, RegistrationServerState,
     bin::{Decode, Encode},
     request::{
+        AsciiDomain, RpId,
         auth::{AuthenticationVerificationOptions, DiscoverableCredentialRequestOptions},
         register::{
             Nickname, PublicKeyCredentialCreationOptions, PublicKeyCredentialUserEntity,
             RegistrationVerificationOptions, UserHandle16, Username,
         },
-        AsciiDomain, RpId,
     },
     response::{
+        AuthenticatorAttachment,
         auth::AuthenticatorData as AssertionAuthenticatorData,
         register::{CompressedPubKey, DynamicState, StaticState},
-        AuthenticatorAttachment,
     },
-    AuthenticatedCredential, DiscoverableAuthentication16, DiscoverableAuthenticationServerState,
-    Registration, RegistrationServerState,
 };
 
-use crate::auth::{generate_token, AuthResponse, AuthUser};
+use crate::auth::{AuthResponse, AuthUser, generate_token};
 use crate::error::{AppError, AppJson, AppPath};
 
 /// How long a `start` ceremony's state is kept before `finish` must have
@@ -273,14 +273,21 @@ impl FromRef<AppState> for SqlitePool {
 /// TLS-terminating proxy - so guessing from those would be wrong exactly
 /// when it matters most, and silently so.
 fn build_webauthn_config() -> Option<WebauthnConfig> {
-    let (rp_id, rp_origins) = match (crate::credentials::rp_id(), crate::credentials::rp_origins()) {
+    let (rp_id, rp_origins) = match (
+        crate::credentials::rp_id(),
+        crate::credentials::rp_origins(),
+    ) {
         (None, None) => {
             info!("HWAITING_RP_ID/HWAITING_RP_ORIGINS not set - passkey sign-in disabled");
             return None;
         }
         (Some(rp_id), Some(rp_origins)) => (rp_id, rp_origins),
-        (Some(_), None) => panic!("HWAITING_RP_ID is set but HWAITING_RP_ORIGINS is not - passkeys need both or neither"),
-        (None, Some(_)) => panic!("HWAITING_RP_ORIGINS is set but HWAITING_RP_ID is not - passkeys need both or neither"),
+        (Some(_), None) => panic!(
+            "HWAITING_RP_ID is set but HWAITING_RP_ORIGINS is not - passkeys need both or neither"
+        ),
+        (None, Some(_)) => panic!(
+            "HWAITING_RP_ORIGINS is set but HWAITING_RP_ID is not - passkeys need both or neither"
+        ),
     };
 
     let ascii_domain = AsciiDomain::try_from(rp_id.clone())
@@ -290,14 +297,20 @@ fn build_webauthn_config() -> Option<WebauthnConfig> {
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_origin(s).unwrap_or_else(|e| panic!("Invalid origin '{s}' in HWAITING_RP_ORIGINS: {e}")))
+        .map(|s| {
+            parse_origin(s)
+                .unwrap_or_else(|e| panic!("Invalid origin '{s}' in HWAITING_RP_ORIGINS: {e}"))
+        })
         .collect();
     if origins.is_empty() {
         panic!("HWAITING_RP_ORIGINS must contain at least one origin");
     }
 
     info!("Passkey sign-in enabled for RP ID {rp_id:?}, origins {origins:?}");
-    Some(WebauthnConfig { rp_id: RpId::Domain(ascii_domain), origins })
+    Some(WebauthnConfig {
+        rp_id: RpId::Domain(ascii_domain),
+        origins,
+    })
 }
 
 /// Validates `s` as a full [origin](https://www.w3.org/TR/webauthn-3/#dom-collectedclientdata-origin) -
@@ -315,7 +328,10 @@ fn build_webauthn_config() -> Option<WebauthnConfig> {
 fn parse_origin(s: &str) -> Result<String, String> {
     let url = Url::parse(s).map_err(|e| e.to_string())?;
     if url.scheme() != "http" && url.scheme() != "https" {
-        return Err(format!("scheme must be http or https, got {:?}", url.scheme()));
+        return Err(format!(
+            "scheme must be http or https, got {:?}",
+            url.scheme()
+        ));
     }
     if !url.has_host() {
         return Err("must have a host".to_string());
@@ -390,7 +406,9 @@ pub struct Capabilities {
     tag = "auth"
 )]
 pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
-    Json(Capabilities { passkeys_enabled: state.passkeys_enabled() })
+    Json(Capabilities {
+        passkeys_enabled: state.passkeys_enabled(),
+    })
 }
 
 // ---------------------------------------------------------------- shared registration logic
@@ -459,7 +477,12 @@ async fn finish_registration(
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
     }
-    let Ceremony::Registration { for_user, state: reg_state, .. } = ceremony else {
+    let Ceremony::Registration {
+        for_user,
+        state: reg_state,
+        ..
+    } = ceremony
+    else {
         return Err(AppError::CeremonyNotFound);
     };
 
@@ -531,7 +554,10 @@ pub async fn register_start(
 ) -> Result<Json<StartResponse>, AppError> {
     let (ceremony_id, options) = start_registration(&state, None)?;
     info!("passkey register/start: ceremony={ceremony_id}");
-    Ok(Json(StartResponse { ceremony_id, options }))
+    Ok(Json(StartResponse {
+        ceremony_id,
+        options,
+    }))
 }
 
 #[utoipa::path(
@@ -546,15 +572,22 @@ pub async fn register_start(
 )]
 pub async fn register_finish(
     State(state): State<AppState>,
-    AppJson(req): AppJson<FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>>,
+    AppJson(req): AppJson<
+        FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
+    >,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
-    let (user_id, _for_user) = finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
+    let (user_id, _for_user) =
+        finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
     info!("passkey register/finish: created user_id={user_id}");
 
     let token = generate_token(user_id)?;
     Ok((
         StatusCode::CREATED,
-        Json(AuthResponse { token, username: None, is_admin: false }),
+        Json(AuthResponse {
+            token,
+            username: None,
+            is_admin: false,
+        }),
     ))
 }
 
@@ -570,13 +603,13 @@ pub async fn register_finish(
     ),
     tag = "auth"
 )]
-pub async fn login_start(
-    State(state): State<AppState>,
-) -> Result<Json<StartResponse>, AppError> {
+pub async fn login_start(State(state): State<AppState>) -> Result<Json<StartResponse>, AppError> {
     let config = state.webauthn()?;
     let (auth_state, client_state) = DiscoverableCredentialRequestOptions::passkey(&config.rp_id)
         .start_ceremony()
-        .map_err(|e| AppError::Internal(format!("failed to start authentication ceremony: {e:?}")))?;
+        .map_err(|e| {
+            AppError::Internal(format!("failed to start authentication ceremony: {e:?}"))
+        })?;
 
     let options = serde_json::to_value(&client_state)
         .map_err(|e| AppError::Internal(format!("failed to serialize request options: {e}")))?;
@@ -586,7 +619,10 @@ pub async fn login_start(
         expires: Instant::now() + CEREMONY_TTL,
     });
     info!("passkey login/start: ceremony={ceremony_id}");
-    Ok(Json(StartResponse { ceremony_id, options }))
+    Ok(Json(StartResponse {
+        ceremony_id,
+        options,
+    }))
 }
 
 #[utoipa::path(
@@ -610,7 +646,10 @@ pub async fn login_finish(
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
     }
-    let Ceremony::Authentication { state: auth_state, .. } = ceremony else {
+    let Ceremony::Authentication {
+        state: auth_state, ..
+    } = ceremony
+    else {
         return Err(AppError::CeremonyNotFound);
     };
     let credential: DiscoverableAuthentication16 = req.credential.0;
@@ -635,10 +674,11 @@ pub async fn login_finish(
     // Parsed with the crate's own parser directly from the assertion's
     // authenticatorData, not hand-rolled, so it can't drift from what
     // `verify` itself computes from the same bytes.
-    let asserted_backup = AssertionAuthenticatorData::try_from(credential.response().authenticator_data())
-        .map_err(|_| AppError::BadRequest("malformed authenticatorData".to_string()))?
-        .flags()
-        .backup;
+    let asserted_backup =
+        AssertionAuthenticatorData::try_from(credential.response().authenticator_data())
+            .map_err(|_| AppError::BadRequest("malformed authenticatorData".to_string()))?
+            .flags()
+            .backup;
 
     // Similarly, no `UserHandle` is persisted for any account (see the
     // module docs), so `cred.user_id` below is forged to be exactly the
@@ -679,8 +719,10 @@ pub async fn login_finish(
     let mut matched: Option<(i64, i64, bool)> = None;
     for row in &rows {
         let public_key: Vec<u8> = row.get("public_key");
-        let static_state = StaticState::<StoredPubKey>::decode(public_key.as_slice())
-            .map_err(|e| AppError::Internal(format!("failed to decode stored passkey public key: {e:?}")))?;
+        let static_state =
+            StaticState::<StoredPubKey>::decode(public_key.as_slice()).map_err(|e| {
+                AppError::Internal(format!("failed to decode stored passkey public key: {e:?}"))
+            })?;
         // No per-login state is tracked for any of these (see the module
         // docs): `user_verified: true` and `sign_count: 0` are the values
         // that make the crate's corresponding checks no-ops given this
@@ -697,10 +739,17 @@ pub async fn login_finish(
         };
         let mut candidate: LoginCredential<'_> =
             AuthenticatedCredential::new(raw_id, user_handle, static_state, dynamic_state)
-                .map_err(|e| AppError::Internal(format!("failed to reconstruct candidate passkey: {e:?}")))?;
-        let candidate_state = DiscoverableAuthenticationServerState::decode(encoded_state.as_slice())
-            .map_err(|e| AppError::Internal(format!("failed to decode ceremony state: {e:?}")))?;
-        if candidate_state.verify(&config.rp_id, &credential, &mut candidate, &options).is_ok() {
+                .map_err(|e| {
+                    AppError::Internal(format!("failed to reconstruct candidate passkey: {e:?}"))
+                })?;
+        let candidate_state = DiscoverableAuthenticationServerState::decode(
+            encoded_state.as_slice(),
+        )
+        .map_err(|e| AppError::Internal(format!("failed to decode ceremony state: {e:?}")))?;
+        if candidate_state
+            .verify(&config.rp_id, &credential, &mut candidate, &options)
+            .is_ok()
+        {
             matched = Some((row.get("id"), row.get("user_id"), row.get("is_admin")));
             break;
         }
@@ -720,7 +769,11 @@ pub async fn login_finish(
          candidate passkeys server-wide)"
     );
     let token = generate_token(user_id)?;
-    Ok(Json(AuthResponse { token, username: None, is_admin }))
+    Ok(Json(AuthResponse {
+        token,
+        username: None,
+        is_admin,
+    }))
 }
 
 // ---------------------------------------------------------------- authenticated: manage passkeys
@@ -739,10 +792,12 @@ pub async fn list_passkeys(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<ListPasskeysResponse>, AppError> {
-    let rows = sqlx::query("SELECT id, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC")
-        .bind(auth.0)
-        .fetch_all(&state.pool)
-        .await?;
+    let rows = sqlx::query(
+        "SELECT id, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC",
+    )
+    .bind(auth.0)
+    .fetch_all(&state.pool)
+    .await?;
 
     let passkeys = rows
         .into_iter()
@@ -772,8 +827,14 @@ pub async fn add_passkey_start(
     auth: AuthUser,
 ) -> Result<Json<StartResponse>, AppError> {
     let (ceremony_id, options) = start_registration(&state, Some(auth.0))?;
-    info!("passkey add/start: user_id={} ceremony={ceremony_id}", auth.0);
-    Ok(Json(StartResponse { ceremony_id, options }))
+    info!(
+        "passkey add/start: user_id={} ceremony={ceremony_id}",
+        auth.0
+    );
+    Ok(Json(StartResponse {
+        ceremony_id,
+        options,
+    }))
 }
 
 #[utoipa::path(
@@ -792,11 +853,17 @@ pub async fn add_passkey_start(
 pub async fn add_passkey_finish(
     State(state): State<AppState>,
     auth: AuthUser,
-    AppJson(req): AppJson<FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>>,
+    AppJson(req): AppJson<
+        FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
+    >,
 ) -> Result<(StatusCode, Json<PasskeySummary>), AppError> {
-    let (user_id, for_user) = finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
+    let (user_id, for_user) =
+        finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
     if for_user != Some(auth.0) {
-        warn!("passkey add/finish: ceremony for user_id={for_user:?} finished by user_id={}", auth.0);
+        warn!(
+            "passkey add/finish: ceremony for user_id={for_user:?} finished by user_id={}",
+            auth.0
+        );
         return Err(AppError::Forbidden);
     }
 
@@ -805,7 +872,10 @@ pub async fn add_passkey_finish(
         .fetch_one(&state.pool)
         .await?;
 
-    info!("passkey add/finish: user_id={user_id} added passkey id={}", row.get::<i64, _>("id"));
+    info!(
+        "passkey add/finish: user_id={user_id} added passkey id={}",
+        row.get::<i64, _>("id")
+    );
     Ok((
         StatusCode::CREATED,
         Json(PasskeySummary {
@@ -839,15 +909,17 @@ pub async fn delete_passkey(
 
     // A password gives the account a fallback sign-in method, so only
     // block deleting the last passkey when it's the *only* one.
-    let has_password: bool = sqlx::query_scalar("SELECT password_hash IS NOT NULL FROM users WHERE id = ?")
-        .bind(auth.0)
-        .fetch_one(&mut *tx)
-        .await?;
-    if !has_password {
-        let passkey_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
+    let has_password: bool =
+        sqlx::query_scalar("SELECT password_hash IS NOT NULL FROM users WHERE id = ?")
             .bind(auth.0)
             .fetch_one(&mut *tx)
             .await?;
+    if !has_password {
+        let passkey_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
+                .bind(auth.0)
+                .fetch_one(&mut *tx)
+                .await?;
         if passkey_count <= 1 {
             return Err(AppError::BadRequest(
                 "Cannot delete your only sign-in method".to_string(),
@@ -866,7 +938,10 @@ pub async fn delete_passkey(
 
     tx.commit().await?;
 
-    info!("passkey delete: user_id={} removed passkey id={passkey_id}", auth.0);
+    info!(
+        "passkey delete: user_id={} removed passkey id={passkey_id}",
+        auth.0
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -897,8 +972,20 @@ mod tests {
             delete_passkey(State(state), AuthUser(user_id), AppPath(ids[1])),
         );
         let results = [first, second];
-        assert_eq!(results.iter().filter(|r| matches!(r, Ok(StatusCode::NO_CONTENT))).count(), 1);
-        assert_eq!(results.iter().filter(|r| matches!(r, Err(AppError::BadRequest(_)))).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|r| matches!(r, Ok(StatusCode::NO_CONTENT)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|r| matches!(r, Err(AppError::BadRequest(_))))
+                .count(),
+            1
+        );
         let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
             .bind(user_id)
             .fetch_one(&pool)
@@ -909,22 +996,34 @@ mod tests {
 
     #[test]
     fn accepts_plain_https_origin() {
-        assert_eq!(parse_origin("https://hwaiting.example.com").unwrap(), "https://hwaiting.example.com");
+        assert_eq!(
+            parse_origin("https://hwaiting.example.com").unwrap(),
+            "https://hwaiting.example.com"
+        );
     }
 
     #[test]
     fn accepts_http_origin() {
-        assert_eq!(parse_origin("http://localhost").unwrap(), "http://localhost");
+        assert_eq!(
+            parse_origin("http://localhost").unwrap(),
+            "http://localhost"
+        );
     }
 
     #[test]
     fn accepts_explicit_port() {
-        assert_eq!(parse_origin("http://localhost:5173").unwrap(), "http://localhost:5173");
+        assert_eq!(
+            parse_origin("http://localhost:5173").unwrap(),
+            "http://localhost:5173"
+        );
     }
 
     #[test]
     fn strips_trailing_slash() {
-        assert_eq!(parse_origin("https://hwaiting.example.com/").unwrap(), "https://hwaiting.example.com");
+        assert_eq!(
+            parse_origin("https://hwaiting.example.com/").unwrap(),
+            "https://hwaiting.example.com"
+        );
     }
 
     #[test]
@@ -971,6 +1070,9 @@ mod tests {
         // request can never match by exact string equality (see
         // WebauthnConfig's doc comment on why comparison is a plain string
         // compare).
-        assert_eq!(parse_origin("https://HWaiting.Example.com").unwrap(), "https://HWaiting.Example.com");
+        assert_eq!(
+            parse_origin("https://HWaiting.Example.com").unwrap(),
+            "https://HWaiting.Example.com"
+        );
     }
 }

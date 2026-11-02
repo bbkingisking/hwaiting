@@ -2,7 +2,7 @@
 //! the pre-answer [`CardPrompt`], withholding everything [`super::CardReveal`]
 //! would give away.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
@@ -10,8 +10,8 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::error::{AppError, AppQuery};
 
-use super::{hanja_hints_for, review_prefs, ReviewPrefs};
 use super::time::{logical_next_start, logical_today_start, sqlite_datetime};
+use super::{ReviewPrefs, hanja_hints_for, review_prefs};
 
 /// The card fields visible before an answer is checked, shared with the
 /// admin-editing shape - see `cards::Card`'s doc comment - and with
@@ -157,7 +157,11 @@ pub async fn get_next_card(
         user_id, params.exclude
     );
 
-    let ReviewPrefs { day_boundary_hour, daily_new_card_limit, .. } = review_prefs(&pool, user_id).await?;
+    let ReviewPrefs {
+        day_boundary_hour,
+        daily_new_card_limit,
+        ..
+    } = review_prefs(&pool, user_id).await?;
 
     // Start of "today" per day_boundary_hour - same helper get_stats uses.
     let today_start_str = sqlite_datetime(logical_today_start(day_boundary_hour));
@@ -166,7 +170,7 @@ pub async fn get_next_card(
     // A "new" card is one where it's the user's first review (no prior review_history)
     // Check if new cards are suppressed (limit = 0) or if daily limit is reached
     let new_card_limit_reached = if daily_new_card_limit == 0 {
-        true  // Suppress all new cards
+        true // Suppress all new cards
     } else {
         // Count how many NEW cards the user has reviewed today
         let new_cards_today: i64 = sqlx::query_scalar(
@@ -181,7 +185,7 @@ pub async fn get_next_card(
                 AND rh2.card_id = rh.card_id
                 AND rh2.reviewed_at < ?
             )
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(&today_start_str)
@@ -196,9 +200,9 @@ pub async fn get_next_card(
         // For normal requests, use the actual limit.
         let is_prefetch = !params.exclude.is_empty();
         let threshold = if is_prefetch {
-            daily_new_card_limit - 1  // Block at limit-1 for prefetch
+            daily_new_card_limit - 1 // Block at limit-1 for prefetch
         } else {
-            daily_new_card_limit  // Block at limit for normal fetch
+            daily_new_card_limit // Block at limit for normal fetch
         };
 
         new_cards_today >= threshold
@@ -215,7 +219,12 @@ pub async fn get_next_card(
     } else {
         format!(
             "AND c.id NOT IN ({})",
-            params.exclude.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+            params
+                .exclude
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",")
         )
     };
 
@@ -544,10 +553,14 @@ mod tests {
     use crate::test_support::{test_pool, test_user};
 
     async fn next_card(pool: &SqlitePool, user_id: i64, exclude: Vec<i64>) -> NextCardEnvelope {
-        get_next_card(State(pool.clone()), AuthUser(user_id), AppQuery(NextCardQuery { exclude }))
-            .await
-            .unwrap()
-            .0
+        get_next_card(
+            State(pool.clone()),
+            AuthUser(user_id),
+            AppQuery(NextCardQuery { exclude }),
+        )
+        .await
+        .unwrap()
+        .0
     }
 
     /// Marks every seeded card except `keep` as already-reviewed and due far
@@ -610,7 +623,9 @@ mod tests {
             .unwrap();
 
         let envelope = next_card(&pool, user_id, vec![]).await;
-        let card = envelope.card.expect("some other card should still be available");
+        let card = envelope
+            .card
+            .expect("some other card should still be available");
         assert_ne!(card.prompt.front.card_id, 2);
     }
 
@@ -626,7 +641,6 @@ mod tests {
         let card = envelope.card.expect("card 7 should still be selectable");
         assert_eq!(card.prompt.front.card_id, 7);
     }
-
 
     #[tokio::test]
     async fn daily_new_card_limit_zero_suppresses_all_new_cards() {
@@ -684,13 +698,19 @@ mod tests {
         // Plain request: threshold is the full limit (5); 4 < 5, so a new
         // card is still available.
         let plain = next_card(&pool, user_id, vec![]).await;
-        assert!(plain.card.is_some(), "limit not yet reached for a plain request");
+        assert!(
+            plain.card.is_some(),
+            "limit not yet reached for a plain request"
+        );
 
         // Prefetch request (non-empty exclude): threshold is limit - 1 (4);
         // 4 >= 4, so the prefetch must not hand out a new card even though
         // the real limit hasn't been hit yet.
         let prefetch = next_card(&pool, user_id, vec![999]).await;
-        assert!(prefetch.card.is_none(), "prefetch should respect the limit-1 buffer");
+        assert!(
+            prefetch.card.is_none(),
+            "prefetch should respect the limit-1 buffer"
+        );
     }
 
     #[tokio::test]

@@ -21,7 +21,10 @@ pub(super) const CORRECT_REVIEW_SQL: &str = "rating IN ('good', 'easy')";
 /// `Local::now()` itself.
 fn logical_day_start_naive(now_local: NaiveDateTime, day_boundary_hour: i64) -> NaiveDateTime {
     if now_local.hour() >= day_boundary_hour as u32 {
-        now_local.date().and_hms_opt(day_boundary_hour as u32, 0, 0).unwrap()
+        now_local
+            .date()
+            .and_hms_opt(day_boundary_hour as u32, 0, 0)
+            .unwrap()
     } else {
         (now_local.date() - chrono::Duration::days(1))
             .and_hms_opt(day_boundary_hour as u32, 0, 0)
@@ -79,7 +82,9 @@ pub(super) fn sqlite_datetime(dt: chrono::DateTime<Utc>) -> String {
 /// Resolve a calendar day's boundary in the supplied timezone. Calendar
 /// offsets preserve the boundary hour across 23- and 25-hour days.
 pub(super) fn logical_day_start<Tz: TimeZone>(
-    now: &chrono::DateTime<Tz>, day_boundary_hour: i64, days: i64,
+    now: &chrono::DateTime<Tz>,
+    day_boundary_hour: i64,
+    days: i64,
 ) -> chrono::DateTime<Utc> {
     let naive = logical_day_start_naive(now.naive_local(), day_boundary_hour)
         + chrono::Duration::days(days);
@@ -93,7 +98,9 @@ pub(super) fn logical_next_start(day_boundary_hour: i64) -> chrono::DateTime<Utc
 /// Assign a stored UTC instant using the timezone rules at that instant,
 /// rather than applying today's offset to historical reviews.
 pub(super) fn review_day<Tz: TimeZone>(
-    reviewed_at: &str, day_boundary_hour: i64, zone: &Tz,
+    reviewed_at: &str,
+    day_boundary_hour: i64,
+    zone: &Tz,
 ) -> Result<NaiveDate, chrono::ParseError> {
     let local = parse_flexible_datetime(reviewed_at)?.with_timezone(zone);
     Ok(logical_today_date(local.naive_local(), day_boundary_hour))
@@ -120,7 +127,9 @@ pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
 /// a given caller actually tolerated (and whether an RFC3339 timestamp with
 /// a non-UTC offset would even survive it) wasn't answerable by reading any
 /// one of them in isolation.
-pub(super) fn parse_flexible_datetime(s: &str) -> Result<chrono::DateTime<Utc>, chrono::ParseError> {
+pub(super) fn parse_flexible_datetime(
+    s: &str,
+) -> Result<chrono::DateTime<Utc>, chrono::ParseError> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Ok(dt.with_timezone(&Utc));
     }
@@ -136,7 +145,10 @@ mod tests {
     use chrono::NaiveDate;
 
     fn ndt(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(y, mo, d).unwrap().and_hms_opt(h, mi, s).unwrap()
+        NaiveDate::from_ymd_opt(y, mo, d)
+            .unwrap()
+            .and_hms_opt(h, mi, s)
+            .unwrap()
     }
 
     // --- logical_day_start_naive -------------------------------------------
@@ -196,18 +208,27 @@ mod tests {
     #[test]
     fn boundary_inside_repeated_hour_uses_first_occurrence() {
         let zone = chrono_tz::Europe::London;
-        assert_eq!(resolve_local(&zone, ndt(2026, 10, 25, 1, 0, 0)), utc("2026-10-25T00:00:00Z"));
+        assert_eq!(
+            resolve_local(&zone, ndt(2026, 10, 25, 1, 0, 0)),
+            utc("2026-10-25T00:00:00Z")
+        );
         for instant in ["2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z"] {
             let now = utc(instant).with_timezone(&zone);
             assert_eq!(logical_day_start(&now, 1, 0), utc("2026-10-25T00:00:00Z"));
-            assert_eq!(review_day(instant, 1, &zone).unwrap(), ndt(2026, 10, 25, 0, 0, 0).date());
+            assert_eq!(
+                review_day(instant, 1, &zone).unwrap(),
+                ndt(2026, 10, 25, 0, 0, 0).date()
+            );
         }
     }
 
     #[test]
     fn missing_boundary_moves_forward_and_agrees_with_review_day() {
         let zone = chrono_tz::Europe::London;
-        assert_eq!(resolve_local(&zone, ndt(2026, 3, 29, 1, 0, 0)), utc("2026-03-29T01:00:00Z"));
+        assert_eq!(
+            resolve_local(&zone, ndt(2026, 3, 29, 1, 0, 0)),
+            utc("2026-03-29T01:00:00Z")
+        );
         for (instant, expected) in [
             ("2026-03-29T00:59:59Z", "2026-03-28T01:00:00Z"),
             ("2026-03-29T01:00:00Z", "2026-03-29T01:00:00Z"),
@@ -215,7 +236,10 @@ mod tests {
             let now = utc(instant).with_timezone(&zone);
             let start = logical_day_start(&now, 1, 0);
             assert_eq!(start, utc(expected));
-            assert_eq!(review_day(instant, 1, &zone).unwrap(), start.with_timezone(&zone).date_naive());
+            assert_eq!(
+                review_day(instant, 1, &zone).unwrap(),
+                start.with_timezone(&zone).date_naive()
+            );
         }
     }
 
@@ -290,7 +314,8 @@ mod tests {
         let dt = parse_flexible_datetime("2026-03-15T04:05:06.123Z").unwrap();
         assert_eq!(
             dt,
-            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap() + chrono::Duration::milliseconds(123)
+            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap()
+                + chrono::Duration::milliseconds(123)
         );
     }
 
@@ -305,7 +330,8 @@ mod tests {
         let dt = parse_flexible_datetime("2026-03-15 04:05:06.500").unwrap();
         assert_eq!(
             dt,
-            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap() + chrono::Duration::milliseconds(500)
+            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap()
+                + chrono::Duration::milliseconds(500)
         );
     }
 
@@ -314,7 +340,8 @@ mod tests {
         let dt = parse_flexible_datetime("2026-03-15T04:05:06.500").unwrap();
         assert_eq!(
             dt,
-            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap() + chrono::Duration::milliseconds(500)
+            Utc.with_ymd_and_hms(2026, 3, 15, 4, 5, 6).unwrap()
+                + chrono::Duration::milliseconds(500)
         );
     }
 
