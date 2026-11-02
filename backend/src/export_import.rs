@@ -44,6 +44,14 @@ pub struct ReviewHistoryExport {
     pub stability: Option<f64>,
     pub difficulty: Option<f64>,
     pub state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrong_answer: Option<WrongAnswerExport>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct WrongAnswerExport {
+    pub target_sentence_id: i64,
+    pub answer: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -90,10 +98,13 @@ pub async fn export_data(
     // Get review history
     let review_history_rows = sqlx::query(
         r#"
-        SELECT card_id, rating, scheduled_days, elapsed_days, reviewed_at, stability, difficulty, state
-        FROM review_history
-        WHERE user_id = ?
-        ORDER BY reviewed_at ASC
+        SELECT rh.card_id, rh.rating, rh.scheduled_days, rh.elapsed_days,
+               rh.reviewed_at, rh.stability, rh.difficulty, rh.state,
+               wa.target_sentence_id, wa.answer
+        FROM review_history rh
+        LEFT JOIN wrong_answers wa ON wa.review_id = rh.id
+        WHERE rh.user_id = ?
+        ORDER BY rh.reviewed_at ASC
         "#
     )
     .bind(user_id)
@@ -110,6 +121,12 @@ pub async fn export_data(
             stability: row.get("stability"),
             difficulty: row.get("difficulty"),
             state: row.get("state"),
+            wrong_answer: row
+                .get::<Option<i64>, _>("target_sentence_id")
+                .map(|target_sentence_id| WrongAnswerExport {
+                    target_sentence_id,
+                    answer: row.get("answer"),
+                }),
         }
     }).collect();
 
@@ -183,6 +200,16 @@ pub async fn import_data(
     // If overwrite, delete existing data
     if payload.overwrite {
         info!("Overwrite enabled - clearing existing data");
+
+        // SQLite foreign-key enforcement is disabled for this pool, so clear
+        // dependent mistake rows explicitly before deleting their reviews.
+        sqlx::query(
+            "DELETE FROM wrong_answers WHERE review_id IN
+             (SELECT id FROM review_history WHERE user_id = ?)",
+        )
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
         
         sqlx::query("DELETE FROM review_history WHERE user_id = ?")
             .bind(user_id)
@@ -227,6 +254,15 @@ pub async fn import_data(
             .await?
             .into_iter()
             .collect();
+    let valid_target_cards: std::collections::HashMap<i64, i64> = sqlx::query(
+        "SELECT s.id AS target_sentence_id, s.card_id
+         FROM targets t JOIN sentences s ON s.id = t.sentence_id",
+    )
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .map(|row| (row.get("target_sentence_id"), row.get("card_id")))
+        .collect();
 
     // Import review history (must come before cards_states derivation)
     for review in data.review_history {
@@ -235,7 +271,7 @@ pub async fn import_data(
             continue;
         }
 
-        sqlx::query(
+        let review_id = sqlx::query(
             r#"
             INSERT INTO review_history (card_id, user_id, rating, scheduled_days, elapsed_days, reviewed_at, stability, difficulty, state)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -251,7 +287,27 @@ pub async fn import_data(
         .bind(review.difficulty)
         .bind(review.state)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .last_insert_rowid();
+
+        if let Some(wrong_answer) = review.wrong_answer {
+            if valid_target_cards.get(&wrong_answer.target_sentence_id) == Some(&review.card_id) {
+                sqlx::query(
+                    "INSERT INTO wrong_answers (review_id, target_sentence_id, answer)
+                     VALUES (?, ?, ?)",
+                )
+                .bind(review_id)
+                .bind(wrong_answer.target_sentence_id)
+                .bind(wrong_answer.answer)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                warn!(
+                    "Skipping wrong answer for missing or mismatched target_sentence_id: {}",
+                    wrong_answer.target_sentence_id
+                );
+            }
+        }
 
         stats.reviews_imported += 1;
     }
@@ -708,6 +764,7 @@ mod tests {
                     stability: Some(1.0),
                     difficulty: Some(1.0),
                     state: Some("learning".to_string()),
+                    wrong_answer: None,
                 },
                 ReviewHistoryExport {
                     card_id: 999999, // doesn't exist
@@ -718,6 +775,7 @@ mod tests {
                     stability: Some(1.0),
                     difficulty: Some(1.0),
                     state: Some("learning".to_string()),
+                    wrong_answer: None,
                 },
             ],
             suppressed_cards: vec![2, 999999],

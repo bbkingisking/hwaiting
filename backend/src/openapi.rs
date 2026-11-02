@@ -93,6 +93,7 @@ impl Modify for SecurityAddon {
         crate::user::UpdateSettingsRequest,
         crate::user::UpdateSettingsResponse,
         crate::export_import::ExportData,
+        crate::export_import::WrongAnswerExport,
         crate::export_import::ImportDataRequest,
         crate::export_import::ImportDataResponse,
         crate::admin::AdminUserSummary,
