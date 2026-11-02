@@ -14,8 +14,8 @@
 //! hook that from without adding real complexity for a cleanup that's purely
 //! cosmetic - stray files under the OS temp dir, not a correctness issue).
 
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -58,24 +58,20 @@ pub(crate) async fn test_pool() -> SqlitePool {
 /// the password flow - they construct `AuthUser`/`AdminUser` directly rather
 /// than going through a real HTTP request.
 pub(crate) async fn test_user(pool: &SqlitePool) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO users (username, is_admin) VALUES (?, 0) RETURNING id",
-    )
-    .bind(format!("test-user-{}", uuid::Uuid::new_v4()))
-    .fetch_one(pool)
-    .await
-    .unwrap()
+    sqlx::query_scalar("INSERT INTO users (username, is_admin) VALUES (?, 0) RETURNING id")
+        .bind(format!("test-user-{}", uuid::Uuid::new_v4()))
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 /// Same as `test_user`, but `is_admin = 1`.
 pub(crate) async fn test_admin_user(pool: &SqlitePool) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO users (username, is_admin) VALUES (?, 1) RETURNING id",
-    )
-    .bind(format!("test-admin-{}", uuid::Uuid::new_v4()))
-    .fetch_one(pool)
-    .await
-    .unwrap()
+    sqlx::query_scalar("INSERT INTO users (username, is_admin) VALUES (?, 1) RETURNING id")
+        .bind(format!("test-admin-{}", uuid::Uuid::new_v4()))
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 #[cfg(test)]

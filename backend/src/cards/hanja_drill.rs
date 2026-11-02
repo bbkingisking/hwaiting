@@ -7,7 +7,7 @@
 //! it never writes to `cards_states` or `review_history`, so there's nothing
 //! here for `check_answer`'s grading path to interact with.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use utoipa::ToSchema;

@@ -105,7 +105,11 @@ pub fn database_url() -> String {
         .join("hwaiting");
 
     fs::create_dir_all(&dir).unwrap_or_else(|e| {
-        panic!("Failed to create default database directory {}: {}", dir.display(), e)
+        panic!(
+            "Failed to create default database directory {}: {}",
+            dir.display(),
+            e
+        )
     });
 
     format!("sqlite://{}/hwaiting.db", dir.display())
@@ -168,8 +172,14 @@ mod tests {
     // credential_file_name is pure - safe to run alongside anything else.
     #[test]
     fn credential_file_name_lowercases_and_dashes() {
-        assert_eq!(credential_file_name("HWAITING_JWT_SECRET"), "hwaiting-jwt-secret");
-        assert_eq!(credential_file_name("HWAITING_ADMIN_USERNAME"), "hwaiting-admin-username");
+        assert_eq!(
+            credential_file_name("HWAITING_JWT_SECRET"),
+            "hwaiting-jwt-secret"
+        );
+        assert_eq!(
+            credential_file_name("HWAITING_ADMIN_USERNAME"),
+            "hwaiting-admin-username"
+        );
     }
 
     // --- read_config / require_config / config_or ---------------------------

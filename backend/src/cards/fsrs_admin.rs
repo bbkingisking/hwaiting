@@ -4,9 +4,9 @@
 //! [`super::check`], which applies whichever parameters are currently
 //! stored to grade a single review.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{Json, extract::State, http::StatusCode};
 use chrono::Utc;
-use fsrs::{ComputeParametersInput, FSRSItem, FSRSReview, FSRS};
+use fsrs::{ComputeParametersInput, FSRS, FSRSItem, FSRSReview};
 use serde::Serialize;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -143,15 +143,16 @@ pub async fn optimize_fsrs(
 
     if items.is_empty() {
         return Err(AppError::BadRequest(
-            "Not enough review history. Each card needs at least 2 reviews to optimize.".to_string()
+            "Not enough review history. Each card needs at least 2 reviews to optimize."
+                .to_string(),
         ));
     }
 
     let review_count = items.iter().map(|item| item.reviews.len()).sum::<usize>();
 
     // Run the optimizer
-    let fsrs = FSRS::new(None)
-        .map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
+    let fsrs =
+        FSRS::new(None).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
     let input = ComputeParametersInput {
         train_set: items,
@@ -160,7 +161,8 @@ pub async fn optimize_fsrs(
         num_relearning_steps: None,
     };
 
-    let parameters = fsrs.compute_parameters(input)
+    let parameters = fsrs
+        .compute_parameters(input)
         .map_err(|e| AppError::Internal(format!("FSRS optimization error: {:?}", e)))?;
 
     // Store the optimized parameters
@@ -235,8 +237,14 @@ mod tests {
             items,
             vec![FSRSItem {
                 reviews: vec![
-                    FSRSReview { rating: 3, delta_t: 0 },
-                    FSRSReview { rating: 3, delta_t: 3 },
+                    FSRSReview {
+                        rating: 3,
+                        delta_t: 0
+                    },
+                    FSRSReview {
+                        rating: 3,
+                        delta_t: 3
+                    },
                 ],
             }]
         );
@@ -269,10 +277,19 @@ mod tests {
         assert_eq!(items.len(), 1);
         // The skipped row never touches last_review_time, so delta_t is
         // measured from the last *valid* review (1/1), not the skipped one.
-        assert_eq!(items[0].reviews, vec![
-            FSRSReview { rating: 3, delta_t: 0 },
-            FSRSReview { rating: 3, delta_t: 3 },
-        ]);
+        assert_eq!(
+            items[0].reviews,
+            vec![
+                FSRSReview {
+                    rating: 3,
+                    delta_t: 0
+                },
+                FSRSReview {
+                    rating: 3,
+                    delta_t: 3
+                },
+            ]
+        );
     }
 
     #[test]

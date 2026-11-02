@@ -1,14 +1,11 @@
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
+use crate::error::{AppError, AppJson};
 
 // Export/Import data structures
 
@@ -105,14 +102,15 @@ pub async fn export_data(
         LEFT JOIN wrong_answers wa ON wa.review_id = rh.id
         WHERE rh.user_id = ?
         ORDER BY rh.reviewed_at ASC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&pool)
     .await?;
 
-    let review_history: Vec<ReviewHistoryExport> = review_history_rows.iter().map(|row| {
-        ReviewHistoryExport {
+    let review_history: Vec<ReviewHistoryExport> = review_history_rows
+        .iter()
+        .map(|row| ReviewHistoryExport {
             card_id: row.get("card_id"),
             rating: row.get("rating"),
             scheduled_days: row.get("scheduled_days"),
@@ -121,14 +119,14 @@ pub async fn export_data(
             stability: row.get("stability"),
             difficulty: row.get("difficulty"),
             state: row.get("state"),
-            wrong_answer: row
-                .get::<Option<i64>, _>("target_sentence_id")
-                .map(|target_sentence_id| WrongAnswerExport {
+            wrong_answer: row.get::<Option<i64>, _>("target_sentence_id").map(
+                |target_sentence_id| WrongAnswerExport {
                     target_sentence_id,
                     answer: row.get("answer"),
-                }),
-        }
-    }).collect();
+                },
+            ),
+        })
+        .collect();
 
     // Get suppressed cards
     let suppressed_cards: Vec<i64> = sqlx::query_scalar(
@@ -136,7 +134,7 @@ pub async fn export_data(
         SELECT card_id
         FROM users_card_flags
         WHERE user_id = ? AND suppressed = 1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&pool)
@@ -150,7 +148,8 @@ pub async fn export_data(
         suppressed_cards,
     };
 
-    info!("Export complete: {} reviews, {} suppressed cards",
+    info!(
+        "Export complete: {} reviews, {} suppressed cards",
         export_data.review_history.len(),
         export_data.suppressed_cards.len(),
     );
@@ -177,13 +176,19 @@ pub async fn import_data(
     AppJson(payload): AppJson<ImportDataRequest>,
 ) -> Result<Json<ImportDataResponse>, AppError> {
     let user_id = auth.0;
-    info!("Importing data for user_id: {} (overwrite: {})", user_id, payload.overwrite);
+    info!(
+        "Importing data for user_id: {} (overwrite: {})",
+        user_id, payload.overwrite
+    );
 
     let data = payload.data;
 
     // Validate version
     if data.version != "1.0" {
-        return Err(AppError::BadRequest(format!("Unsupported export version: {}", data.version)));
+        return Err(AppError::BadRequest(format!(
+            "Unsupported export version: {}",
+            data.version
+        )));
     }
 
     // Reject invalid settings before an overwrite can replace any existing data.
@@ -207,25 +212,25 @@ pub async fn import_data(
             "DELETE FROM wrong_answers WHERE review_id IN
              (SELECT id FROM review_history WHERE user_id = ?)",
         )
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
-        
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query("DELETE FROM review_history WHERE user_id = ?")
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
-        
+
         // Keep revision tombstones so an old prompt cannot become valid again
         // after an overwrite removes this card's review history.
         sqlx::query(
             "UPDATE cards_states SET stability = 0, difficulty = 0, last_review = NULL,
              state = 'new', review_revision = review_revision + 1 WHERE user_id = ?",
         )
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
-        
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query("DELETE FROM users_card_flags WHERE user_id = ?")
             .bind(user_id)
             .execute(&mut *tx)
@@ -248,26 +253,28 @@ pub async fn import_data(
     // round trip per imported row. Loading the whole id set once instead
     // turns that into a single query no matter how large the import is, with
     // an in-memory lookup replacing each per-row check.
-    let valid_card_ids: std::collections::HashSet<i64> =
-        sqlx::query_scalar("SELECT id FROM cards")
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .collect();
+    let valid_card_ids: std::collections::HashSet<i64> = sqlx::query_scalar("SELECT id FROM cards")
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect();
     let valid_target_cards: std::collections::HashMap<i64, i64> = sqlx::query(
         "SELECT s.id AS target_sentence_id, s.card_id
          FROM targets t JOIN sentences s ON s.id = t.sentence_id",
     )
-        .fetch_all(&mut *tx)
-        .await?
-        .into_iter()
-        .map(|row| (row.get("target_sentence_id"), row.get("card_id")))
-        .collect();
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|row| (row.get("target_sentence_id"), row.get("card_id")))
+    .collect();
 
     // Import review history (must come before cards_states derivation)
     for review in data.review_history {
         if !valid_card_ids.contains(&review.card_id) {
-            warn!("Skipping review for non-existent card_id: {}", review.card_id);
+            warn!(
+                "Skipping review for non-existent card_id: {}",
+                review.card_id
+            );
             continue;
         }
 
@@ -353,7 +360,7 @@ pub async fn import_data(
             INSERT INTO users_card_flags (user_id, card_id, suppressed)
             VALUES (?, ?, 1)
             ON CONFLICT(user_id, card_id) DO UPDATE SET suppressed = 1
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(card_id)
@@ -407,7 +414,7 @@ pub async fn import_data(
             INSERT INTO users_fsrs_parameters (user_id, parameters)
             VALUES (?, ?)
             ON CONFLICT(user_id) DO UPDATE SET parameters = excluded.parameters
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(fsrs_params)
@@ -428,7 +435,10 @@ pub async fn import_data(
 }
 
 // Helper function to get user settings
-async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettingsExport, AppError> {
+async fn get_user_settings(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> Result<UserSettingsExport, AppError> {
     crate::user::ensure_settings_row(pool, user_id).await?;
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
@@ -445,14 +455,16 @@ async fn get_user_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettin
     .await?;
 
     // Get FSRS parameters if they exist
-    let fsrs_parameters: Option<String> = sqlx::query_scalar(
-        "SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let fsrs_parameters: Option<String> =
+        sqlx::query_scalar("SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
-    Ok(UserSettingsExport { core, fsrs_parameters })
+    Ok(UserSettingsExport {
+        core,
+        fsrs_parameters,
+    })
 }
 #[cfg(test)]
 mod tests {
@@ -468,11 +480,13 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[1.0,2.0,3.0]')")
-            .bind(user_id)
-            .execute(pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[1.0,2.0,3.0]')",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
 
         // Two reviews of card 1 (card 1 ends up "review"), one of card 2.
         sqlx::query(
@@ -516,8 +530,12 @@ mod tests {
             .bind(user_id).execute(&pool).await.unwrap();
 
         let before = serde_json::to_value(
-            export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0,
-        ).unwrap();
+            export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0,
+        )
+        .unwrap();
         for (field, value) in [
             ("day_boundary_hour", serde_json::json!(-1)),
             ("day_boundary_hour", serde_json::json!(24)),
@@ -527,12 +545,15 @@ mod tests {
             ("desired_retention", serde_json::json!(1.0)),
             ("daily_new_card_limit", serde_json::json!(-1)),
         ] {
-            let patch: crate::user::UpdateSettingsRequest = serde_json::from_value(
-                serde_json::json!({field: value}),
-            ).unwrap();
+            let patch: crate::user::UpdateSettingsRequest =
+                serde_json::from_value(serde_json::json!({field: value})).unwrap();
             let patch_error = match crate::user::update_settings(
-                State(pool.clone()), AuthUser(user_id), AppJson(patch),
-            ).await {
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(patch),
+            )
+            .await
+            {
                 Err(AppError::BadRequest(message)) => message,
                 _ => panic!("PATCH should reject {field}={value}"),
             };
@@ -543,17 +564,25 @@ mod tests {
                 invalid["review_history"] = serde_json::json!([]);
                 invalid["suppressed_cards"] = serde_json::json!([]);
                 match import_data(
-                    State(pool.clone()), AuthUser(user_id),
+                    State(pool.clone()),
+                    AuthUser(user_id),
                     AppJson(ImportDataRequest {
-                        data: serde_json::from_value(invalid).unwrap(), overwrite,
+                        data: serde_json::from_value(invalid).unwrap(),
+                        overwrite,
                     }),
-                ).await {
+                )
+                .await
+                {
                     Err(AppError::BadRequest(message)) => assert_eq!(message, patch_error),
                     _ => panic!("import should reject {field}={value}"),
                 }
                 let mut after = serde_json::to_value(
-                    export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0,
-                ).unwrap();
+                    export_data(State(pool.clone()), AuthUser(user_id))
+                        .await
+                        .unwrap()
+                        .0,
+                )
+                .unwrap();
                 after["exported_at"] = before["exported_at"].clone();
                 assert_eq!(after, before, "invalid import must preserve existing data");
                 let state: (f64, f64, String, String, i64) = sqlx::query_as(
@@ -569,15 +598,24 @@ mod tests {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
         for (hour, delay, retention, limit) in [(0, 0, 0.5, 0), (23, 3000, 0.99, i64::MAX)] {
-            let mut data = export_data(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+            let mut data = export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
             data.settings.core.day_boundary_hour = hour;
             data.settings.core.auto_progress_delay = delay;
             data.settings.core.desired_retention = retention;
             data.settings.core.daily_new_card_limit = limit;
             let _ = import_data(
-                State(pool.clone()), AuthUser(user_id),
-                AppJson(ImportDataRequest { data, overwrite: true }),
-            ).await.unwrap();
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(ImportDataRequest {
+                    data,
+                    overwrite: true,
+                }),
+            )
+            .await
+            .unwrap();
             let settings = get_user_settings(&pool, user_id).await.unwrap().core;
             assert_eq!(settings.day_boundary_hour, hour);
             assert_eq!(settings.auto_progress_delay, delay);
@@ -598,7 +636,10 @@ mod tests {
             .await
             .unwrap();
 
-        let exported = export_data(State(pool.clone()), AuthUser(source_id)).await.unwrap().0;
+        let exported = export_data(State(pool.clone()), AuthUser(source_id))
+            .await
+            .unwrap()
+            .0;
         assert!(!exported.settings.core.show_hanja_hints);
         assert_eq!(exported.review_history.len(), 3);
         assert_eq!(exported.suppressed_cards, vec![3]);
@@ -607,7 +648,10 @@ mod tests {
         let import_result = import_data(
             State(pool.clone()),
             AuthUser(dest_id),
-            AppJson(ImportDataRequest { data: exported, overwrite: false }),
+            AppJson(ImportDataRequest {
+                data: exported,
+                overwrite: false,
+            }),
         )
         .await
         .unwrap()
@@ -620,11 +664,18 @@ mod tests {
         assert_eq!(import_result.stats.card_states_derived, 2);
 
         // Settings round-tripped, including the FSRS parameters.
-        let dest_settings = export_data(State(pool.clone()), AuthUser(dest_id)).await.unwrap().0.settings;
+        let dest_settings = export_data(State(pool.clone()), AuthUser(dest_id))
+            .await
+            .unwrap()
+            .0
+            .settings;
         assert_eq!(dest_settings.core.daily_new_card_limit, 7);
         assert_eq!(dest_settings.core.day_boundary_hour, 2);
         assert!(!dest_settings.core.show_hanja_hints);
-        assert_eq!(dest_settings.fsrs_parameters.as_deref(), Some("[1.0,2.0,3.0]"));
+        assert_eq!(
+            dest_settings.fsrs_parameters.as_deref(),
+            Some("[1.0,2.0,3.0]")
+        );
 
         // cards_states derived from the *latest* review per card: card 1's
         // last review (1/4) had stability 3, not the first review's 1.
@@ -660,17 +711,26 @@ mod tests {
                 sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[7.0,8.0,9.0]')")
                     .bind(dest_id).execute(&pool).await.unwrap();
                 let mut data = export_data(State(pool.clone()), AuthUser(source_id))
-                    .await.unwrap().0;
+                    .await
+                    .unwrap()
+                    .0;
                 data.settings.fsrs_parameters = replacement.map(str::to_owned);
 
                 let _ = import_data(
-                    State(pool.clone()), AuthUser(dest_id),
+                    State(pool.clone()),
+                    AuthUser(dest_id),
                     AppJson(ImportDataRequest { data, overwrite }),
-                ).await.unwrap();
+                )
+                .await
+                .unwrap();
 
                 let settings = get_user_settings(&pool, dest_id).await.unwrap();
                 let expected = replacement.or_else(|| {
-                    if overwrite { None } else { Some("[7.0,8.0,9.0]") }
+                    if overwrite {
+                        None
+                    } else {
+                        Some("[7.0,8.0,9.0]")
+                    }
                 });
                 assert_eq!(settings.fsrs_parameters.as_deref(), expected);
                 // Clearing the destination must leave other users' parameters intact.
@@ -685,7 +745,10 @@ mod tests {
         let pool = test_pool().await;
         let source_id = test_user(&pool).await;
         setup_source_user(&pool, source_id).await;
-        let exported = export_data(State(pool.clone()), AuthUser(source_id)).await.unwrap().0;
+        let exported = export_data(State(pool.clone()), AuthUser(source_id))
+            .await
+            .unwrap()
+            .0;
 
         let dest_id = test_user(&pool).await;
         // Pre-existing data that overwrite:true should wipe.
@@ -697,16 +760,21 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 10, 1)")
-            .bind(dest_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 10, 1)",
+        )
+        .bind(dest_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let _ = import_data(
             State(pool.clone()),
             AuthUser(dest_id),
-            AppJson(ImportDataRequest { data: exported, overwrite: true }),
+            AppJson(ImportDataRequest {
+                data: exported,
+                overwrite: true,
+            }),
         )
         .await
         .unwrap();
@@ -718,7 +786,10 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert!(!has_old_review, "overwrite should have cleared the pre-existing review");
+        assert!(
+            !has_old_review,
+            "overwrite should have cleared the pre-existing review"
+        );
 
         let has_old_suppression: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM users_card_flags WHERE user_id = ? AND card_id = 10)",
@@ -727,7 +798,10 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert!(!has_old_suppression, "overwrite should have cleared the pre-existing suppression");
+        assert!(
+            !has_old_suppression,
+            "overwrite should have cleared the pre-existing suppression"
+        );
     }
 
     #[tokio::test]
@@ -784,7 +858,10 @@ mod tests {
         let result = import_data(
             State(pool.clone()),
             AuthUser(dest_id),
-            AppJson(ImportDataRequest { data, overwrite: false }),
+            AppJson(ImportDataRequest {
+                data,
+                overwrite: false,
+            }),
         )
         .await
         .unwrap()

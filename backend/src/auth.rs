@@ -1,16 +1,16 @@
-use axum::{
-    extract::{State, FromRef, FromRequestParts},
-    http::{request::Parts, StatusCode},
-    Json,
-};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+};
+use axum::{
+    Json,
+    extract::{FromRef, FromRequestParts, State},
+    http::{StatusCode, request::Parts},
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
-use sqlx::{SqlitePool, Row};
+use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
@@ -56,10 +56,11 @@ pub async fn login(
     let password = payload.password.trim();
 
     // Check if user exists
-    let user = sqlx::query("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?")
-        .bind(username)
-        .fetch_optional(&pool)
-        .await?;
+    let user =
+        sqlx::query("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(&pool)
+            .await?;
 
     match user {
         Some(row) => {
@@ -71,7 +72,10 @@ pub async fn login(
             // A passkey-only account has no password_hash to check against -
             // password login for it is correctly impossible, not just unset.
             let Some(password_hash) = password_hash else {
-                warn!("Password login attempt for passkey-only account: {}", username);
+                warn!(
+                    "Password login attempt for passkey-only account: {}",
+                    username
+                );
                 return Err(AppError::InvalidCredentials);
             };
 
@@ -162,11 +166,14 @@ pub async fn signup(
     // Generate JWT token
     let token = generate_token(user_id)?;
 
-    Ok((StatusCode::CREATED, Json(AuthResponse {
-        token,
-        username: Some(username.to_string()),
-        is_admin,
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(AuthResponse {
+            token,
+            username: Some(username.to_string()),
+            is_admin,
+        }),
+    ))
 }
 
 /// The parsing behind `jwt_ttl_seconds`, taking the raw config value
@@ -175,13 +182,18 @@ pub async fn signup(
 /// environment.
 fn parse_jwt_ttl_seconds(raw: Option<String>) -> Option<i64> {
     let raw = raw?;
-    let secs: i64 = raw
-        .trim()
-        .parse()
-        .unwrap_or_else(|_| panic!("HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw));
+    let secs: i64 = raw.trim().parse().unwrap_or_else(|_| {
+        panic!(
+            "HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'",
+            raw
+        )
+    });
 
     if secs < 0 {
-        panic!("HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'", raw);
+        panic!(
+            "HWAITING_JWT_EXPIRY_SECONDS must be a non-negative integer, got '{}'",
+            raw
+        );
     }
 
     (secs > 0).then_some(secs)
@@ -201,17 +213,24 @@ fn jwt_ttl_seconds() -> Option<i64> {
 /// `jwt_ttl_seconds` itself - split out so token generation can be tested
 /// without touching process environment or credential files.
 fn encode_token(user_id: i64, secret: &str, ttl_seconds: Option<i64>) -> Result<String, AppError> {
-    use jsonwebtoken::{encode, EncodingKey};
+    use jsonwebtoken::{EncodingKey, encode};
 
     let exp = ttl_seconds.map(|ttl| (Utc::now() + Duration::seconds(ttl)).timestamp());
 
     let claims = Claims { sub: user_id, exp };
 
-    let mut header = jsonwebtoken::Header { alg: Algorithm::HS256, ..Default::default() };
+    let mut header = jsonwebtoken::Header {
+        alg: Algorithm::HS256,
+        ..Default::default()
+    };
     header.alg = Algorithm::HS256;
 
-    encode(&header, &claims, &EncodingKey::from_secret(secret.as_bytes()))
-        .map_err(|e| AppError::Internal(format!("Failed to generate token: {}", e)))
+    encode(
+        &header,
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AppError::Internal(format!("Failed to generate token: {}", e)))
 }
 
 /// The actual decode+validate step behind `AuthUser`'s extractor, taking the
@@ -222,12 +241,16 @@ fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.required_spec_claims.clear(); // Don't require exp, iat, etc.
 
-    decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation)
-        .map(|data| data.claims)
-        .map_err(|e| {
-            warn!("Token validation failed: {:?}", e);
-            AppError::InvalidCredentials
-        })
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map(|data| data.claims)
+    .map_err(|e| {
+        warn!("Token validation failed: {:?}", e);
+        AppError::InvalidCredentials
+    })
 }
 
 /// Crate-visible (not just this module's) since [`crate::passkey`]'s
@@ -235,7 +258,11 @@ fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError> {
 /// username/password path does - passkey auth is just another way to reach
 /// this function, not a separate token scheme.
 pub(crate) fn generate_token(user_id: i64) -> Result<String, AppError> {
-    encode_token(user_id, &crate::credentials::jwt_secret(), jwt_ttl_seconds())
+    encode_token(
+        user_id,
+        &crate::credentials::jwt_secret(),
+        jwt_ttl_seconds(),
+    )
 }
 
 // JWT Claims
@@ -292,16 +319,17 @@ where
         let pool = SqlitePool::from_ref(state);
 
         // Check if user is admin
-        let is_admin: bool = sqlx::query_scalar(
-            "SELECT is_admin FROM users WHERE id = ?"
-        )
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await?
-        .unwrap_or(false);
+        let is_admin: bool = sqlx::query_scalar("SELECT is_admin FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await?
+            .unwrap_or(false);
 
         if !is_admin {
-            warn!("Non-admin user {} attempted to access admin endpoint", user_id);
+            warn!(
+                "Non-admin user {} attempted to access admin endpoint",
+                user_id
+            );
             return Err(AppError::Forbidden);
         }
 
@@ -367,7 +395,7 @@ mod tests {
     fn expired_token_is_rejected() {
         // Build a token with exp already in the past directly, rather than
         // via encode_token (which always computes exp relative to now).
-        use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+        use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
         // Well beyond jsonwebtoken's default 60s leeway, so this isn't a
         // borderline case.
         let claims = Claims {
@@ -378,7 +406,10 @@ mod tests {
         header.alg = Algorithm::HS256;
         let token = encode(&header, &claims, &EncodingKey::from_secret(b"s")).unwrap();
 
-        assert!(matches!(decode_token(&token, "s"), Err(AppError::InvalidCredentials)));
+        assert!(matches!(
+            decode_token(&token, "s"),
+            Err(AppError::InvalidCredentials)
+        ));
     }
 
     #[test]

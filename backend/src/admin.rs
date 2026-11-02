@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
@@ -134,7 +131,9 @@ pub async fn search_cards(
 
     let pattern = format!(
         "%{}%",
-        q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+        q.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
     );
     let card_id: Option<i64> = q.parse().ok();
     let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
@@ -176,12 +175,11 @@ pub async fn search_cards(
     let mut cards = Vec::with_capacity(rows.len());
     for row in rows {
         let sentence_id: i64 = row.get("sentence_id");
-        let alternatives: Vec<String> = sqlx::query_scalar(
-            "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?",
-        )
-        .bind(sentence_id)
-        .fetch_all(&pool)
-        .await?;
+        let alternatives: Vec<String> =
+            sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
+                .bind(sentence_id)
+                .fetch_all(&pool)
+                .await?;
 
         let sentence: String = row.get("sentence");
         let target: String = row.get("target");
@@ -374,35 +372,62 @@ pub async fn edit_card(
     // Resolve enum slugs -> lookup table ids (None: field absent; Some(None): clear it;
     // Some(Some(id)): set it). The frontend sends slugs but the columns store FKs.
     let pos_id = crate::enum_lookup::resolve_optional_id(&mut tx, "parts_of_speech", pos).await?;
-    let origin_type_id = crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", origin_type).await?;
+    let origin_type_id =
+        crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", origin_type).await?;
     let grade_id = crate::enum_lookup::resolve_optional_id(&mut tx, "grades", grade).await?;
     // grammar_pattern_id lives on `targets` as of migration 20240101000039,
     // not on `cards` - resolved here alongside the other enum slugs, but
     // written into the targets SET block below (alongside
     // speech_level_id/tense_id) rather than the cards SET block.
-    let grammar_pattern_id = crate::enum_lookup::resolve_optional_id(&mut tx, "grammar_patterns", grammar_pattern_slug).await?;
+    let grammar_pattern_id =
+        crate::enum_lookup::resolve_optional_id(&mut tx, "grammar_patterns", grammar_pattern_slug)
+            .await?;
 
     // Update cards table — build SET clause dynamically so absent fields are untouched
     // and nullable fields can be explicitly set to NULL
     {
         let mut sets: Vec<&str> = Vec::new();
-        if word.is_some()        { sets.push("word = ?") }
-        if definition.is_some()  { sets.push("definition = ?") }
-        if pos_id.is_some()         { sets.push("pos_id = ?") }
-        if origin_type_id.is_some() { sets.push("origin_type_id = ?") }
-        if hanja.is_some()       { sets.push("hanja = ?") }
-        if grade_id.is_some()       { sets.push("grade_id = ?") }
+        if word.is_some() {
+            sets.push("word = ?")
+        }
+        if definition.is_some() {
+            sets.push("definition = ?")
+        }
+        if pos_id.is_some() {
+            sets.push("pos_id = ?")
+        }
+        if origin_type_id.is_some() {
+            sets.push("origin_type_id = ?")
+        }
+        if hanja.is_some() {
+            sets.push("hanja = ?")
+        }
+        if grade_id.is_some() {
+            sets.push("grade_id = ?")
+        }
 
         if !sets.is_empty() {
             let sql = format!("UPDATE cards SET {} WHERE id = ?", sets.join(", "));
             debug!("Cards update SQL: {}", sql);
             let mut q = sqlx::query(&sql);
-            if let Some(ref v) = word        { q = q.bind(v.as_str()) }
-            if let Some(ref v) = definition  { q = q.bind(v.as_deref()) }
-            if let Some(v) = pos_id         { q = q.bind(v) }
-            if let Some(v) = origin_type_id { q = q.bind(v) }
-            if let Some(ref v) = hanja       { q = q.bind(v.as_deref()) }
-            if let Some(v) = grade_id       { q = q.bind(v) }
+            if let Some(ref v) = word {
+                q = q.bind(v.as_str())
+            }
+            if let Some(ref v) = definition {
+                q = q.bind(v.as_deref())
+            }
+            if let Some(v) = pos_id {
+                q = q.bind(v)
+            }
+            if let Some(v) = origin_type_id {
+                q = q.bind(v)
+            }
+            if let Some(ref v) = hanja {
+                q = q.bind(v.as_deref())
+            }
+            if let Some(v) = grade_id {
+                q = q.bind(v)
+            }
             let result = q.bind(card_id).execute(&mut *tx).await?;
             debug!("Cards update rows_affected: {}", result.rows_affected());
         }
@@ -411,8 +436,12 @@ pub async fn edit_card(
     // Update cards_translations (first English row)
     {
         let mut sets: Vec<&str> = Vec::new();
-        if trans_word.is_some() { sets.push("trans_word = ?") }
-        if trans_dfn.is_some()  { sets.push("trans_dfn = ?") }
+        if trans_word.is_some() {
+            sets.push("trans_word = ?")
+        }
+        if trans_dfn.is_some() {
+            sets.push("trans_dfn = ?")
+        }
 
         if !sets.is_empty() {
             let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
@@ -430,8 +459,12 @@ pub async fn edit_card(
                     sets.join(", ")
                 );
                 let mut q = sqlx::query(&sql);
-                if let Some(ref v) = trans_word { q = q.bind(v.as_str()) }
-                if let Some(ref v) = trans_dfn  { q = q.bind(v.as_deref()) }
+                if let Some(ref v) = trans_word {
+                    q = q.bind(v.as_str())
+                }
+                if let Some(ref v) = trans_dfn {
+                    q = q.bind(v.as_deref())
+                }
                 q.bind(card_id).bind(eng_id).execute(&mut *tx).await?;
             }
         }
@@ -458,17 +491,21 @@ pub async fn edit_card(
         if sentence.is_some() || target.is_some() {
             let effective_sentence = match &sentence {
                 Some(v) => v.clone(),
-                None => sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
-                    .bind(sid)
-                    .fetch_one(&mut *tx)
-                    .await?,
+                None => {
+                    sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
+                        .bind(sid)
+                        .fetch_one(&mut *tx)
+                        .await?
+                }
             };
             let effective_target = match &target {
                 Some(v) => v.clone(),
-                None => sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
-                    .bind(sid)
-                    .fetch_one(&mut *tx)
-                    .await?,
+                None => {
+                    sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
+                        .bind(sid)
+                        .fetch_one(&mut *tx)
+                        .await?
+                }
             };
             if !effective_sentence.contains(&effective_target) {
                 return Err(AppError::BadRequest(
@@ -509,8 +546,11 @@ pub async fn edit_card(
         // Same dynamically-built-SET-clause shape as the cards/
         // cards_translations updates above, rather than up to six separate
         // single-column statements against the same row.
-        let speech_level_id = crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug).await?;
-        let tense_id = crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
+        let speech_level_id =
+            crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug)
+                .await?;
+        let tense_id =
+            crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
         // is_honorific/is_humble are NOT NULL, so an explicit null clears to
         // the column's own default (false) rather than being rejected -
         // there's no NULL state on a boolean column for "clear" to mean
@@ -519,22 +559,49 @@ pub async fn edit_card(
         let is_humble = is_humble.map(|v| v.unwrap_or(false));
 
         let mut sets: Vec<&str> = Vec::new();
-        if target.is_some()          { sets.push("form = ?") }
-        if speech_level_id.is_some() { sets.push("speech_level_id = ?") }
-        if tense_id.is_some()        { sets.push("tense_id = ?") }
-        if grammar_pattern_id.is_some() { sets.push("grammar_pattern_id = ?") }
-        if is_honorific.is_some()    { sets.push("is_honorific = ?") }
-        if is_humble.is_some()       { sets.push("is_humble = ?") }
+        if target.is_some() {
+            sets.push("form = ?")
+        }
+        if speech_level_id.is_some() {
+            sets.push("speech_level_id = ?")
+        }
+        if tense_id.is_some() {
+            sets.push("tense_id = ?")
+        }
+        if grammar_pattern_id.is_some() {
+            sets.push("grammar_pattern_id = ?")
+        }
+        if is_honorific.is_some() {
+            sets.push("is_honorific = ?")
+        }
+        if is_humble.is_some() {
+            sets.push("is_humble = ?")
+        }
 
         if !sets.is_empty() {
-            let sql = format!("UPDATE targets SET {} WHERE sentence_id = ?", sets.join(", "));
+            let sql = format!(
+                "UPDATE targets SET {} WHERE sentence_id = ?",
+                sets.join(", ")
+            );
             let mut q = sqlx::query(&sql);
-            if let Some(ref v) = target        { q = q.bind(v.as_str()) }
-            if let Some(v) = speech_level_id      { q = q.bind(v) }
-            if let Some(v) = tense_id             { q = q.bind(v) }
-            if let Some(v) = grammar_pattern_id   { q = q.bind(v) }
-            if let Some(v) = is_honorific         { q = q.bind(v) }
-            if let Some(v) = is_humble            { q = q.bind(v) }
+            if let Some(ref v) = target {
+                q = q.bind(v.as_str())
+            }
+            if let Some(v) = speech_level_id {
+                q = q.bind(v)
+            }
+            if let Some(v) = tense_id {
+                q = q.bind(v)
+            }
+            if let Some(v) = grammar_pattern_id {
+                q = q.bind(v)
+            }
+            if let Some(v) = is_honorific {
+                q = q.bind(v)
+            }
+            if let Some(v) = is_humble {
+                q = q.bind(v)
+            }
             q.bind(sid).execute(&mut *tx).await?;
         }
 
@@ -549,7 +616,7 @@ pub async fn edit_card(
                 let trimmed = alt.trim();
                 if !trimmed.is_empty() {
                     sqlx::query(
-                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)"
+                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)",
                     )
                     .bind(sid)
                     .bind(trimmed)
@@ -565,7 +632,6 @@ pub async fn edit_card(
     info!("Card {} updated successfully", card_id);
     Ok(Json(EditCardResponse { success: true }))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -728,7 +794,10 @@ mod tests {
             AdminUser(admin_id),
             State(pool.clone()),
             AppPath(999999),
-            AppJson(UpdateCardRequest { word: Some("x".to_string()), ..Default::default() }),
+            AppJson(UpdateCardRequest {
+                word: Some("x".to_string()),
+                ..Default::default()
+            }),
         )
         .await;
 

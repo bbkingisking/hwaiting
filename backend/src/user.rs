@@ -1,14 +1,11 @@
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, SqlitePool};
 use tracing::info;
 use utoipa::ToSchema;
 
-use crate::error::{AppError, AppJson};
 use crate::auth::AuthUser;
+use crate::error::{AppError, AppJson};
 
 /// Lazily creates the `users_settings` row for `user_id` if it doesn't exist
 /// yet - every settings read/write path needs this first, so it's shared
@@ -74,17 +71,33 @@ pub(crate) fn validate_settings_values(
     desired_retention: Option<f64>,
     daily_new_card_limit: Option<i64>,
 ) -> Result<(), AppError> {
-    if let Some(v) = day_boundary_hour && !(0..=23).contains(&v) {
-        return Err(AppError::BadRequest("day_boundary_hour must be between 0 and 23".to_string()));
+    if let Some(v) = day_boundary_hour
+        && !(0..=23).contains(&v)
+    {
+        return Err(AppError::BadRequest(
+            "day_boundary_hour must be between 0 and 23".to_string(),
+        ));
     }
-    if let Some(v) = auto_progress_delay && !(0..=3000).contains(&v) {
-        return Err(AppError::BadRequest("auto_progress_delay must be between 0 and 3000".to_string()));
+    if let Some(v) = auto_progress_delay
+        && !(0..=3000).contains(&v)
+    {
+        return Err(AppError::BadRequest(
+            "auto_progress_delay must be between 0 and 3000".to_string(),
+        ));
     }
-    if let Some(v) = desired_retention && !(0.5..=0.99).contains(&v) {
-        return Err(AppError::BadRequest("desired_retention must be between 0.5 and 0.99".to_string()));
+    if let Some(v) = desired_retention
+        && !(0.5..=0.99).contains(&v)
+    {
+        return Err(AppError::BadRequest(
+            "desired_retention must be between 0.5 and 0.99".to_string(),
+        ));
     }
-    if let Some(v) = daily_new_card_limit && v.is_negative() {
-        return Err(AppError::BadRequest("new daily card limit must be a positive integer".to_string()));
+    if let Some(v) = daily_new_card_limit
+        && v.is_negative()
+    {
+        return Err(AppError::BadRequest(
+            "new daily card limit must be a positive integer".to_string(),
+        ));
     }
 
     Ok(())
@@ -117,8 +130,6 @@ pub struct UpdateSettingsRequest {
     pub history_threshold_lines: Option<bool>,
 }
 
-
-
 #[derive(Serialize, ToSchema)]
 pub struct UpdateSettingsResponse {
     pub success: bool,
@@ -142,12 +153,11 @@ pub async fn get_profile(
     let user_id = auth.0;
     info!("Getting profile for user_id: {}", user_id);
 
-    let (username, is_admin): (Option<String>, bool) = sqlx::query_as(
-        "SELECT username, is_admin FROM users WHERE id = ?"
-    )
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await?;
+    let (username, is_admin): (Option<String>, bool) =
+        sqlx::query_as("SELECT username, is_admin FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await?;
 
     Ok(Json(UserProfile { username, is_admin }))
 }
@@ -184,14 +194,16 @@ pub async fn get_settings(
     .await?;
 
     // Check if user has custom FSRS parameters
-    let has_fsrs_parameters: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users_fsrs_parameters WHERE user_id = ?)"
-    )
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await?;
+    let has_fsrs_parameters: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users_fsrs_parameters WHERE user_id = ?)")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await?;
 
-    Ok(Json(UserSettings { core, has_fsrs_parameters }))
+    Ok(Json(UserSettings {
+        core,
+        has_fsrs_parameters,
+    }))
 }
 
 // Update user settings
@@ -247,32 +259,79 @@ pub async fn update_settings(
     ensure_settings_row(&mut *tx, user_id).await?;
 
     let mut sets: Vec<&str> = Vec::new();
-    if show_hanja_hints.is_some()      { sets.push("show_hanja_hints = ?") }
-    if red_threshold.is_some()         { sets.push("red_threshold = ?") }
-    if yellow_threshold.is_some()      { sets.push("yellow_threshold = ?") }
-    if day_boundary_hour.is_some()     { sets.push("day_boundary_hour = ?") }
-    if auto_progress_on_correct.is_some() { sets.push("auto_progress_on_correct = ?") }
-    if auto_progress_delay.is_some()   { sets.push("auto_progress_delay = ?") }
-    if desired_retention.is_some()     { sets.push("desired_retention = ?") }
-    if daily_new_card_limit.is_some()  { sets.push("daily_new_card_limit = ?") }
-    if history_colorized_area.is_some()   { sets.push("history_colorized_area = ?") }
-    if history_colored_dots.is_some()     { sets.push("history_colored_dots = ?") }
-    if history_threshold_lines.is_some()  { sets.push("history_threshold_lines = ?") }
+    if show_hanja_hints.is_some() {
+        sets.push("show_hanja_hints = ?")
+    }
+    if red_threshold.is_some() {
+        sets.push("red_threshold = ?")
+    }
+    if yellow_threshold.is_some() {
+        sets.push("yellow_threshold = ?")
+    }
+    if day_boundary_hour.is_some() {
+        sets.push("day_boundary_hour = ?")
+    }
+    if auto_progress_on_correct.is_some() {
+        sets.push("auto_progress_on_correct = ?")
+    }
+    if auto_progress_delay.is_some() {
+        sets.push("auto_progress_delay = ?")
+    }
+    if desired_retention.is_some() {
+        sets.push("desired_retention = ?")
+    }
+    if daily_new_card_limit.is_some() {
+        sets.push("daily_new_card_limit = ?")
+    }
+    if history_colorized_area.is_some() {
+        sets.push("history_colorized_area = ?")
+    }
+    if history_colored_dots.is_some() {
+        sets.push("history_colored_dots = ?")
+    }
+    if history_threshold_lines.is_some() {
+        sets.push("history_threshold_lines = ?")
+    }
 
     if !sets.is_empty() {
-        let sql = format!("UPDATE users_settings SET {} WHERE user_id = ?", sets.join(", "));
+        let sql = format!(
+            "UPDATE users_settings SET {} WHERE user_id = ?",
+            sets.join(", ")
+        );
         let mut q = sqlx::query(&sql);
-        if let Some(v) = show_hanja_hints      { q = q.bind(v) }
-        if let Some(v) = red_threshold         { q = q.bind(v) }
-        if let Some(v) = yellow_threshold      { q = q.bind(v) }
-        if let Some(v) = day_boundary_hour     { q = q.bind(v) }
-        if let Some(v) = auto_progress_on_correct { q = q.bind(v) }
-        if let Some(v) = auto_progress_delay   { q = q.bind(v) }
-        if let Some(v) = desired_retention     { q = q.bind(v) }
-        if let Some(v) = daily_new_card_limit  { q = q.bind(v) }
-        if let Some(v) = history_colorized_area   { q = q.bind(v) }
-        if let Some(v) = history_colored_dots     { q = q.bind(v) }
-        if let Some(v) = history_threshold_lines  { q = q.bind(v) }
+        if let Some(v) = show_hanja_hints {
+            q = q.bind(v)
+        }
+        if let Some(v) = red_threshold {
+            q = q.bind(v)
+        }
+        if let Some(v) = yellow_threshold {
+            q = q.bind(v)
+        }
+        if let Some(v) = day_boundary_hour {
+            q = q.bind(v)
+        }
+        if let Some(v) = auto_progress_on_correct {
+            q = q.bind(v)
+        }
+        if let Some(v) = auto_progress_delay {
+            q = q.bind(v)
+        }
+        if let Some(v) = desired_retention {
+            q = q.bind(v)
+        }
+        if let Some(v) = daily_new_card_limit {
+            q = q.bind(v)
+        }
+        if let Some(v) = history_colorized_area {
+            q = q.bind(v)
+        }
+        if let Some(v) = history_colored_dots {
+            q = q.bind(v)
+        }
+        if let Some(v) = history_threshold_lines {
+            q = q.bind(v)
+        }
         q.bind(user_id).execute(&mut *tx).await?;
     }
 
@@ -294,7 +353,10 @@ mod tests {
         let user_id = test_user(&pool).await;
         let other_user_id = test_user(&pool).await;
 
-        let initial = get_settings(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+        let initial = get_settings(State(pool.clone()), AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
         assert!(initial.core.show_hanja_hints);
 
         for patch in [
@@ -310,23 +372,37 @@ mod tests {
             .await
             .unwrap();
             assert!(response.success);
-            let saved = get_settings(State(pool.clone()), AuthUser(user_id)).await.unwrap().0;
+            let saved = get_settings(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
             assert!(!saved.core.show_hanja_hints);
-            assert_eq!(saved.core.daily_new_card_limit, initial.core.daily_new_card_limit);
+            assert_eq!(
+                saved.core.daily_new_card_limit,
+                initial.core.daily_new_card_limit
+            );
         }
 
-        let other = get_settings(State(pool.clone()), AuthUser(other_user_id)).await.unwrap().0;
+        let other = get_settings(State(pool.clone()), AuthUser(other_user_id))
+            .await
+            .unwrap()
+            .0;
         assert!(other.core.show_hanja_hints);
 
         let response = update_settings(
             State(pool.clone()),
             AuthUser(user_id),
-            AppJson(serde_json::from_value(serde_json::json!({ "show_hanja_hints": true })).unwrap()),
+            AppJson(
+                serde_json::from_value(serde_json::json!({ "show_hanja_hints": true })).unwrap(),
+            ),
         )
         .await
         .unwrap();
         assert!(response.success);
-        let restored = get_settings(State(pool), AuthUser(user_id)).await.unwrap().0;
+        let restored = get_settings(State(pool), AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
         assert!(restored.core.show_hanja_hints);
         assert!(restored.core.history_colored_dots);
     }

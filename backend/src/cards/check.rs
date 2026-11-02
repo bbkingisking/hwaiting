@@ -2,9 +2,9 @@
 //! FSRS state, and reveals the half of the card withheld by
 //! [`super::next::CardPrompt`].
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use chrono::Utc;
-use fsrs::{FSRS, MemoryState, DEFAULT_PARAMETERS};
+use fsrs::{DEFAULT_PARAMETERS, FSRS, MemoryState};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
@@ -12,8 +12,8 @@ use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson, AppPath};
 
-use super::{hanja_hints_for, review_prefs, HanjaHint};
 use super::time::parse_flexible_datetime;
+use super::{HanjaHint, hanja_hints_for, review_prefs};
 
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
@@ -159,12 +159,11 @@ pub async fn check_answer(
     let grammar_pattern_endings: Vec<String> =
         serde_json::from_str(&grammar_pattern_endings_json).unwrap_or_default();
 
-    let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?"
-    )
-    .bind(sentence_id)
-    .fetch_all(&pool)
-    .await?;
+    let alternatives: Vec<String> =
+        sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
+            .bind(sentence_id)
+            .fetch_all(&pool)
+            .await?;
 
     let correct = is_correct(&payload.answer, &target, &alternatives);
 
@@ -187,16 +186,15 @@ pub async fn check_answer(
     let rating_str = if correct { "good" } else { "again" };
 
     // Load user's optimized FSRS parameters, or fall back to defaults
-    let params_json: Option<String> = sqlx::query_scalar(
-        "SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(&pool)
-    .await?;
+    let params_json: Option<String> =
+        sqlx::query_scalar("SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await?;
 
     let default_params = DEFAULT_PARAMETERS;
-    let custom_params: Option<Vec<f32>> = params_json
-        .and_then(|json| serde_json::from_str(&json).ok());
+    let custom_params: Option<Vec<f32>> =
+        params_json.and_then(|json| serde_json::from_str(&json).ok());
     let params: &[f32] = custom_params.as_deref().unwrap_or(&default_params);
 
     let desired_retention = review_prefs(&pool, user_id).await?.desired_retention;
@@ -221,7 +219,8 @@ pub async fn check_answer(
         return Err(AppError::StaleReview);
     }
 
-    let fsrs = FSRS::new(Some(params)).map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
+    let fsrs = FSRS::new(Some(params))
+        .map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
 
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
@@ -229,7 +228,9 @@ pub async fn check_answer(
         let difficulty: Option<f64> = row.get("difficulty");
         let last_review: Option<String> = row.get("last_review");
 
-        if let (Some(stability), Some(difficulty), Some(last_review_str)) = (stability, difficulty, last_review) {
+        if let (Some(stability), Some(difficulty), Some(last_review_str)) =
+            (stability, difficulty, last_review)
+        {
             let last_review_time = parse_flexible_datetime(&last_review_str)
                 .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?;
 
@@ -258,7 +259,11 @@ pub async fn check_answer(
 
     // This handler only ever grades binary correct/incorrect (see above), so
     // only these two of FSRS's four next-state slots are ever selected.
-    let scheduled_state = if correct { next_states.good } else { next_states.again };
+    let scheduled_state = if correct {
+        next_states.good
+    } else {
+        next_states.again
+    };
 
     // Calculate scheduled days for tracking
     let scheduled_days = scheduled_state.interval;
@@ -398,7 +403,11 @@ mod tests {
         .unwrap()
     }
 
-    async fn card_state(pool: &SqlitePool, user_id: i64, card_id: i64) -> (Option<f64>, Option<f64>, Option<String>, Option<String>) {
+    async fn card_state(
+        pool: &SqlitePool,
+        user_id: i64,
+        card_id: i64,
+    ) -> (Option<f64>, Option<f64>, Option<String>, Option<String>) {
         sqlx::query_as(
             "SELECT stability, difficulty, last_review, state FROM cards_states WHERE user_id = ? AND card_id = ?",
         )
@@ -420,7 +429,10 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target, review_revision: 0 }),
+            AppJson(CheckRequest {
+                answer: target,
+                review_revision: 0,
+            }),
         )
         .await
         .unwrap();
@@ -433,20 +445,24 @@ mod tests {
         assert!(difficulty.is_some());
         assert!(last_review.is_some());
 
-        let review_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?")
-            .bind(user_id)
-            .bind(card_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let review_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(review_count, 1);
 
-        let rating: String = sqlx::query_scalar("SELECT rating FROM review_history WHERE user_id = ? AND card_id = ?")
-            .bind(user_id)
-            .bind(card_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let rating: String = sqlx::query_scalar(
+            "SELECT rating FROM review_history WHERE user_id = ? AND card_id = ?",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(rating, "good");
     }
 
@@ -460,7 +476,10 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: "definitely wrong".to_string(), review_revision: 0 }),
+            AppJson(CheckRequest {
+                answer: "definitely wrong".to_string(),
+                review_revision: 0,
+            }),
         )
         .await
         .unwrap();
@@ -486,7 +505,10 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target, review_revision: 0 }),
+            AppJson(CheckRequest {
+                answer: target,
+                review_revision: 0,
+            }),
         )
         .await
         .unwrap();
@@ -497,7 +519,10 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: "definitely wrong".to_string(), review_revision: 1 }),
+            AppJson(CheckRequest {
+                answer: "definitely wrong".to_string(),
+                review_revision: 1,
+            }),
         )
         .await
         .unwrap();
@@ -507,12 +532,14 @@ mod tests {
         let (_, _, _, state) = card_state(&pool, user_id, card_id).await;
         assert_eq!(state.as_deref(), Some("relearning"));
 
-        let review_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?")
-            .bind(user_id)
-            .bind(card_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let review_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = ?",
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(review_count, 2);
     }
 
@@ -544,7 +571,10 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AuthUser(user_id),
-            AppJson(CheckRequest { answer: target, review_revision: 0 }),
+            AppJson(CheckRequest {
+                answer: target,
+                review_revision: 0,
+            }),
         )
         .await
         .unwrap();
