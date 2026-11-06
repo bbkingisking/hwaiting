@@ -22,8 +22,9 @@ beforeEach(context => {
   globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
 })
 
-afterEach(() => {
+afterEach(context => {
   cleanups.forEach(cleanup => cleanup())
+  context.mock.timers.reset()
   delete globalThis.window
   delete globalThis.document
 })

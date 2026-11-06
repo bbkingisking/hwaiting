@@ -112,7 +112,7 @@ export function describeCeremonyError(e: unknown, label: string): string {
 // binary serves both the API and the built frontend. VITE_API_BASE is
 // this build's own compiled-in override for the opposite case: a build
 // deployed to a static host with no backend of its own (e.g.
-// hwaiting-demo.surge.sh), baked in at `npm run build` time (see
+// hwaiting-demo.surge.sh), baked in at `deno task build` time (see
 // hwaiting-demo's install.sh) since there's no server-side process there
 // to read an env var from at request time. This is independent of the
 // backend's HWAITING_RP_ID/HWAITING_RP_ORIGINS config, which must match
