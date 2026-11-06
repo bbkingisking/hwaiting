@@ -25,6 +25,7 @@ node_modules/
 
 # build outputs
 dist/
+dist-demo/
 build/
 .next/
 out/
@@ -73,8 +74,3 @@ coverage/
 
 # misc
 *.pem
-
-# lockfiles (keep ONE, ignore others if not used)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml

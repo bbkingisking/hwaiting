@@ -4,11 +4,12 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "deno test --no-check -A tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "generate-api-types": "bash scripts/generate-api-types.sh"
+    "generate-api-types": "bash scripts/generate-api-types.sh",
+    "generate-api-types:from-spec": "openapi-typescript"
   },
   "keywords": [],
   "author": "",

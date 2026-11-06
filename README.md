@@ -7,7 +7,7 @@ Clone, build backend, build frontend, launch:
 ```sh
 git clone "https://github.com/bbkingisking/hwaiting"
 cargo build --release --manifest-path hwaiting/backend/Cargo.toml
-npm --prefix hwaiting/frontend install && npm --prefix hwaiting/frontend run build
+(cd hwaiting/frontend && deno install --frozen-lockfile && deno task build)
 HWAITING_ADMIN_PASSWORD=password HWAITING_JWT_SECRET=$(openssl rand -base64 32) HWAITING_STATIC_DIR=./hwaiting/frontend/dist ./hwaiting/backend/target/release/hwaiting
 ```
 
