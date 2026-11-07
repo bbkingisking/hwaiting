@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react'
 import { Copy, Check } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -27,6 +27,7 @@ import {
 import { getHistory, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
 import { useFieldValues } from '@/components/field-values-provider'
+import { Percentage } from '@/components/percentage'
 
 interface ReviewHistoryDialogProps {
   open: boolean
@@ -65,7 +66,7 @@ function formatFirstDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between items-baseline">
       <span className="text-xs text-muted-foreground">{label}</span>
@@ -89,9 +90,7 @@ function BreakdownRowItem({ row, labelMap }: {
       <span className="text-xs flex-1 truncate" title={display}>
         {display}
       </span>
-      <span className="text-xs font-semibold tabular-nums w-12 text-right">
-        {Math.round(row.accuracy)}%
-      </span>
+      <Percentage value={row.accuracy} className="text-xs font-semibold tabular-nums w-12 text-right" />
       <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
         ({row.reviews})
       </span>
@@ -384,7 +383,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
           <div className="flex justify-between px-1 pt-1">
             {days.map(d => (
               <div key={d.date} className="flex flex-col items-center gap-0.5">
-                <span className="text-xs font-semibold">{Math.round(d.percentage)}%</span>
+                <Percentage value={d.percentage} className="text-xs font-semibold" />
                 <span className="text-xs text-muted-foreground">{formatShortDate(d.date)}</span>
               </div>
             ))}
@@ -409,7 +408,9 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
               <SummaryStat label="Total Reviews" value={summary.total_reviews.toLocaleString()} />
               <SummaryStat label="Cards Reviewed" value={summary.total_cards_reviewed.toLocaleString()} />
-              <SummaryStat label="Accuracy" value={`${summary.total_accuracy.toFixed(1)}%`} />
+              <SummaryStat label="Accuracy" value={
+                <Percentage value={summary.total_accuracy}>{summary.total_accuracy.toFixed(1)}%</Percentage>
+              } />
               <SummaryStat label="Avg / Day" value={summary.avg_reviews_per_day.toFixed(1)} />
               <SummaryStat label="Current Streak" value={`${summary.current_streak} day${summary.current_streak !== 1 ? 's' : ''}`} />
               <SummaryStat label="Longest Streak" value={`${summary.longest_streak} day${summary.longest_streak !== 1 ? 's' : ''}`} />

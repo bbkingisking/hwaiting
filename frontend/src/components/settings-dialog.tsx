@@ -25,6 +25,7 @@ import { CARD_THEMES } from '@/lib/card-themes'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
 import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { Percentage } from '@/components/percentage'
 
 interface SettingsDialogProps {
   open: boolean
@@ -283,7 +284,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <Label id="red-threshold-label">Red threshold (below)</Label>
-                      <span className="text-sm text-muted-foreground">{settings.redThreshold}%</span>
+                      <Percentage value={settings.redThreshold} className="text-sm text-muted-foreground">
+                        {settings.redThreshold}%
+                      </Percentage>
                     </div>
                     <Slider
                       aria-labelledby="red-threshold-label"
@@ -302,7 +305,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
-                      <span className="text-sm text-muted-foreground">{settings.yellowThreshold}%</span>
+                      <Percentage value={settings.yellowThreshold} className="text-sm text-muted-foreground">
+                        {settings.yellowThreshold}%
+                      </Percentage>
                     </div>
                     <Slider
                       aria-labelledby="yellow-threshold-label"
@@ -448,9 +453,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <Label id="desired-retention-label">Desired retention</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {Math.round(settings.desiredRetention * 100)}%
-                  </span>
+                  <Percentage value={settings.desiredRetention * 100} className="text-sm text-muted-foreground" />
                 </div>
                 <Slider
                   aria-labelledby="desired-retention-label"
