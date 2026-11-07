@@ -239,7 +239,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
   const chartData = days.map(d => ({
     date: d.date,
     label: formatShortDate(d.date),
-    percentage: Math.round(d.percentage),
+    percentage: d.percentage,
     total: d.total,
     correct: d.correct,
   }))
@@ -324,7 +324,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                             {formatDate(item.payload.date)}
                           </span>
                           <span className="font-semibold">
-                            {value}% correct
+                            {Math.round(Number(value))}% correct
                           </span>
                           <span className="text-muted-foreground text-xs">
                             {item.payload.correct} / {item.payload.total} cards

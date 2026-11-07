@@ -106,9 +106,9 @@ pub(super) fn review_day<Tz: TimeZone>(
     Ok(logical_today_date(local.naive_local(), day_boundary_hour))
 }
 
-/// Truncated integer accuracy percentage; None when there are no reviews.
-pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<i64> {
-    (total > 0).then(|| correct * 100 / total)
+/// Unrounded accuracy percentage; None when there are no reviews.
+pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<f64> {
+    (total > 0).then(|| (correct as f64 / total as f64) * 100.0)
 }
 
 /// Parses a timestamp that may be in either format this app has ever
@@ -277,18 +277,19 @@ mod tests {
 
     #[test]
     fn accuracy_percentage_all_correct() {
-        assert_eq!(accuracy_percentage(5, 5), Some(100));
+        assert_eq!(accuracy_percentage(5, 5), Some(100.0));
     }
 
     #[test]
-    fn accuracy_percentage_truncates_not_rounds() {
-        // 2/3 = 66.67%, truncated to 66, not rounded to 67
-        assert_eq!(accuracy_percentage(2, 3), Some(66));
+    fn accuracy_percentage_preserves_fractional_precision() {
+        for (correct, total, expected) in [(2, 3, 66.66666666666667), (8, 9, 88.88888888888889)] {
+            assert!((accuracy_percentage(correct, total).unwrap() - expected).abs() < 1e-12);
+        }
     }
 
     #[test]
     fn accuracy_percentage_zero_correct() {
-        assert_eq!(accuracy_percentage(0, 5), Some(0));
+        assert_eq!(accuracy_percentage(0, 5), Some(0.0));
     }
 
     // --- parse_flexible_datetime -------------------------------------------

@@ -68,7 +68,7 @@ export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
       )}
       <span className={cn(percentage !== null && getPercentageColor(percentage, settings))}>
         <span className="sr-only">Overall accuracy: </span>
-        {percentage !== null ? `${percentage}%` : '—'}
+        {percentage !== null ? `${Math.round(percentage)}%` : '—'}
       </span>
     </footer>
   )
