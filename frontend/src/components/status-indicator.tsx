@@ -4,6 +4,7 @@ import { cn, getPercentageColor } from '@/lib/utils'
 import { useSettings } from '@/components/settings-provider'
 import { useTimeUntil } from '@/hooks/use-time-until'
 import { parseDueAt, scheduleReviewRefresh } from '@/lib/review-timing'
+import { Percentage } from '@/components/percentage'
 
 export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
   nextCardDueAt?: string | null
@@ -68,7 +69,9 @@ export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
       )}
       <span className={cn(percentage !== null && getPercentageColor(percentage, settings))}>
         <span className="sr-only">Overall accuracy: </span>
-        {percentage !== null ? `${Math.round(percentage)}%` : '—'}
+        {percentage !== null ? (
+          <Percentage value={percentage} />
+        ) : '—'}
       </span>
     </footer>
   )
