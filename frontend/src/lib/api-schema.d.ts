@@ -707,7 +707,10 @@ export interface components {
             /** Format: int64 */
             correct: number;
             date: string;
-            /** Format: int64 */
+            /**
+             * Format: double
+             * @description Unrounded accuracy percentage (0–100).
+             */
             percentage: number;
             /** Format: int64 */
             total: number;
@@ -958,7 +961,10 @@ export interface components {
             /** Format: int64 */
             new_today_count: number;
             next_due_at?: string | null;
-            /** Format: int64 */
+            /**
+             * Format: double
+             * @description Unrounded accuracy percentage (0–100); null when there are no counted reviews today.
+             */
             percentage?: number | null;
             /** Format: int64 */
             reviews_today: number;

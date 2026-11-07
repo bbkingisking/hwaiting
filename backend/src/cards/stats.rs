@@ -64,7 +64,8 @@ pub struct StatsResponse {
     due_count: i64,
     reviews_today: i64,
     correct_today: i64,
-    percentage: Option<i64>,
+    /// Unrounded accuracy percentage (0–100); null when there are no counted reviews today.
+    percentage: Option<f64>,
     next_due_at: Option<String>,
     new_today_count: i64,
 }
@@ -74,8 +75,8 @@ pub struct DayHistory {
     pub date: String,
     pub total: i64,
     pub correct: i64,
-    // Truncated integer, same computation as the status bar percentage
-    pub percentage: i64,
+    /// Unrounded accuracy percentage (0–100).
+    pub percentage: f64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -316,7 +317,7 @@ async fn query_timeseries_at<Tz: TimeZone>(
             date: day.to_string(),
             total,
             correct,
-            percentage: accuracy_percentage(correct, total).unwrap_or(0),
+            percentage: accuracy_percentage(correct, total).unwrap_or(0.0),
         })
         .collect())
 }
@@ -708,16 +709,17 @@ mod tests {
         let days = query_timeseries_at(&pool, user_id, 4, &now).await.unwrap();
         let counts: Vec<_> = days
             .iter()
-            .map(|day| (day.date.as_str(), day.total, day.correct, day.percentage))
+            .map(|day| (day.date.as_str(), day.total, day.correct))
             .collect();
         assert_eq!(
             counts,
             vec![
-                ("2026-10-23", 1, 1, 100),
-                ("2026-10-24", 3, 2, 66),
-                ("2026-10-25", 1, 1, 100)
+                ("2026-10-23", 1, 1),
+                ("2026-10-24", 3, 2),
+                ("2026-10-25", 1, 1)
             ]
         );
+        assert!((days[1].percentage - 66.66666666666667).abs() < 1e-12);
         // A window starting before the fall-back must include 4am BST,
         // rather than starting an hour late after subtracting 96 hours.
         let later = parse_flexible_datetime("2026-10-28T12:00:00Z")
@@ -814,7 +816,35 @@ mod tests {
             .0;
         assert_eq!(stats.reviews_today, 1);
         assert_eq!(stats.correct_today, 0);
-        assert_eq!(stats.percentage, Some(0));
+        assert_eq!(stats.percentage, Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn stats_and_history_serialize_unrounded_accuracy() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let today = sqlite_datetime(logical_today_start(4) + chrono::Duration::hours(1));
+        for index in 0..9 {
+            let rating = if index < 8 { "good" } else { "again" };
+            insert_review(&pool, user_id, 1, rating, "review", &today).await;
+        }
+
+        let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
+        let history = get_history(State(pool), crate::auth::AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
+        let stats_json = serde_json::to_value(stats).unwrap();
+        let history_json = serde_json::to_value(history).unwrap();
+        for percentage in [
+            &stats_json["percentage"],
+            &history_json["timeseries"][0]["percentage"],
+        ] {
+            assert!((percentage.as_f64().unwrap() - 88.88888888888889).abs() < 1e-12);
+        }
     }
 
     #[tokio::test]
