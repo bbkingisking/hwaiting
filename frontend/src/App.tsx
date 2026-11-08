@@ -1,3 +1,4 @@
+import { canKeepSuccessorAfterReview } from '@/lib/review-events'
 import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { useState, useEffect, useEffectEvent, useRef } from 'react'
@@ -56,11 +57,15 @@ function AppContent() {
   const acceptedReview = useRef<{ cardId: number; revision: number } | null>(null)
   const acceptedContent = useRef<{ cardId: number; revision: number } | null>(null)
   const checkingRef = useRef(false)
+  const submissionVersion = useRef(0)
+  const allowCurrentCandidate = useRef(false)
+  const refillTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   const validationTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   useEffect(() => {
     setStaleReason(null)
     acceptedReview.current = null
     acceptedContent.current = null
+    allowCurrentCandidate.current = false
   }, [card?.card_id, card?.review_revision, card?.content_revision])
 
   const { isAuthenticated } = useAuth()
@@ -73,7 +78,7 @@ function AppContent() {
     if (isAuthenticated) {
       loadCardCold()
     }
-    return () => { ++cardRequestId.current; cancelPrefetch() }
+    return () => { ++cardRequestId.current; ++submissionVersion.current; cancelPrefetch() }
   }, [isAuthenticated])
 
   const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
@@ -87,38 +92,58 @@ function AppContent() {
     }
     if (change === 'import' || !card || loading) {
       loadCardCold()
+    } else {
+      refillTask.current?.request()
     }
   })
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
-  // Events invalidate local knowledge; they never advance the displayed card.
-  // While empty, refresh availability and its deadline. Otherwise preserve the
-  // answer, refresh stats, and discard prefetch until Next needs a replacement.
-  // The deadline timer still handles time passing without a server mutation.
-  // Own writes keep their HTTP-response flow, including refreshes without SSE.
+  // Remote reviews complete this person's attempt on another device. Discard
+  // that attempt automatically; own echoes leave the HTTP-response flow alone.
+  // Other changes preserve active work and replenish the disposable successor.
   const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
     if (!isAuthenticated || event.own) return
     if (event.type === 'settings-changed' && !event.queue_affected) return
     setStatsKey(value => value + 1)
     const active = currentCard.current
-    // Even a review of another card can consume the daily new-card allowance
-    // or change ordering. Invalidate conservatively, but fetch only on Next.
-    cancelPrefetch()
+    if (event.type !== 'card-reviewed' || !canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, event.card_id)) {
+      cancelPrefetch()
+    }
     if (event.type === 'card-reviewed' && active?.card_id === event.card_id && event.review_revision > active.review_revision) {
       const accepted = acceptedReview.current
       if (!accepted || accepted.cardId !== active.card_id || accepted.revision < event.review_revision) {
-        setStaleReason('This card has already been reviewed. Continue to the next card.')
+        discardReviewedCard()
+        return
       }
     } else if (event.type === 'queue-changed' && event.suppressed && active?.card_id === event.card_id) {
       setStaleReason('This card was suppressed elsewhere. Continue to the next card.')
     } else if (event.type === 'card-updated' && active?.card_id === event.card_id) {
+      allowCurrentCandidate.current = true
       setStaleReason('This card was edited elsewhere. Continue to load a fresh card.')
     } else if (event.type === 'resync-required' || event.type === 'state-reset') {
       validationTask.current?.request()
     }
     if (!active) validationTask.current?.request()
+    else if (!prefetchRef.current) refillTask.current?.request()
   })
+
+  const discardReviewedCard = () => {
+    ++submissionVersion.current
+    checkingRef.current = false
+    setChecking(false)
+    setSubmitError(null)
+    setLastCheckMs(null)
+    setStaleReason(null)
+    currentCard.current = null
+    setCard(null)
+    // A ready, still-eligible successor is promoted synchronously. Otherwise
+    // show loading, never leave an already-reviewed card available to submit.
+    setLoading(true)
+    void advanceToNextCard().catch(() => {
+      validationTask.current?.request()
+    })
+  }
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -140,13 +165,35 @@ function AppContent() {
       const revision = accepted?.cardId === active.card_id ? Math.max(active.review_revision, accepted.revision) : active.review_revision
       const edited = acceptedContent.current
       const contentRevision = edited?.cardId === active.card_id ? edited.revision : active.content_revision
-      if (!state.exists || state.suppressed || state.review_revision !== revision || state.content_revision !== contentRevision) {
+      if (state.review_revision > revision && state.exists && !state.suppressed && state.content_revision === contentRevision) {
+        discardReviewedCard()
+      } else if (!state.exists || state.suppressed || state.review_revision !== revision || state.content_revision !== contentRevision) {
+        allowCurrentCandidate.current = true
+        cancelPrefetch()
+        refillTask.current?.request()
         setStaleReason('This card changed while you were away. Continue to load a fresh card.')
       }
     })
     validationTask.current = task
     const unsubscribe = subscribeLiveEvents(handleLiveEvent)
     return () => { unsubscribe(); task.dispose(); validationTask.current = null }
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const task = createRefreshTask(async current => {
+      const active = currentCard.current
+      if (!active || prefetchRef.current) return
+      const slot = startPrefetch(allowCurrentCandidate.current ? undefined : active.card_id)
+      const result = await slot.promise
+      if (!current()) return
+      if (!result && currentCard.current === active) {
+        if (prefetchRef.current === slot) prefetchRef.current = null
+        throw new Error('Successor refresh failed')
+      }
+    })
+    refillTask.current = task
+    return () => { task.dispose(); refillTask.current = null }
   }, [isAuthenticated])
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.
@@ -160,7 +207,7 @@ function AppContent() {
   // Kick off a background fetch for the card after `currentCardId`.
   // Fires immediately — no waitFor. The `exclude` parameter prevents
   // the API from returning the current card.
-  const startPrefetch = (currentCardId: number): PrefetchSlot => {
+  const startPrefetch = (currentCardId?: number): PrefetchSlot => {
     cancelPrefetch()
 
     const controller = new AbortController()
@@ -173,7 +220,7 @@ function AppContent() {
     slot.promise = (async () => {
       try {
         const envelope = await getNextCard({
-          excludeCardIds: [currentCardId],
+          excludeCardIds: currentCardId === undefined ? [] : [currentCardId],
           signal: controller.signal,
         })
         if (prefetchRef.current === slot) {
@@ -210,10 +257,12 @@ function AppContent() {
       if (requestId !== cardRequestId.current) return true
       if (envelope.card) {
         setStaleReason(null)
+        currentCard.current = envelope.card
         setCard(envelope.card)
         setNoCards(false)
         startPrefetch(envelope.card.card_id)
       } else {
+        currentCard.current = null
         setCard(null)
         setNoCards(true)
         setNextDueAt(envelope.next_due_at ?? null)
@@ -249,24 +298,39 @@ function AppContent() {
       const nextCard = slot.result.card
       prefetchRef.current = null
       setStaleReason(null)
+      currentCard.current = nextCard
       setCard(nextCard)
       setNoCards(false)
+      setLoading(false)
       startPrefetch(nextCard.card_id)
       return
     }
 
-    // Any other case (in-flight, null result, no prefetch): fetch
-    // fresh. Old card stays visible during the fetch.
-    prefetchRef.current = null
+    // Consume an in-flight refill rather than issue a duplicate request. If
+    // invalidated while awaiting it, use the replacement slot or read fresh.
     try {
-      const envelope = await getNextCard()
+      let envelope: NextCardEnvelope | null = null
+      while (prefetchRef.current && requestId === cardRequestId.current) {
+        const pending = prefetchRef.current
+        const result = pending.result ?? await pending.promise
+        if (prefetchRef.current !== pending) continue
+        prefetchRef.current = null
+        if (result?.card) envelope = result
+        // Exclusion-based prefetch reserves one new-card allowance. An empty
+        // result therefore isn't proof the normal next-card request is empty.
+        break
+      }
+      if (requestId !== cardRequestId.current) return
+      envelope ??= await getNextCard()
       if (requestId !== cardRequestId.current) return
       if (envelope.card) {
         setStaleReason(null)
+        currentCard.current = envelope.card
         setCard(envelope.card)
         setNoCards(false)
         startPrefetch(envelope.card.card_id)
       } else {
+        currentCard.current = null
         setCard(null)
         setNoCards(true)
         setNextDueAt(envelope.next_due_at ?? null)
@@ -280,6 +344,8 @@ function AppContent() {
       }
       console.error('Error fetching next card:', err)
       throw err
+    } finally {
+      if (requestId === cardRequestId.current) setLoading(false)
     }
   }
 
@@ -299,6 +365,7 @@ function AppContent() {
     if (!card) throw new Error('No card to check')
     if (staleReason) return null
     const cardId = card.card_id
+    const submission = ++submissionVersion.current
 
     setSubmitError(null)
     setChecking(true)
@@ -309,6 +376,11 @@ function AppContent() {
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, answer, card.review_revision)
+      if (submission !== submissionVersion.current) return null
+      if (!canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, cardId)) {
+        cancelPrefetch()
+        refillTask.current?.request()
+      }
       acceptedReview.current = { cardId, revision: card.review_revision + 1 }
       setLastCheckMs(performance.now() - startedAt)
       // Refresh only after the committed response: check_answer is
@@ -320,9 +392,10 @@ function AppContent() {
       setStatsKey((prev) => prev + 1)
       return { correct, reveal }
     } catch (err) {
+      if (submission !== submissionVersion.current) return null
       if (err instanceof ApiError && err.status === 409 && err.code === 'stale_review') {
-        setStaleReason('This card has already been reviewed. Your answer was not recorded.')
         cancelPrefetch()
+        discardReviewedCard()
         setStatsKey(value => value + 1)
         return null
       }
@@ -335,8 +408,10 @@ function AppContent() {
       console.error('Error checking answer:', err)
       throw err
     } finally {
-      setChecking(false)
-      checkingRef.current = false
+      if (submission === submissionVersion.current) {
+        setChecking(false)
+        checkingRef.current = false
+      }
     }
   }
 

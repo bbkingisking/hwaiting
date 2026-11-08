@@ -29,7 +29,7 @@ interface FlashcardProps {
   // whether it was correct and the card's secret half. Callers hold the
   // reveal themselves (see the `reveal` state below) rather than expecting
   // it to show up in `card` - see CardReveal's doc comment in lib/types.ts.
-  // Null means a stale review was handled without recording this answer.
+  // Null means the attempt was superseded; do not reveal a result on the new card.
   onCheck: (answer: string) => Promise<{ correct: boolean; reveal: CardReveal } | null>
   // Moves to the next card. Never itself talks to the network on the warm
   // path - see startPrefetch in App.tsx. Rejects if fetching the next card fails.
@@ -213,6 +213,9 @@ function GrammarPatternPill({
 }
 
 export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
+  const promptKey = `${card.card_id}:${card.review_revision}:${card.content_revision}`
+  const promptKeyRef = useRef(promptKey)
+  promptKeyRef.current = promptKey
   const staleRef = useRef(staleReason)
   staleRef.current = staleReason
   const [input, setInput] = useState('')
@@ -309,14 +312,15 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (answered || checking || staleReason) return
+    const submittedPrompt = promptKeyRef.current
     const trimmed = input.trim()
     setSubmittedAnswer(trimmed)
     setChecking(true)
     try {
       const result = await onCheck(trimmed)
-      // A stale review leaves the current prompt visible. It has no reveal
-      // and must not trigger correctness feedback or auto-progress.
-      if (result === null) return
+      // A superseded attempt must not reveal its result or auto-advance the
+      // replacement prompt, even if its HTTP response arrives late.
+      if (result === null || promptKeyRef.current !== submittedPrompt) return
       const { correct: isCorrect, reveal: revealData } = result
       setCorrect(isCorrect)
       setReveal(revealData)
@@ -345,10 +349,11 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
     } catch (err) {
       // Checking failed (network, etc.) - leave the card unanswered so the
       // user can retry, rather than showing a reveal that never arrived.
+      if (promptKeyRef.current !== submittedPrompt) return
       console.error('Error checking answer:', err)
       setSubmittedAnswer('')
     } finally {
-      setChecking(false)
+      if (promptKeyRef.current === submittedPrompt) setChecking(false)
     }
   }
 

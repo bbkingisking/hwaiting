@@ -125,3 +125,15 @@ test('removing a queue subscription stops further notifications', async () => {
   await api.unsuppressCard(42)
   assert.deepEqual(changes, [])
 })
+
+test('an own SSE echo does not restart an in-flight next-card read', async () => {
+  const { registerMutation, dispatchLiveEvent } = await import(liveUrl)
+  let complete
+  let reads = 0
+  respond = () => { reads++; return new Promise(resolve => { complete = resolve }) }
+  const next = api.getNextCard({ excludeCardIds: [1] })
+  dispatchLiveEvent({ type: 'card-reviewed', card_id: 1, review_revision: 1, mutation_id: registerMutation() })
+  complete(Response.json({ card: { card_id: 2 } }))
+  assert.deepEqual(await next, { card: { card_id: 2 } })
+  assert.equal(reads, 1)
+})
