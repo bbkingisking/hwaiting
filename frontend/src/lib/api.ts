@@ -6,19 +6,17 @@
 // silently drifting (this is exactly the class of bug that caused the old
 // card_states_imported/card_states_derived mismatch).
 
-import type { components } from './api-schema'
+import type * as Schemas from './api-generated/types.gen'
 import { apiBase, attestationToJson, describeCeremonyError, toCreationOptions } from './webauthn'
 
-type Schemas = components['schemas']
+type EditCardRequest = Schemas.UpdateCardRequest
+type EditCardResponse = Schemas.EditCardResponse
 
-type EditCardRequest = Schemas['UpdateCardRequest']
-type EditCardResponse = Schemas['EditCardResponse']
-
-type NextCardEnvelope = Schemas['NextCardEnvelope']
-type CheckRequest = Schemas['CheckRequest']
-type CheckResponse = Schemas['CheckResponse']
-type ReviewResponse = Schemas['ReviewResponse']
-type UserProfile = Schemas['UserProfile']
+type NextCardEnvelope = Schemas.NextCardEnvelope
+type CheckRequest = Schemas.CheckRequest
+type CheckResponse = Schemas.CheckResponse
+type ReviewResponse = Schemas.ReviewResponse
+type UserProfile = Schemas.UserProfile
 
 export type ReviewQueueChange = 'availability' | 'import'
 const reviewQueueChanges = new EventTarget()
@@ -73,7 +71,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json()
 }
 
-type Capabilities = Schemas['Capabilities']
+type Capabilities = Schemas.Capabilities
 
 // Unauthenticated, unlike everything else here - AuthProvider calls this
 // before there's any session (it decides whether to even offer passkey
@@ -110,10 +108,10 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   }
 }
 
-export type FieldValue = Schemas['FieldValue']
-type FieldValues = Schemas['FieldValues']
-export type InflectionFormValue = Schemas['InflectionFormValue']
-export type CardInflection = Schemas['CardInflection']
+export type FieldValue = Schemas.FieldValue
+type FieldValues = Schemas.FieldValues
+export type InflectionFormValue = Schemas.InflectionFormValue
+export type CardInflection = Schemas.CardInflection
 
 export async function getFieldValues(): Promise<FieldValues> {
   const url = `${apiBase()}/api/cards/field-values`
@@ -139,8 +137,8 @@ export async function suppressCard(cardId: number): Promise<ReviewResponse> {
   })
 }
 
-type SuppressedCard = Schemas['SuppressedCard']
-type SuppressedCardsResponse = Schemas['SuppressedCardsResponse']
+type SuppressedCard = Schemas.SuppressedCard
+type SuppressedCardsResponse = Schemas.SuppressedCardsResponse
 
 export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
   const url = `${apiBase()}/api/cards/suppressed`
@@ -156,8 +154,8 @@ export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
   return result
 }
 
-type HanjaDrill = Schemas['HanjaDrill']
-type HanjaDrillResponse = Schemas['HanjaDrillResponse']
+type HanjaDrill = Schemas.HanjaDrill
+type HanjaDrillResponse = Schemas.HanjaDrillResponse
 
 // Not part of the review flow: a random hanja from a card the user has
 // already mastered, for free-form recall practice. Never grades the answer
@@ -172,8 +170,8 @@ export async function getUserProfile(): Promise<UserProfile> {
   return fetchWithAuth(url)
 }
 
-type PasskeySummary = Schemas['PasskeySummary']
-type ListPasskeysResponse = Schemas['ListPasskeysResponse']
+type PasskeySummary = Schemas.PasskeySummary
+type ListPasskeysResponse = Schemas.ListPasskeysResponse
 
 export async function listPasskeys(): Promise<ListPasskeysResponse> {
   const url = `${apiBase()}/api/user/passkeys`
@@ -213,7 +211,7 @@ export async function addPasskey(): Promise<PasskeySummary> {
   })
 }
 
-type ImportResponse = Schemas['ImportDataResponse']
+type ImportResponse = Schemas.ImportDataResponse
 
 export async function importUserData(file: File, overwrite: boolean = false): Promise<ImportResponse> {
   const text = await file.text()
@@ -244,12 +242,12 @@ export async function exportUserData(): Promise<void> {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
-type StatsResponse = Schemas['StatsResponse']
+type StatsResponse = Schemas.StatsResponse
 
-export type DayHistory = Schemas['DayHistory']
-export type HistorySummary = Schemas['HistorySummary']
-export type BreakdownRow = Schemas['BreakdownRow']
-type HistoryResponse = Schemas['HistoryResponse']
+export type DayHistory = Schemas.DayHistory
+export type HistorySummary = Schemas.HistorySummary
+export type BreakdownRow = Schemas.BreakdownRow
+type HistoryResponse = Schemas.HistoryResponse
 
 // Was three separate round-trips (getReviewHistory/getHistorySummary/
 // getHistoryBreakdown) for data the stats page always fetched together;
@@ -264,9 +262,9 @@ export async function getStats(): Promise<StatsResponse> {
   return fetchWithAuth(url)
 }
 
-type UserSettings = Schemas['UserSettings']
-type UpdateSettingsRequest = Schemas['UpdateSettingsRequest']
-type UpdateSettingsResponse = Schemas['UpdateSettingsResponse']
+type UserSettings = Schemas.UserSettings
+type UpdateSettingsRequest = Schemas.UpdateSettingsRequest
+type UpdateSettingsResponse = Schemas.UpdateSettingsResponse
 
 export async function getUserSettings(): Promise<UserSettings> {
   const url = `${apiBase()}/api/user/settings`
@@ -294,7 +292,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
 // lib/types.ts), which withholds `target` et al. pre-answer on purpose, so
 // opening the editor there requires an adapter (toAdminCard in
 // flashcard.tsx) rather than passing the review card straight through.
-type AdminCard = Schemas['Card']
+type AdminCard = Schemas.Card
 
 // The subset of AdminCard's fields that CardReveal actually has - i.e. the
 // half of a `Card` row the server withholds from `GET /api/cards/next` and
@@ -305,7 +303,7 @@ type AdminCard = Schemas['Card']
 // and EditCardDialog's "front"/"back" JSON views read from, rather than each
 // hand-maintaining its own copy that could silently drift from the other.
 export const CARD_BACK_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives'])
-type SearchCardsResponse = Schemas['SearchCardsResponse']
+type SearchCardsResponse = Schemas.SearchCardsResponse
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
   const url = `${apiBase()}/api/admin/cards/search?q=${encodeURIComponent(query)}`
@@ -320,7 +318,7 @@ export async function editCard(cardId: number, updates: EditCardRequest): Promis
   })
 }
 
-type CardInflectionsResponse = Schemas['CardInflectionsResponse']
+type CardInflectionsResponse = Schemas.CardInflectionsResponse
 
 // This card's resolved conjugation-matrix rows, fetched standalone rather
 // than via checkAnswer's CardReveal - admin browsing already discloses
@@ -333,7 +331,7 @@ export async function getCardInflections(cardId: number, signal?: AbortSignal): 
 
 // FSRS Parameter Optimization
 
-type OptimizeFsrsResponse = Schemas['OptimizeFsrsResponse']
+type OptimizeFsrsResponse = Schemas.OptimizeFsrsResponse
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
   const url = `${apiBase()}/api/cards/fsrs-parameters`

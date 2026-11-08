@@ -1,4 +1,4 @@
-import type { components } from './api-schema'
+import type * as Api from './api-generated/types.gen'
 
 // Settings types
 export interface Settings {
@@ -23,12 +23,12 @@ export interface Settings {
 // be an independent hand-written mirror of the same shape api.ts also
 // hand-typed, which is exactly the kind of duplication that let the two
 // drift apart.
-export type HanjaHint = components['schemas']['HanjaHint']
+export type HanjaHint = Api.HanjaHint
 
 // What's known about the card being reviewed before an answer is checked -
 // everything needed to render the sentence-with-blank, badges, and both
 // translations, but nothing `target` could be inferred from.
-export type CardPrompt = components['schemas']['NextCardResponse']
+export type CardPrompt = Api.NextCardResponse
 
 // Disclosed by POST /api/cards/{id}/check once an attempt has been graded:
 // the answer, the word's citation form, the hanja reading/gloss, and the
@@ -46,7 +46,7 @@ export type CardPrompt = components['schemas']['NextCardResponse']
 // holds its own `reveal: CardReveal | null` state, set in the same
 // synchronous continuation as `answered`/`correct` - no cross-component
 // timing involved. See flashcard.tsx.
-export type CardReveal = components['schemas']['CardReveal']
+export type CardReveal = Api.CardReveal
 
 // EditCardDialog edits the backend's canonical full-card shape
 // (api.ts's AdminCard) directly - see its doc comment for why the review
