@@ -88,6 +88,7 @@ def request(path, method='GET', body=None, csrf=True, headers=None, opener=clien
 
 import sqlite3
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
@@ -100,16 +101,18 @@ try:
     assert request('/api/user/settings','PATCH',{'auto_progress_on_correct':False})[0] == 200
     options=Options();options.add_argument('-headless')
     driver=webdriver.Firefox(options=options)
-    wait=WebDriverWait(driver,15)
+    wait=WebDriverWait(driver,15,ignored_exceptions=(StaleElementReferenceException,))
     driver.get(base)
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     # Observe browser requests and streams without changing production code.
     instrument="""
-    window.sseStreams=[]; window.reads=[];
+    window.sseStreams=[]; window.reads=[]; window.nextReplies=[]; window.blockNext=false;
     const RealSource=window.EventSource;
     window.EventSource=class extends RealSource { constructor(...args) {super(...args);window.sseStreams.push(this)} };
     const realFetch=window.fetch;
-    window.fetch=async (...args)=>{window.reads.push(String(args[0]));const result=await realFetch(...args);if(String(args[0]).endsWith('/check')) await new Promise(r=>setTimeout(r,700));return result};
+    window.fetch=async (...args)=>{window.reads.push(String(args[0]));const result=await realFetch(...args);
+    if(String(args[0]).includes('/cards/next')) {if(window.blockNext) await new Promise(r=>window.releaseNext=r);window.nextReplies.push(await result.clone().json())}
+    if(String(args[0]).endsWith('/check')) {if(window.holdCheck) await new Promise(r=>window.releaseCheck=r);else await new Promise(r=>setTimeout(r,700));}return result};
     """
     # Inject before application scripts by serving a transient instrumented index.
     index=Path(env['HWAITING_STATIC_DIR'])/'index.html'
@@ -125,12 +128,13 @@ try:
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('preserve my answer')
     wait.until(lambda d: d.execute_script('return window.sseStreams.some(s=>s.readyState===1)'))
     driver.execute_script('window.reads=[]')
-    # Card far down the queue: stats may change; active card must not refetch.
+    # Card far down the queue: replenish the new-card successor, preserving active work.
     other=40 if cid!=40 else 41
     revision=request(f'/api/cards/{other}/state')[2]['review_revision']
     assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
     wait.until(lambda d: any('/cards/stats' in p for p in d.execute_script('return window.reads')))
-    assert not any('/cards/next' in p for p in driver.execute_script('return window.reads'))
+    wait.until(lambda d: any('/cards/next' in p for p in d.execute_script('return window.reads')))
+    assert int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))==cid
     assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='preserve my answer'
     driver.switch_to.window(first)
     with sqlite3.connect(work/'test.db') as db:
@@ -140,20 +144,19 @@ try:
     wait.until(lambda d:'Correct! The answer was' in d.find_element(By.TAG_NAME,'body').text)
     assert 'already been reviewed' not in driver.find_element(By.TAG_NAME,'body').text
     driver.switch_to.window(second)
-    wait.until(lambda d:'already been reviewed' in d.find_element(By.TAG_NAME,'body').text)
-    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='preserve my answer'
-    assert not driver.find_elements(By.CSS_SELECTOR,'button[type="submit"]')
-    # Fresh prompt; close the stream deliberately to miss a review, then return.
-    driver.find_element(By.XPATH,"//button[text()='Next']").click()
-    wait.until(lambda d:'already been reviewed' not in d.find_element(By.TAG_NAME,'body').text)
+    wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and int(d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))!=cid)
+    assert 'already been reviewed' not in driver.find_element(By.TAG_NAME,'body').text
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')==''
+    # Close the stream deliberately to miss a review, then reconnect.
     newcid=int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep through reconnect')
     driver.execute_script('window.sseStreams.forEach(s=>s.close())')
     revision=request(f'/api/cards/{newcid}/state')[2]['review_revision']
     assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
     driver.execute_script("window.dispatchEvent(new Event('online'))")
-    wait.until(lambda d:'changed while you were away' in d.find_element(By.TAG_NAME,'body').text)
-    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='keep through reconnect'
+    wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and int(d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))!=newcid)
+    assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')==''
     # A genuinely empty queue wakes up on a remote settings change.
     assert request('/api/auth/signup','POST',{'username':'empty-user','password':'sse-test-password'})[0]==201
     assert request('/api/user/settings','PATCH',{'daily_new_card_limit':0})[0]==200
@@ -189,7 +192,57 @@ try:
     time.sleep(0.5)
     assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
     assert 'Incorrect. You typed' in driver.find_element(By.TAG_NAME,'body').text
-    print('PASS: two tabs, own event before response, distant-card request counts, preserved text, missed review recovery, empty queue, suppression, own edit reconnect')
+    # With due review cards, a ready successor can be promoted even while all
+    # subsequent next-card responses are blocked. Only the new prefetch waits.
+    assert request('/api/auth/signup','POST',{'username':'due-user','password':'sse-test-password'})[0]==201
+    assert request('/api/user/settings','PATCH',{'daily_new_card_limit':0,'auto_progress_on_correct':False})[0]==200
+    with sqlite3.connect(work/'test.db') as db:
+        uid=db.execute("SELECT id FROM users WHERE username='due-user'").fetchone()[0]
+        for card_id in (1,2,3,4,5):
+            db.execute("INSERT INTO cards_states(user_id,card_id,stability,difficulty,last_review,state,review_revision) VALUES(?,?,1,3,?,'review',0)",(uid,card_id,f'2020-01-0{card_id}T00:00:00Z'))
+            db.execute("INSERT INTO review_history(user_id,card_id,rating,reviewed_at,stability,difficulty,state) VALUES(?,?,'good',?,1,3,'review')",(uid,card_id,f'2020-01-0{card_id}T00:00:00Z'))
+    driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
+    driver.refresh()
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='1')
+    wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===2)'))
+    time.sleep(0.2)
+    driver.execute_script('window.reads=[]')
+    assert request('/api/cards/5/check','POST',{'answer':'wrong','review_revision':0})[0]==200
+    wait.until(lambda d:any('/cards/stats' in p for p in d.execute_script('return window.reads')))
+    assert not any('/cards/next' in p for p in driver.execute_script('return window.reads'))
+    driver.execute_script('window.reads=[];window.blockNext=true')
+    assert request('/api/cards/1/check','POST',{'answer':'wrong','review_revision':0})[0]==200
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='2')
+    wait.until(lambda d:d.execute_script('return !!window.releaseNext'))
+    assert len([p for p in driver.execute_script('return window.reads') if '/cards/next' in p])==1
+    driver.execute_script('window.blockNext=false;window.releaseNext();window.releaseNext=null')
+    wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===3)'))
+    # Invalidate that successor, hold its replacement, then press Next. The
+    # existing replacement request must be consumed, not duplicated.
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('wrong')
+    driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
+    wait.until(lambda d:'Incorrect. You typed' in d.find_element(By.TAG_NAME,'body').text)
+    driver.execute_script('window.reads=[];window.blockNext=true')
+    assert request('/api/cards/3/suppress','PUT')[0]==200
+    wait.until(lambda d:d.execute_script('return !!window.releaseNext'))
+    driver.find_element(By.XPATH,"//button[text()='Next']").click()
+    time.sleep(0.2)
+    assert len([p for p in driver.execute_script('return window.reads') if '/cards/next' in p])==1
+    driver.execute_script('window.blockNext=false;window.releaseNext();window.releaseNext=null')
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='4')
+    # A remote review can supersede an attempt whose successful HTTP response
+    # is delayed. The late result must not reintroduce the discarded card/reveal.
+    driver.execute_script('window.holdCheck=true')
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('wrong')
+    driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
+    wait.until(lambda d:d.execute_script('return !!window.releaseCheck'))
+    assert request('/api/cards/4/state')[2]['review_revision']==1
+    assert request('/api/cards/4/check','POST',{'answer':'wrong','review_revision':1})[0]==200
+    wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and 'No cards' in d.find_element(By.TAG_NAME,'body').text)
+    driver.execute_script('window.releaseCheck()')
+    time.sleep(0.5)
+    assert 'Incorrect. You typed' not in driver.find_element(By.TAG_NAME,'body').text
+    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits')
 finally:
     if 'original' in globals(): index.write_text(original)
     if driver: driver.quit()

@@ -86,3 +86,11 @@ test('SSE connection carries cookies, survives network errors, and cleans up on 
   delete globalThis.document
   delete globalThis.window
 })
+
+const { canKeepSuccessorAfterReview } = await module('review-events')
+test('a remote review preserves another due review but invalidates new or reviewed successors', () => {
+  assert.equal(canKeepSuccessorAfterReview({ card_id: 2, difficulty: 3 }, 1), true)
+  assert.equal(canKeepSuccessorAfterReview({ card_id: 2, difficulty: null }, 1), false)
+  assert.equal(canKeepSuccessorAfterReview({ card_id: 2, difficulty: 3 }, 2), false)
+  assert.equal(canKeepSuccessorAfterReview(undefined, 1), false)
+})
