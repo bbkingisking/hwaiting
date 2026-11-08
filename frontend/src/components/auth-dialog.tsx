@@ -7,11 +7,6 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/components/auth-provider'
 
-interface AuthDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}
-
 // Login/Sign Up (what the user is trying to do) is the primary, tab-shaped
 // choice. Password/Passkey (how) is secondary and binary, so it's a Switch,
 // not a second row of tabs - nesting a full tablist inside a tab panel reads
@@ -22,8 +17,8 @@ interface AuthDialogProps {
 // this moment.
 type Method = 'password' | 'passkey'
 
-export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
-  const { login, signup, passkeyLogin, passkeyRegister, passkeysEnabled } = useAuth()
+export function AuthDialog() {
+  const { isAuthenticated, login, signup, passkeyLogin, passkeyRegister, passkeysEnabled } = useAuth()
 
   // Defaults to 'passkey' only when the server actually offers it - safe to
   // read passkeysEnabled here (rather than force 'password' and flip it in
@@ -56,7 +51,6 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     const result = await login(loginUsername, loginPassword)
 
     if (result.success) {
-      onOpenChange(false)
       setLoginUsername('')
       setLoginPassword('')
     } else {
@@ -74,7 +68,6 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     const result = await signup(signupUsername, signupPassword)
 
     if (result.success) {
-      onOpenChange(false)
       setSignupUsername('')
       setSignupPassword('')
     } else {
@@ -88,9 +81,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     setPasskeyError('')
     setPasskeyBusy(true)
     const result = await passkeyLogin()
-    if (result.success) {
-      onOpenChange(false)
-    } else {
+    if (!result.success) {
       setPasskeyError(result.error || 'Sign-in failed')
     }
     setPasskeyBusy(false)
@@ -100,9 +91,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     setPasskeyError('')
     setPasskeyBusy(true)
     const result = await passkeyRegister()
-    if (result.success) {
-      onOpenChange(false)
-    } else {
+    if (!result.success) {
       setPasskeyError(result.error || 'Account creation failed')
     }
     setPasskeyBusy(false)
@@ -127,8 +116,15 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   )
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog
+      open={!isAuthenticated}
+      disablePointerDismissal
+      onOpenChange={(_, eventDetails) => {
+        // Authentication is required; only a session change can close this dialog.
+        eventDetails.cancel()
+      }}
+    >
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Welcome</DialogTitle>
         </DialogHeader>

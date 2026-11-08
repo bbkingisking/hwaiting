@@ -48,7 +48,6 @@ function AppContent() {
   const [lastCheckMs, setLastCheckMs] = useState<number | null>(null)
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
-  const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [statsKey, setStatsKey] = useState(0)
 
   const { isAuthenticated } = useAuth()
@@ -57,9 +56,7 @@ function AppContent() {
   const prefetchRef = useRef<PrefetchSlot | null>(null)
   useEffect(() => {
     setReviewNotice(null)
-    if (!isAuthenticated) {
-      setAuthDialogOpen(true)
-    } else {
+    if (isAuthenticated) {
       loadCardCold()
     }
   }, [isAuthenticated])
@@ -268,7 +265,7 @@ function AppContent() {
 
   return (
     <>
-      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+      <AuthDialog />
       <AppHeader />
       <main
         data-card-theme={cardThemeId}
@@ -279,11 +276,7 @@ function AppContent() {
         {isAuthenticated && reviewNotice && (
           <p role="status" className="text-muted-foreground text-sm mb-4">{reviewNotice}</p>
         )}
-        {!isAuthenticated ? (
-          <div role="status" className="text-center text-muted-foreground">
-            <p>Please log in to continue</p>
-          </div>
-        ) : loading ? (
+        {!isAuthenticated ? null : loading ? (
           <div role="status" className="text-center text-muted-foreground">
             <p>Loading card...</p>
           </div>
