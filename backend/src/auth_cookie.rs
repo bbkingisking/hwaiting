@@ -14,49 +14,81 @@ pub const COOKIE_NAME: &str = "hwaiting-auth";
 pub const CSRF_HEADER: &str = "x-requested-with";
 pub const CSRF_VALUE: &str = "hwaiting";
 
-fn policy() -> (bool, SameSite) {
-    let secure = match credentials::cookie_secure().as_deref().unwrap_or("false") {
-        "true" => true,
-        "false" => false,
-        _ => panic!("HWAITING_COOKIE_SECURE must be true or false"),
-    };
-    let same_site = match credentials::cookie_same_site().as_deref().unwrap_or("lax") {
+#[derive(Clone, Copy, Debug)]
+struct CookiePolicy {
+    secure: bool,
+    same_site: SameSite,
+    partitioned: bool,
+}
+
+fn parse_policy(
+    secure: &str,
+    same_site: &str,
+    partitioned: &str,
+) -> Result<CookiePolicy, &'static str> {
+    let secure = secure
+        .parse::<bool>()
+        .map_err(|_| "HWAITING_COOKIE_SECURE must be true or false")?;
+    let partitioned = partitioned
+        .parse::<bool>()
+        .map_err(|_| "HWAITING_COOKIE_PARTITIONED must be true or false")?;
+    if partitioned && !secure {
+        return Err("HWAITING_COOKIE_PARTITIONED=true requires HWAITING_COOKIE_SECURE=true");
+    }
+    let same_site = match same_site {
         "lax" => SameSite::Lax,
         "strict" => SameSite::Strict,
         "none" if secure => SameSite::None,
-        "none" => panic!("HWAITING_COOKIE_SAME_SITE=none requires HWAITING_COOKIE_SECURE=true"),
-        _ => panic!("HWAITING_COOKIE_SAME_SITE must be lax, strict, or none"),
+        "none" => {
+            return Err("HWAITING_COOKIE_SAME_SITE=none requires HWAITING_COOKIE_SECURE=true");
+        }
+        _ => return Err("HWAITING_COOKIE_SAME_SITE must be lax, strict, or none"),
     };
-    (secure, same_site)
+    Ok(CookiePolicy {
+        secure,
+        same_site,
+        partitioned,
+    })
+}
+
+fn policy() -> CookiePolicy {
+    parse_policy(
+        credentials::cookie_secure().as_deref().unwrap_or("false"),
+        credentials::cookie_same_site().as_deref().unwrap_or("lax"),
+        credentials::cookie_partitioned()
+            .as_deref()
+            .unwrap_or("false"),
+    )
+    .unwrap_or_else(|message| panic!("{message}"))
 }
 
 pub fn validate_config() {
     policy();
 }
 
-fn cookie(value: String, max_age: Duration, secure: bool, same_site: SameSite) -> Cookie<'static> {
+fn cookie(value: String, max_age: Duration, policy: CookiePolicy) -> Cookie<'static> {
     Cookie::build((COOKIE_NAME, value))
         .path("/")
         .http_only(true)
-        .secure(secure)
-        .same_site(same_site)
+        .secure(policy.secure)
+        .same_site(policy.same_site)
+        .partitioned(policy.partitioned)
         .max_age(max_age)
         .build()
 }
 
 pub fn issue(token: String, ttl_seconds: Option<i64>) -> Cookie<'static> {
-    let (secure, same_site) = policy();
+    let policy = policy();
     // Persist across browser restarts. Without a JWT expiry, use the common
     // browser cap of 400 days for cookie storage; the JWT itself is unchanged.
     let max_age = ttl_seconds
         .map(Duration::seconds)
         .unwrap_or(Duration::days(400));
-    cookie(token, max_age, secure, same_site)
+    cookie(token, max_age, policy)
 }
 
 pub fn clear() -> Cookie<'static> {
-    let (secure, same_site) = policy();
-    cookie(String::new(), Duration::ZERO, secure, same_site)
+    cookie(String::new(), Duration::ZERO, policy())
 }
 
 pub fn token(headers: &HeaderMap) -> Result<String, AppError> {
@@ -126,13 +158,49 @@ mod tests {
 
     #[test]
     fn cookie_transport_is_http_only_host_scoped_and_matches_expiry() {
-        let cookie = cookie("jwt".into(), Duration::seconds(3600), true, SameSite::Lax);
+        let cookie = cookie(
+            "jwt".into(),
+            Duration::seconds(3600),
+            parse_policy("true", "lax", "false").unwrap(),
+        );
         assert_eq!(cookie.http_only(), Some(true));
         assert_eq!(cookie.secure(), Some(true));
         assert_eq!(cookie.same_site(), Some(SameSite::Lax));
         assert_eq!(cookie.path(), Some("/"));
         assert_eq!(cookie.domain(), None);
         assert_eq!(cookie.max_age(), Some(Duration::seconds(3600)));
+    }
+
+    #[test]
+    fn demo_cookie_is_partitioned_for_both_login_and_logout() {
+        let policy = parse_policy("true", "none", "true").unwrap();
+        for (value, age) in [("jwt", Duration::seconds(3600)), ("", Duration::ZERO)] {
+            let cookie = cookie(value.into(), age, policy);
+            assert_eq!(cookie.partitioned(), Some(true));
+            assert_eq!(cookie.secure(), Some(true));
+            assert_eq!(cookie.same_site(), Some(SameSite::None));
+            assert_eq!(cookie.http_only(), Some(true));
+            assert_eq!(cookie.path(), Some("/"));
+            assert_eq!(cookie.max_age(), Some(age));
+            assert!(cookie.to_string().contains("Partitioned"));
+        }
+    }
+
+    #[test]
+    fn production_policy_keeps_cookies_usable_over_http_and_https() {
+        let policy = parse_policy("false", "lax", "false").unwrap();
+        let cookie = cookie("jwt".into(), Duration::seconds(3600), policy);
+        assert_ne!(cookie.secure(), Some(true));
+        assert_ne!(cookie.partitioned(), Some(true));
+        assert!(!cookie.to_string().contains("Secure"));
+        assert!(!cookie.to_string().contains("Partitioned"));
+    }
+
+    #[test]
+    fn partitioned_configuration_requires_secure_and_valid_boolean() {
+        assert!(parse_policy("false", "none", "true").is_err());
+        assert!(parse_policy("false", "lax", "true").is_err());
+        assert!(parse_policy("true", "none", "invalid").is_err());
     }
 
     #[test]
@@ -192,7 +260,11 @@ mod tests {
 
     #[test]
     fn clearing_a_cookie_uses_the_same_scope_and_zero_lifetime() {
-        let expired = cookie(String::new(), Duration::ZERO, false, SameSite::Lax);
+        let expired = cookie(
+            String::new(),
+            Duration::ZERO,
+            parse_policy("false", "lax", "false").unwrap(),
+        );
         assert_eq!(expired.name(), COOKIE_NAME);
         assert_eq!(expired.path(), Some("/"));
         assert_eq!(expired.domain(), None);

@@ -374,7 +374,8 @@ ENVIRONMENT VARIABLES:
         HWAITING_ADMIN_USERNAME         Admin account username (default: admin)
         HWAITING_HOST                   TCP bind host (default: 127.0.0.1)
         HWAITING_PORT                   TCP bind port (default: 3000)
-        HWAITING_COOKIE_SECURE          Secure cookies (default: false; enable for HTTPS)
+        HWAITING_COOKIE_SECURE          HTTPS-only cookies (default: false; keep false for mixed HTTP/HTTPS)
+        HWAITING_COOKIE_PARTITIONED     Partition cookies by top-level site (default: false; requires Secure)
         HWAITING_COOKIE_SAME_SITE       lax (default), strict, or none (requires Secure)
         HWAITING_DATABASE_URL           sqlite:// URL
                                          (default: $XDG_DATA_HOME/hwaiting/hwaiting.db,
