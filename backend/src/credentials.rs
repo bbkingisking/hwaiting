@@ -160,6 +160,10 @@ pub fn cookie_secure() -> Option<String> {
     read_config("HWAITING_COOKIE_SECURE")
 }
 
+pub fn cookie_partitioned() -> Option<String> {
+    read_config("HWAITING_COOKIE_PARTITIONED")
+}
+
 pub fn cookie_same_site() -> Option<String> {
     read_config("HWAITING_COOKIE_SAME_SITE")
 }
