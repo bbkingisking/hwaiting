@@ -6,20 +6,40 @@ export function parseDueAt(timestamp: string): number {
   return Date.parse(normalized)
 }
 
-// Refresh at the deadline, or on return if the deadline has passed. Never poll.
+// Refresh successfully once per deadline, retrying only failed requests.
 // Background timers may be delayed; returning to the tab is a fallback.
-export function scheduleReviewRefresh(timestamp: string | null, refresh: () => void): () => void {
+export function scheduleReviewRefresh(
+  timestamp: string | null,
+  refresh: () => boolean | void | Promise<boolean | void>,
+): () => void {
   const dueAt = timestamp ? parseDueAt(timestamp) : NaN
   let timer: ReturnType<typeof setTimeout> | undefined
-  let lastRefresh = -Infinity
+  let refreshed = false
+  let inFlight = false
+  let disposed = false
+  let retryAt = 0
+  let retryDelay = 1000
 
-  const refreshIfDue = () => {
+  const refreshIfDue = async () => {
     const now = Date.now()
-    if (!Number.isFinite(dueAt) || now < dueAt + 1000) return
-    // Focus, visibilitychange and a suspended timer can all fire together.
-    if (now - lastRefresh < 1000) return
-    lastRefresh = now
-    refresh()
+    if (disposed || refreshed || inFlight || !Number.isFinite(dueAt)
+      || now < dueAt + 1000 || now < retryAt) return
+    // The timer and return events share a single in-flight refresh.
+    inFlight = true
+    clearTimeout(timer)
+    try {
+      const result = await refresh()
+      if (result !== false) refreshed = true
+    } catch {
+      // A rejected request leaves the deadline pending for the next attempt.
+    } finally {
+      inFlight = false
+      if (!disposed && !refreshed) {
+        retryAt = Date.now() + retryDelay
+        timer = setTimeout(refreshIfDue, retryDelay)
+        retryDelay = Math.min(retryDelay * 2, 60000)
+      }
+    }
   }
 
   const refreshVisible = () => {
@@ -40,6 +60,7 @@ export function scheduleReviewRefresh(timestamp: string | null, refresh: () => v
   window.addEventListener('focus', refreshVisible)
   document.addEventListener('visibilitychange', refreshVisible)
   return () => {
+    disposed = true
     clearTimeout(timer)
     window.removeEventListener('focus', refreshVisible)
     document.removeEventListener('visibilitychange', refreshVisible)
