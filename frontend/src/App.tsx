@@ -92,6 +92,11 @@ function AppContent() {
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
+  // Events invalidate local knowledge; they never advance the displayed card.
+  // While empty, refresh availability and its deadline. Otherwise preserve the
+  // answer, refresh stats, and discard prefetch until Next needs a replacement.
+  // The deadline timer still handles time passing without a server mutation.
+  // Own writes keep their HTTP-response flow, including refreshes without SSE.
   const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
     if (!isAuthenticated || event.own) return
     if (event.type === 'settings-changed' && !event.queue_affected) return

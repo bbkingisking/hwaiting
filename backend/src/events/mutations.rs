@@ -1,5 +1,7 @@
 //! HTTP mutation adapters: publish only after the underlying operation commits.
 //! Keep domain handlers usable without a live-event service (tests/other callers).
+//! Each successful operation publishes one descriptive event; failed operations
+//! publish none. A review/settings/import event already conveys its queue impact.
 use super::Change;
 use crate::{
     admin,

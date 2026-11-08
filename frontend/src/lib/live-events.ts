@@ -5,6 +5,7 @@ export type ReceivedEvent = LiveEvent & { own: boolean }
 const listeners = new Set<(event: ReceivedEvent) => void>()
 const mutations = new Set<string>()
 
+// Register before sending: the event can arrive before the HTTP response.
 export function registerMutation(): string {
   // crypto.randomUUID is unavailable on plain HTTP LAN origins.
   const bytes = crypto.getRandomValues(new Uint8Array(16))
