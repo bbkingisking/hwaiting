@@ -1,4 +1,19 @@
-//! Optional live invalidations. Reads remain authoritative; no durable replay.
+//! Optional cookie-authenticated live invalidations. Ordinary reads and writes
+//! work without subscribers; reads and the stale-review guard stay authoritative.
+//!
+//! Events describe committed changes, not UI actions. Concurrent mutations may
+//! publish out of commit order: compare review revisions and reread state for
+//! broader changes. Clients should coalesce refreshes and discard reads superseded
+//! by a notification. Each JSON `type` matches its named SSE event.
+//!
+//! Each subscription starts with `resync-required`; there is no durable replay or
+//! `Last-Event-ID` contract. Subscribe before the initial resync so changes during
+//! the client's read are queued. Lag also requires resync, including validation
+//! of the displayed prompt, not just counts/deadlines. Heartbeats do no DB work.
+//!
+//! This assumes one backend process and mutations through its API. Multiple
+//! processes or external database writers require shared event distribution.
+//! A process crash disconnects clients, which resynchronise after reconnecting.
 pub mod mutations;
 
 use crate::{
@@ -24,16 +39,24 @@ use std::{
 use tokio::sync::broadcast;
 use utoipa::ToSchema;
 
+// Optional UUID echoed for operation correlation, not identity or idempotency.
+// Invalid UUIDs are ignored. Clients register it before sending the mutation.
 pub const MUTATION_HEADER: &str = "x-mutation-id";
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Change {
+    // Also invalidates queue/stats; do not emit an additional QueueChanged.
     CardReviewed { card_id: i64, review_revision: i64 },
+    // User-specific suppression or restoration.
     QueueChanged { card_id: i64, suppressed: bool },
+    // Settings/FSRS parameters changed; refetch settings and any affected queue.
     SettingsChanged { queue_affected: bool },
+    // Shared content changed; broadcast to every connected account.
     CardUpdated { card_id: i64 },
+    // Import may replace settings, history, flags, and review state.
     StateReset,
+    // Reread current state, including the validity of the displayed prompt.
     ResyncRequired,
 }
 impl Change {
@@ -69,6 +92,8 @@ impl Notification {
     }
 }
 
+// Bounded per-user channels contain no answer data. Dropping the last receiver
+// removes its channel; publishing without subscribers never makes a write fail.
 #[derive(Clone, Default)]
 pub struct EventHub(Arc<Mutex<HashMap<i64, broadcast::Sender<Notification>>>>);
 impl EventHub {
@@ -132,6 +157,7 @@ pub async fn subscribe(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
     let token = crate::auth_cookie::token(&headers)?;
     let claims = crate::auth::decode_token(&token, &crate::credentials::jwt_secret())?;
+    // Register before emitting the initial resync, closing the read/subscribe gap.
     let subscription = state.events.subscribe(auth.0);
     let expires = claims.exp.map(|exp| {
         tokio::time::Instant::now()
@@ -179,6 +205,10 @@ fn notification_stream(
     )
 }
 
+// Prompt validity without answer fields. This does not say whether the card
+// ranks first or would be selected under current queue preferences. Both
+// revisions also travel with next-card responses; content revisions detect
+// edits missed while disconnected.
 #[derive(Serialize, ToSchema)]
 pub struct CardState {
     pub exists: bool,
