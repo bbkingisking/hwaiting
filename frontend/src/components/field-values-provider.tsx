@@ -1,3 +1,5 @@
+import { subscribeLiveEvents } from '@/lib/live-events'
+import { createRefreshTask } from '@/lib/refresh-task'
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getFieldValues, type FieldValue, type InflectionFormValue } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
@@ -44,11 +46,12 @@ export function FieldValuesProvider({ children }: { children: React.ReactNode })
       return
     }
 
-    const fetchFieldValues = async () => {
+    const fetchFieldValues = async (current: () => boolean) => {
       try {
         // No `?fields=` filter: this provider caches the full set once per
         // session for every card-editing/review surface to share.
         const data = await getFieldValues()
+        if (!current()) return
         setFieldValues({
           pos: toMap(data.pos),
           originType: toMap(data.origin_type),
@@ -60,10 +63,14 @@ export function FieldValuesProvider({ children }: { children: React.ReactNode })
         })
       } catch (err) {
         console.error('Failed to fetch field values:', err)
+        throw err
       }
     }
 
-    fetchFieldValues()
+    const task = createRefreshTask(fetchFieldValues)
+    task.request()
+    const live = subscribeLiveEvents(event => { if (event.type === 'card-updated' || event.type === 'resync-required') task.request() })
+    return () => { live(); task.dispose() }
   }, [isAuthenticated])
 
   return (

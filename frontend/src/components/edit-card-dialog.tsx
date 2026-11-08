@@ -19,7 +19,7 @@ interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   card: AdminCard
-  onSaved?: (updates: Partial<AdminCard>) => void
+  onSaved?: (updates: Partial<AdminCard>, contentRevision: number) => void
 }
 
 interface FormState {
@@ -145,8 +145,8 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         is_humble: form.is_humble,
         grammar_pattern: nullIfEmpty(form.grammar_pattern),
       }
-      await editCard(card.card_id, updates)
-      onSaved?.(updates)
+      const result = await editCard(card.card_id, updates)
+      onSaved?.(updates, result.content_revision)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')

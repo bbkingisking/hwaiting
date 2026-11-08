@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import ts from 'typescript'
 
-const source = readFileSync(new URL('../src/lib/http.ts', import.meta.url), 'utf8')
+const liveSource = readFileSync(new URL('../src/lib/live-events.ts', import.meta.url), 'utf8')
+const liveJS = ts.transpileModule(liveSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText
+const liveUrl = `data:text/javascript;base64,${Buffer.from(liveJS).toString('base64')}`
+const source = readFileSync(new URL('../src/lib/http.ts', import.meta.url), 'utf8').replace("'./live-events'", JSON.stringify(liveUrl))
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
 })
@@ -38,6 +41,7 @@ test('every write sends cookies and the CSRF header while preserving request dat
   for (const request of requests) {
     assert.equal(request.credentials, 'include')
     assert.equal(request.headers.get('X-Requested-With'), 'hwaiting')
+    assert.match(request.headers.get('X-Mutation-Id'), /^[0-9a-f-]{36}$/)
     assert.equal(request.headers.get('Content-Type'), 'application/json')
     assert.equal(request.headers.has('Authorization'), false)
     assert.equal(request.body, '{}')

@@ -1,4 +1,5 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { createRefreshTask } from '@/lib/refresh-task'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { getStats } from '@/lib/api'
 import { cn, getPercentageColor } from '@/lib/utils'
 import { useSettings } from '@/components/settings-provider'
@@ -6,23 +7,28 @@ import { useTimeUntil } from '@/hooks/use-time-until'
 import { parseDueAt, scheduleReviewRefresh } from '@/lib/review-timing'
 import { Percentage } from '@/components/percentage'
 
-export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
+export function StatusIndicator({ refreshKey = 0, nextCardDueAt = null, onCardsAvailable }: {
+  refreshKey?: number
   nextCardDueAt?: string | null
   onCardsAvailable?: () => Promise<boolean>
 }) {
   const { settings } = useSettings()
+  const requestVersion = useRef(0)
+  const taskRef = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   const [dueCount, setDueCount] = useState<number | null>(null)
   const [percentage, setPercentage] = useState<number | null>(null)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [newTodayCount, setNewTodayCount] = useState<number | null>(null)
   const remaining = useTimeUntil(dueCount === 0 ? nextCardDueAt ?? nextDueAt : null)
 
-  const refresh = useEffectEvent(async (refreshQueue: boolean) => {
+  const refresh = useEffectEvent(async (refreshQueue: boolean, current: () => boolean = () => true) => {
+    const version = ++requestVersion.current
     try {
       const stats = await getStats()
       // Keep the old deadline until both reads succeed so a failed card
       // request can retry it, even if stats already know a later due date.
       if (refreshQueue && await onCardsAvailable?.() === false) return false
+      if (!current() || version !== requestVersion.current) return true
       setDueCount(stats.due_count)
       setPercentage(stats.percentage ?? null)
       setNextDueAt(stats.next_due_at ?? null)
@@ -35,8 +41,13 @@ export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
   })
 
   useEffect(() => {
-    refresh(false)
+    const task = createRefreshTask(async current => {
+      if (!await refresh(false, current)) throw new Error('Stats refresh failed')
+    })
+    taskRef.current = task
+    return () => { task.dispose(); ++requestVersion.current }
   }, [])
+  useEffect(() => { taskRef.current?.request() }, [refreshKey])
 
   // The empty-state deadline also accounts for the daily new-card reset.
   const deadline = [nextCardDueAt, nextDueAt]

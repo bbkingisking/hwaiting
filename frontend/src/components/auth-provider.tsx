@@ -1,5 +1,6 @@
+import { connectLiveEvents } from '@/lib/live-events'
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { getCapabilities, getUserProfile, logoutSession } from '@/lib/api'
+import { ApiError, getCapabilities, getUserProfile, logoutSession } from '@/lib/api'
 import { fetchWithCookies } from '@/lib/http'
 import { apiBase, assertionToJson, attestationToJson, describeCeremonyError, toCreationOptions, toRequestOptions } from '@/lib/webauthn'
 
@@ -80,6 +81,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     Promise.all([loadSession(), loadCapabilities()]).finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated || loading) return
+    return connectLiveEvents(`${apiBase()}/api/events`, async () => {
+      try { await getUserProfile(); return true }
+      catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          setIsAuthenticated(false)
+          setIsAdmin(false)
+          return false
+        }
+        throw error
+      }
+    })
+  }, [isAuthenticated, loading])
 
   const applySession = (data: { is_admin: boolean }) => {
     setIsAuthenticated(true)
