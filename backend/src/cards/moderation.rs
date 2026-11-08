@@ -53,7 +53,7 @@ pub struct SuppressedCardsResponse {
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn comment_on_card(
@@ -99,7 +99,7 @@ pub async fn comment_on_card(
         (status = 200, description = "Card suppressed from review rotation", body = ReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn suppress_card(
@@ -141,7 +141,7 @@ pub async fn suppress_card(
         (status = 200, description = "All suppressed cards for the user", body = SuppressedCardsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn list_suppressed_cards(
@@ -200,7 +200,7 @@ pub async fn list_suppressed_cards(
         (status = 200, description = "Card unsuppressed", body = ReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn unsuppress_card(

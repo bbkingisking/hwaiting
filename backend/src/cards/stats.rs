@@ -127,7 +127,7 @@ pub struct HistoryBreakdownResponse {
         (status = 200, description = "Status-bar summary stats", body = StatsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn get_stats(
@@ -569,7 +569,7 @@ async fn query_breakdown(
         (status = 200, description = "Time series, all-time summary + streaks, and POS/origin accuracy breakdown, run concurrently", body = HistoryResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn get_history(

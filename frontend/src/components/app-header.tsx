@@ -24,6 +24,16 @@ export function AppHeader() {
   const [suppressedCardsOpen, setSuppressedCardsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [hanjaDrillsOpen, setHanjaDrillsOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    setLogoutError(null)
+    const result = await logout()
+    if (!result.success) setLogoutError(result.error ?? 'Could not log out.')
+    setLoggingOut(false)
+  }
 
   if (!isAuthenticated) {
     return null
@@ -66,12 +76,17 @@ export function AppHeader() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout}>
+            <DropdownMenuItem onClick={handleLogout} disabled={loggingOut}>
               <LogOut className="mr-2 h-4 w-4" />
-              Log Out
+              {loggingOut ? 'Logging out…' : 'Log Out'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {logoutError && (
+          <p role="alert" className="absolute top-full right-0 mt-2 w-64 rounded-md bg-background p-3 text-sm text-destructive shadow-md">
+            {logoutError}
+          </p>
+        )}
       </header>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

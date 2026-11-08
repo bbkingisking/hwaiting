@@ -143,7 +143,7 @@ where
         (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn get_next_card(

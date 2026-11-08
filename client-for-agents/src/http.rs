@@ -55,68 +55,89 @@ fn read_body(mut resp: ureq::http::Response<ureq::Body>) -> Result<String, AppEr
     Ok(body)
 }
 
-fn get(path: &str, token: &str) -> Result<String, AppError> {
-    let url = format!("{}{path}", config::base_url());
-    let resp = ureq::get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .config()
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
         .http_status_as_error(false)
         .build()
-        .call()
+        .into()
+}
+
+fn get(path: &str, client: &ureq::Agent) -> Result<String, AppError> {
+    let url = format!("{}{path}", config::base_url());
+    let resp = client.get(&url).call().map_err(unreachable_err)?;
+    read_response(client, resp)
+}
+
+fn post_json(path: &str, client: &ureq::Agent, body: &Value) -> Result<String, AppError> {
+    let url = format!("{}{path}", config::base_url());
+    let resp = client
+        .post(&url)
+        .header("X-Requested-With", "hwaiting")
+        .send_json(body)
         .map_err(unreachable_err)?;
-    read_body(resp)
+    read_response(client, resp)
 }
 
-fn post_json(path: &str, token: Option<&str>, body: &Value) -> Result<String, AppError> {
+fn put(path: &str, client: &ureq::Agent) -> Result<String, AppError> {
     let url = format!("{}{path}", config::base_url());
-    let mut req = ureq::post(&url)
-        .config()
-        .http_status_as_error(false)
-        .build();
-    if let Some(t) = token {
-        req = req.header("Authorization", format!("Bearer {t}"));
-    }
-    let resp = req.send_json(body).map_err(unreachable_err)?;
-    read_body(resp)
-}
-
-fn put(path: &str, token: &str) -> Result<String, AppError> {
-    let url = format!("{}{path}", config::base_url());
-    let resp = ureq::put(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .config()
-        .http_status_as_error(false)
-        .build()
+    let resp = client
+        .put(&url)
+        .header("X-Requested-With", "hwaiting")
         .send_empty()
         .map_err(unreachable_err)?;
-    read_body(resp)
+    read_response(client, resp)
+}
+
+fn read_response(
+    client: &ureq::Agent,
+    response: ureq::http::Response<ureq::Body>,
+) -> Result<String, AppError> {
+    if response.headers().contains_key("set-cookie") {
+        config::save_cookies(client).map_err(|error| {
+            AppError::Message(format!("could not save authentication cookies: {error}"))
+        })?;
+    }
+    read_body(response)
 }
 
 fn parse(raw: &str) -> Result<Value, AppError> {
     serde_json::from_str(raw).map_err(|e| AppError::Message(format!("malformed response: {e}")))
 }
 
-fn require_token() -> Result<String, AppError> {
-    config::load_token()
-        .map_err(|e| AppError::Message(format!("not logged in (run `login` first): {e}")))
+fn authenticated_agent() -> Result<ureq::Agent, AppError> {
+    let client = agent();
+    config::load_cookies(&client).map_err(|error| {
+        AppError::Message(format!("not logged in (run `login` first): {error}"))
+    })?;
+    if !client
+        .cookie_jar_lock()
+        .iter()
+        .any(|cookie| cookie.name() == "hwaiting-auth")
+    {
+        return Err(AppError::Message(
+            "login has expired (run `login` again)".to_string(),
+        ));
+    }
+    Ok(client)
 }
 
-/// Exchanges username/password for a JWT and saves it to disk for every
-/// later command to read.
+/// Exchanges username/password for a cookie, saved privately for later invocations.
 pub fn login(username: &str, password: &str) -> Result<Value, AppError> {
+    let client = agent();
     let body = json!({ "username": username, "password": password });
-    let raw = post_json("/api/auth/login", None, &body)?;
+    let raw = post_json("/api/auth/login", &client, &body)?;
     let parsed = parse(&raw)?;
-
-    let token = parsed
-        .get("token")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Message("malformed login response: missing token".to_string()))?;
-    config::save_token(token)
-        .map_err(|e| AppError::Message(format!("logged in but could not save token: {e}")))?;
-
-    // Deliberately doesn't echo the token back - it's already on disk and
-    // has no further use in the transcript.
+    if !client
+        .cookie_jar_lock()
+        .iter()
+        .any(|cookie| cookie.name() == "hwaiting-auth")
+    {
+        return Err(AppError::Message(
+            "malformed login response: missing authentication cookie".to_string(),
+        ));
+    }
+    config::remove_legacy_token()
+        .map_err(|error| AppError::Message(format!("could not remove legacy token: {error}")))?;
     Ok(json!({
         "status": "ok",
         "username": parsed.get("username").cloned().unwrap_or(Value::Null),
@@ -155,7 +176,7 @@ const CARD_FIELDS_TO_DROP: &[&str] = &[
 /// (`CARD_FIELDS_TO_DROP`, plus the top-level `next_due_at` this flow never
 /// uses) before it's handed back, rather than passed through verbatim.
 pub fn review() -> Result<Value, AppError> {
-    let token = require_token()?;
+    let client = authenticated_agent()?;
 
     for _ in 0..MAX_CLAIM_ATTEMPTS {
         let exclude = config::live_leases()
@@ -163,10 +184,14 @@ pub fn review() -> Result<Value, AppError> {
         let path = if exclude.is_empty() {
             "/api/cards/next".to_string()
         } else {
-            let ids = exclude.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            let ids = exclude
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
             format!("/api/cards/next?exclude={ids}")
         };
-        let mut envelope = parse(&get(&path, &token)?)?;
+        let mut envelope = parse(&get(&path, &client)?)?;
         if let Some(obj) = envelope.as_object_mut() {
             obj.remove("next_due_at");
             if let Some(card) = obj.get_mut("card").and_then(Value::as_object_mut) {
@@ -208,11 +233,11 @@ pub fn review() -> Result<Value, AppError> {
 /// the point is coverage of the deck rather than mastering it via spaced
 /// repetition.
 pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
-    let token = require_token()?;
+    let client = authenticated_agent()?;
     let body = json!({ "answer": guess });
     let mut result = parse(&post_json(
         &format!("/api/cards/{card_id}/check"),
-        Some(&token),
+        &client,
         &body,
     )?)?;
 
@@ -232,7 +257,7 @@ pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
         obj.remove("hanja_hints");
     }
 
-    put(&format!("/api/cards/{card_id}/suppress"), &token)?;
+    put(&format!("/api/cards/{card_id}/suppress"), &client)?;
 
     // Free the lease `review` took out on this card, now that it's
     // suppressed server-side and will never be handed out again anyway.
@@ -247,11 +272,11 @@ pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
 
 /// Records a content-review note against a card server-side.
 pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
-    let token = require_token()?;
+    let client = authenticated_agent()?;
     let body = json!({ "body": text });
     parse(&post_json(
         &format!("/api/cards/{card_id}/comment"),
-        Some(&token),
+        &client,
         &body,
     )?)
 }
@@ -269,9 +294,9 @@ const FIELD_VALUES_FIELDS: &str = "pos,speech_level,tense,grammar_pattern";
 /// `rank` is dropped when null rather than shipped as a no-op line - most
 /// of these fields don't use it at all.
 pub fn field_values() -> Result<Value, AppError> {
-    let token = require_token()?;
+    let client = authenticated_agent()?;
     let path = format!("/api/cards/field-values?fields={FIELD_VALUES_FIELDS}");
-    let mut value = parse(&get(&path, &token)?)?;
+    let mut value = parse(&get(&path, &client)?)?;
     strip_null_rank(&mut value);
     Ok(value)
 }

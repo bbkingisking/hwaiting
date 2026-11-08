@@ -8,6 +8,7 @@
 
 import type * as Schemas from './api-generated/types.gen'
 import { apiBase, attestationToJson, describeCeremonyError, toCreationOptions } from './webauthn'
+import { fetchWithCookies } from './http'
 
 type EditCardRequest = Schemas.UpdateCardRequest
 type EditCardResponse = Schemas.EditCardResponse
@@ -43,17 +44,10 @@ class ApiError extends Error {
 }
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('hwaiting-token')
-
-  if (!token) {
-    throw new ApiError(401, 'Not authenticated')
-  }
-
-  const response = await fetch(url, {
+  const response = await fetchWithCookies(url, {
     ...options,
     headers: {
       ...options.headers,
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     signal: options.signal,
@@ -73,11 +67,10 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
 type Capabilities = Schemas.Capabilities
 
-// Unauthenticated, unlike everything else here - AuthProvider calls this
-// before there's any session (it decides whether to even offer passkey
-// sign-in), so it can't go through fetchWithAuth.
+// Public: AuthProvider checks this before sign-in to decide whether to
+// offer passkeys. An existing authentication cookie is optional.
 export async function getCapabilities(): Promise<Capabilities> {
-  const response = await fetch(`${apiBase()}/api/capabilities`)
+  const response = await fetchWithCookies(`${apiBase()}/api/capabilities`)
   if (!response.ok) {
     throw new ApiError(response.status, `HTTP ${response.status}`)
   }
@@ -168,6 +161,10 @@ export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillRes
 export async function getUserProfile(): Promise<UserProfile> {
   const url = `${apiBase()}/api/user/me`
   return fetchWithAuth(url)
+}
+
+export async function logoutSession(): Promise<void> {
+  await fetchWithAuth(`${apiBase()}/api/auth/logout`, { method: 'POST' })
 }
 
 type PasskeySummary = Schemas.PasskeySummary

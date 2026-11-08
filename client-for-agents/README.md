@@ -15,3 +15,6 @@ SELECT COUNT (*) FROM cards; -- gets the total number of cards in the database
 ```sql
 UPDATE user_settings SET daily_new_card_limit = 1578 WHERE user_id = 3; -- or however many you want the agent to review at one time
 ```
+
+
+Authentication uses the backend's JWT cookie. Run `login` with `HWAITING_USERNAME` and `HWAITING_PASSWORD` set. The client receives the HttpOnly cookie from `Set-Cookie` and persists its cookie jar privately in `$XDG_CONFIG_HOME/hwaiting-agent/cookies.json` (or `~/.config/hwaiting-agent/cookies.json`), with mode 0600. Subsequent commands load it, respect cookie scope and expiry, and send the CSRF header on writes. Saved credentials are bound to the configured `HWAITING_API_URL`; changing that URL requires signing in again. After upgrading from bearer authentication, run `login` again; a successful login removes the old `token` file. Authentication secrets are never printed to stdout.

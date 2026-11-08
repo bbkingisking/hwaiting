@@ -1,6 +1,11 @@
 use utoipa::{
     Modify, OpenApi,
-    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    openapi::{
+        Required,
+        path::{ParameterBuilder, ParameterIn},
+        schema::{ObjectBuilder, Type},
+    },
 };
 
 struct SecurityAddon;
@@ -9,14 +14,36 @@ impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         if let Some(components) = openapi.components.as_mut() {
             components.add_security_scheme(
-                "bearer_auth",
-                SecurityScheme::Http(
-                    HttpBuilder::new()
-                        .scheme(HttpAuthScheme::Bearer)
-                        .bearer_format("JWT")
-                        .build(),
-                ),
+                "cookie_auth",
+                SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(
+                    crate::auth_cookie::COOKIE_NAME,
+                ))),
             );
+        }
+        // Keep the write requirement executable in Swagger UI and visible
+        // to generated clients, including unauthenticated login endpoints.
+        for path in openapi.paths.paths.values_mut() {
+            for operation in [
+                &mut path.post,
+                &mut path.put,
+                &mut path.patch,
+                &mut path.delete,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                operation.parameters.get_or_insert_with(Vec::new).push(
+                    ParameterBuilder::new()
+                        .name("X-Requested-With")
+                        .parameter_in(ParameterIn::Header)
+                        .required(Required::True)
+                        .description(Some("CSRF protection: cross-origin browser writes require an allowed CORS origin."))
+                        .schema(Some(ObjectBuilder::new().schema_type(Type::String)
+                            .default(Some(serde_json::json!(crate::auth_cookie::CSRF_VALUE)))
+                            .enum_values(Some([crate::auth_cookie::CSRF_VALUE]))))
+                        .build(),
+                );
+            }
         }
     }
 }
@@ -26,12 +53,13 @@ impl Modify for SecurityAddon {
     info(
         title = "hwaiting API",
         version = "1.0.0",
-        description = "Korean FSRS flashcard backend."
+        description = "Korean FSRS flashcard backend. Authentication uses an HttpOnly JWT cookie. All POST, PUT, PATCH, and DELETE requests require X-Requested-With: hwaiting; cross-origin browser clients must be explicitly allowed through CORS."
     ),
     paths(
         crate::passkey::capabilities,
         crate::auth::login,
         crate::auth::signup,
+        crate::auth_cookie::logout,
         crate::passkey::register_start,
         crate::passkey::register_finish,
         crate::passkey::login_start,

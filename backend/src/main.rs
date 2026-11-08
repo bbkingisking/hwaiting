@@ -1,7 +1,8 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    http::{HeaderValue, Method, header},
+    http::{HeaderName, HeaderValue, Method, header},
+    middleware,
     routing::{delete, get, patch, post, put},
 };
 use std::env;
@@ -17,6 +18,7 @@ use dotenvy::dotenv;
 
 mod admin;
 mod auth;
+mod auth_cookie;
 mod cards;
 mod credentials;
 mod db;
@@ -72,6 +74,8 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::debug!("Starting Hwaiting backend...");
 
+    auth_cookie::validate_config();
+
     // Initialize database
     let pool = db::init().await?;
 
@@ -86,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/capabilities", get(passkey::capabilities))
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
+        .route("/auth/logout", post(auth_cookie::logout))
         .route(
             "/auth/passkey/register/start",
             post(passkey::register_start),
@@ -142,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
             get(admin::get_card_inflections),
         )
         .route("/health", get(health_check))
+        .layer(middleware::from_fn(auth_cookie::protect_api))
         .with_state(state);
 
     // Combine routes - API takes precedence over static files
@@ -197,7 +203,11 @@ async fn main() -> anyhow::Result<()> {
                     Method::PATCH,
                     Method::DELETE,
                 ])
-                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]);
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    HeaderName::from_static(auth_cookie::CSRF_HEADER),
+                ])
+                .allow_credentials(true);
 
             app = app.layer(cors);
         }
@@ -364,6 +374,8 @@ ENVIRONMENT VARIABLES:
         HWAITING_ADMIN_USERNAME         Admin account username (default: admin)
         HWAITING_HOST                   TCP bind host (default: 127.0.0.1)
         HWAITING_PORT                   TCP bind port (default: 3000)
+        HWAITING_COOKIE_SECURE          Secure cookies (default: false; enable for HTTPS)
+        HWAITING_COOKIE_SAME_SITE       lax (default), strict, or none (requires Secure)
         HWAITING_DATABASE_URL           sqlite:// URL
                                          (default: $XDG_DATA_HOME/hwaiting/hwaiting.db,
                                          or $HOME/.local/share/hwaiting/hwaiting.db)

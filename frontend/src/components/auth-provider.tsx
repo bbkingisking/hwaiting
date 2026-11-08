@@ -1,9 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { getCapabilities, getUserProfile } from '@/lib/api'
+import { getCapabilities, getUserProfile, logoutSession } from '@/lib/api'
+import { fetchWithCookies } from '@/lib/http'
 import { apiBase, assertionToJson, attestationToJson, describeCeremonyError, toCreationOptions, toRequestOptions } from '@/lib/webauthn'
 
 interface AuthContextType {
-  token: string | null
   isAdmin: boolean
   // Whether this deployment has HWAITING_RP_ID/HWAITING_RP_ORIGINS
   // configured - see GET /api/capabilities. False (not "unknown") until
@@ -24,13 +24,11 @@ interface AuthContextType {
   // feature's design notes for why an automatic try-then-fallback flow
   // was dropped.
   passkeyRegister: () => Promise<{ success: boolean; error?: string }>
-  logout: () => void
+  logout: () => Promise<{ success: boolean; error?: string }>
   isAuthenticated: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-const TOKEN_KEY = 'hwaiting-token'
 
 function requireWebAuthnSupport() {
   if (!window.PublicKeyCredential) {
@@ -41,12 +39,12 @@ function requireWebAuthnSupport() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [passkeysEnabled, setPasskeysEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Load the token from localStorage, and the server's passkey capability,
+  // Check the cookie-backed session and the server's passkey capability,
   // in parallel on mount - `loading` (and so `children`, see the provider
   // below) waits on both, so nothing ever renders with a stale/unknown
   // passkeysEnabled the way a component-local fetch could.
@@ -55,23 +53,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // directly - harmless to leave, but there's no reason to.
     localStorage.removeItem('hwaiting-username')
     localStorage.removeItem('hwaiting-isadmin')
+    localStorage.removeItem('hwaiting-token')
 
-    // The JWT itself carries no is_admin claim (see backend auth::Claims),
-    // so that has to come from a profile fetch rather than being cached
-    // alongside the token.
+    // The HttpOnly cookie is invisible to JavaScript. A profile request
+    // determines whether the browser has a valid authenticated session.
     const loadSession = async () => {
-      const storedToken = localStorage.getItem(TOKEN_KEY)
-      if (!storedToken) return
-
-      setToken(storedToken)
       try {
         const profile = await getUserProfile()
         setIsAdmin(profile.is_admin)
+        setIsAuthenticated(true)
       } catch {
-        // Token rejected or expired - don't stay "authenticated" with a
-        // token that doesn't actually work.
-        localStorage.removeItem(TOKEN_KEY)
-        setToken(null)
+        setIsAuthenticated(false)
       }
     }
 
@@ -89,16 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     Promise.all([loadSession(), loadCapabilities()]).finally(() => setLoading(false))
   }, [])
 
-  const applySession = (data: { token: string; is_admin: boolean }) => {
-    setToken(data.token)
+  const applySession = (data: { is_admin: boolean }) => {
+    setIsAuthenticated(true)
     setIsAdmin(data.is_admin)
-    localStorage.setItem(TOKEN_KEY, data.token)
   }
 
   const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     let response
     try {
-      response = await fetch(`${apiBase()}/api/auth/login`, {
+      response = await fetchWithCookies(`${apiBase()}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -121,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<{ success: boolean; error?: string }> => {
     let response
     try {
-      response = await fetch(`${apiBase()}/api/auth/signup`, {
+      response = await fetchWithCookies(`${apiBase()}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -152,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       requireWebAuthnSupport()
 
-      const startResponse = await fetch(`${apiBase()}/api/auth/passkey/${kind}/start`, {
+      const startResponse = await fetchWithCookies(`${apiBase()}/api/auth/passkey/${kind}/start`, {
         method: 'POST',
         ...(startBody && {
           headers: { 'Content-Type': 'application/json' },
@@ -175,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: `${kind === 'login' ? 'Sign-in' : 'Account creation'} was cancelled.` }
       }
 
-      const finishResponse = await fetch(`${apiBase()}/api/auth/passkey/${kind}/finish`, {
+      const finishResponse = await fetchWithCookies(`${apiBase()}/api/auth/passkey/${kind}/finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ceremony_id, credential: toJson(credential) }),
@@ -208,16 +199,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       attestationToJson
     )
 
-  const logout = () => {
-    setToken(null)
-    setIsAdmin(false)
-    localStorage.removeItem(TOKEN_KEY)
+  const logout = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await logoutSession()
+      setIsAuthenticated(false)
+      setIsAdmin(false)
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Could not log out. Please try again.' }
+    }
   }
 
   return (
     <AuthContext.Provider
       value={{
-        token,
         isAdmin,
         passkeysEnabled,
         login,
@@ -225,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         passkeyLogin,
         passkeyRegister,
         logout,
-        isAuthenticated: !!token && !loading,
+        isAuthenticated: isAuthenticated && !loading,
       }}
     >
       {loading ? null : children}

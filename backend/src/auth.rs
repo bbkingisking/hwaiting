@@ -5,7 +5,8 @@ use argon2::{
 use axum::{
     Json,
     extract::{FromRef, FromRequestParts, State},
-    http::{StatusCode, request::Parts},
+    http::{StatusCode, header, request::Parts},
+    response::{IntoResponse, Response},
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
@@ -30,7 +31,6 @@ pub struct SignupRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
-    pub token: String,
     /// `None` for an account created via passkey, which has no username -
     /// see [`crate::passkey`].
     pub username: Option<String>,
@@ -51,7 +51,7 @@ pub struct AuthResponse {
 pub async fn login(
     State(pool): State<SqlitePool>,
     AppJson(payload): AppJson<LoginRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<Response, AppError> {
     let username = payload.username.trim();
     let password = payload.password.trim();
 
@@ -88,13 +88,7 @@ pub async fn login(
                 .is_ok();
 
             if password_matches {
-                // Generate JWT token
-                let token = generate_token(user_id)?;
-                Ok(Json(AuthResponse {
-                    token,
-                    username: Some(stored_username),
-                    is_admin,
-                }))
+                authenticated_response(user_id, Some(stored_username), is_admin)
             } else {
                 warn!("Invalid password attempt for user: {}", username);
                 Err(AppError::InvalidCredentials)
@@ -121,7 +115,7 @@ pub async fn login(
 pub async fn signup(
     State(pool): State<SqlitePool>,
     AppJson(payload): AppJson<SignupRequest>,
-) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+) -> Result<(StatusCode, Response), AppError> {
     let username = payload.username.trim();
     let password = payload.password.trim();
 
@@ -163,16 +157,9 @@ pub async fn signup(
 
     tx.commit().await?;
 
-    // Generate JWT token
-    let token = generate_token(user_id)?;
-
     Ok((
         StatusCode::CREATED,
-        Json(AuthResponse {
-            token,
-            username: Some(username.to_string()),
-            is_admin,
-        }),
+        authenticated_response(user_id, Some(username.to_string()), is_admin)?,
     ))
 }
 
@@ -265,6 +252,25 @@ pub(crate) fn generate_token(user_id: i64) -> Result<String, AppError> {
     )
 }
 
+/// Both password and passkey sign-in issue the same HttpOnly JWT cookie.
+/// The JSON response contains profile information only.
+pub(crate) fn authenticated_response(
+    user_id: i64,
+    username: Option<String>,
+    is_admin: bool,
+) -> Result<Response, AppError> {
+    let token = generate_token(user_id)?;
+    let cookie = crate::auth_cookie::issue(token, jwt_ttl_seconds());
+    Ok((
+        [
+            (header::SET_COOKIE, cookie.to_string()),
+            (header::CACHE_CONTROL, "no-store".to_string()),
+        ],
+        Json(AuthResponse { username, is_admin }),
+    )
+        .into_response())
+}
+
 // JWT Claims
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -283,21 +289,9 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Missing/malformed Authorization header is the routine "not signed
-        // in yet" case, not a notable event - same as AppJson/AppPath/
-        // AppQuery not logging their own routine rejections - so this stays
-        // silent; only decode_token's own outcome is worth a log.
-        let auth_header = parts
-            .headers
-            .get("Authorization")
-            .and_then(|h| h.to_str().ok())
-            .ok_or(AppError::InvalidCredentials)?;
+        let token = crate::auth_cookie::token(&parts.headers)?;
 
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or(AppError::InvalidCredentials)?;
-
-        let claims = decode_token(token, &crate::credentials::jwt_secret())?;
+        let claims = decode_token(&token, &crate::credentials::jwt_secret())?;
         Ok(AuthUser(claims.sub))
     }
 }

@@ -8,6 +8,7 @@ anyhow = "1.0.102"
 argon2 = "0.5.3"
 async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["macros"] }
+cookie = "0.18.1"
 chrono = { version = "0.4.44", features = ["serde"] }
 dotenvy = "0.15.7"
 fsrs = "5.2.0"
@@ -48,4 +49,5 @@ webauthn_rp = { version = "0.3.0", features = ["serde_relaxed", "serializable_se
 libc = "0.2"
 
 [dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 chrono-tz = "0.10.4"

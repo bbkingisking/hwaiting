@@ -38,7 +38,7 @@ pub struct HanjaDrillResponse {
         (status = 200, description = "A random hanja drawn from the user's mastered cards, or null if none exist yet", body = HanjaDrillResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn get_hanja_drill(

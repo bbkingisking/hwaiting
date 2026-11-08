@@ -28,6 +28,8 @@ Every backend option is configurable from an env var `KEY_NAME` or a plain text 
 | `HWAITING_HOST` | `hwaiting-host` | Only if not using systemd socket activation or `HWAITING_UNIX_SOCKET` | `127.0.0.1` |
 | `HWAITING_PORT` | `hwaiting-port` | Only if not using systemd socket activation or `HWAITING_UNIX_SOCKET` | `3000` |
 | `HWAITING_UNIX_SOCKET` | `hwaiting-unix-socket` | No | unset (falls back to `HWAITING_HOST`/`HWAITING_PORT`) |
+| `HWAITING_COOKIE_SECURE` | `hwaiting-cookie-secure` | No | `false` (supports HTTP LAN); set `true` for HTTPS deployments |
+| `HWAITING_COOKIE_SAME_SITE` | `hwaiting-cookie-same-site` | No | `lax`; also accepts `strict` or `none` (`none` requires Secure) |
 | `HWAITING_JWT_EXPIRY_SECONDS` | `hwaiting-jwt-expiry-seconds` | No | unset or `0` = tokens never expire |
 | `HWAITING_STATIC_DIR` | `hwaiting-static-dir` | No | unset = API-only mode, no static file serving |
 | `HWAITING_CORS_ALLOWED_ORIGINS` | `hwaiting-cors-allowed-origins` | No | unset = no CORS layer (same-origin only) |
@@ -48,7 +50,13 @@ All data is stored in a single SQLite database. The shape of the data is highly 
 
 ### Auth
 
-Basic username/password (Argon2 hashes stored in the DB) mints a JWT token (with no expiry by default, configurable). 
+Username/password (Argon2 hashes stored in the DB) and passkey sign-in both issue the same JWT in a host-only `hwaiting-auth` cookie (`HttpOnly`, `Path=/`, `SameSite=Lax` by default). The JSON response contains profile information only. Requests authenticate through that cookie; bearer headers are no longer accepted. The JWT signing secret and `HWAITING_JWT_EXPIRY_SECONDS` retain their existing meaning: tokens have no expiry by default. Cookie persistence follows a configured JWT lifetime, or defaults to 400 days when JWT expiry is disabled (browsers may impose their own storage limits).
+
+Plain HTTP, including LAN access, works with the default `HWAITING_COOKIE_SECURE=false`. For HTTPS deployments, set it to `true`; this setting is explicit because the backend may sit behind a TLS-terminating proxy. For a browser frontend hosted on a different site, configure its exact origin in `HWAITING_CORS_ALLOWED_ORIGINS` and use `HWAITING_COOKIE_SAME_SITE=none` with Secure enabled. Credentialed CORS is supported, but browser third-party cookie policies may still block cross-site cookies; serving the frontend and API from the same site avoids that dependency.
+
+Every state-changing API request (`POST`, `PUT`, `PATCH`, `DELETE`), including login, must carry `X-Requested-With: hwaiting`. This is a CSRF defense: HTML forms cannot set the header, and cross-origin JavaScript must pass a preflight against the explicit CORS allowlist. Both clients set it automatically. Read-only requests need no custom header, so native `EventSource` can authenticate with cookies.
+
+`POST /api/auth/logout` clears the cookie, including an expired or invalid one. As before, JWTs are stateless: clearing a client cookie does not revoke another copy of that JWT. Existing browser users and agent clients must sign in again after upgrading; browser local-storage tokens are removed and the agent removes its legacy token file after a successful login.
 
 In addition to that, the backend supports passkeys for identifier-less sign-up/sign-in flows. The passkey protocol requires an https:// context (or localhost). In order for it to work, the `HWAITING_RP_ID` and `HWAITING_RP_ORIGINS` should be set accordingly. With passkey auth, the only WebAuthn-specific data stored per passkey is the public key: `passkeys.public_key`, populated at sign-up time. At sign-in, *every* public key in the database is checked for signature verification, and the first matched one gets logged in. There is deliberately no credential_id or a user identifier blob stored for quicker matching, as I was experimenting with how minimal the webauthn protocol can be while still remaining functional. The drawbacks of storing a public key *only* lie strictly outside the cryptography: unable to verify signature provenance via device metadata (backup-able), unable to check sign-in counters, etc. 
 
