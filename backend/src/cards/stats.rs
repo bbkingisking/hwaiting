@@ -183,7 +183,7 @@ pub async fn get_stats(
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE cs.last_review IS NOT NULL
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        AND datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
+        AND cs.due_at <= unixepoch('now')
         "#,
     )
     .bind(user_id)
@@ -227,11 +227,11 @@ pub async fn get_stats(
     // Find when the next card becomes due
     let next_due_at: Option<String> = sqlx::query_scalar(
         r#"
-        SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
+        SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
         FROM cards c
         INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
+        WHERE cs.due_at > unixepoch('now')
         AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
         "#,
     )

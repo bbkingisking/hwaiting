@@ -269,11 +269,11 @@ pub async fn get_next_card(
         {}
         AND (
             cs.last_review IS NULL
-            OR datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') <= datetime('now')
+            OR cs.due_at <= unixepoch('now')
         )
         ORDER BY
             CASE WHEN cs.last_review IS NULL THEN 1 ELSE 0 END,
-            datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') ASC,
+            cs.due_at ASC,
             c.frequency_rank ASC NULLS LAST,
             RANDOM()
         LIMIT 1
@@ -315,11 +315,11 @@ pub async fn get_next_card(
         //    stops because everything's genuinely scheduled for later.
         let scheduled_next: Option<String> = sqlx::query_scalar(
             r#"
-            SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days')))
+            SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
             FROM cards c
             INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
             LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-            WHERE datetime(cs.last_review, '+' || CAST(cs.stability AS TEXT) || ' days') > datetime('now')
+            WHERE cs.due_at > unixepoch('now')
             AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
             "#,
         )
@@ -328,7 +328,7 @@ pub async fn get_next_card(
         .fetch_one(&pool)
         .await?;
 
-        let new_card_reset = if new_card_limit_reached {
+        let new_card_reset = if new_card_limit_reached && daily_new_card_limit > 0 {
             let new_cards_waiting: i64 = sqlx::query_scalar(
                 r#"
                 SELECT EXISTS (
@@ -571,8 +571,8 @@ mod tests {
     async fn bury_every_other_card(pool: &SqlitePool, user_id: i64, keep: i64) {
         sqlx::query(
             r#"
-            INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state)
-            SELECT ?, id, 1000, 0, datetime('now'), 'review' FROM cards WHERE id != ?
+            INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at)
+            SELECT ?, id, 1000, 0, datetime('now'), 'review', unixepoch('now', '+1000 days') FROM cards WHERE id != ?
             "#,
         )
         .bind(user_id)
@@ -587,11 +587,11 @@ mod tests {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
 
-        // Card 2 is already due (last_review + stability in the past);
+        // Card 2 has a persisted deadline in the past;
         // every other card (including card 1) is untouched, i.e. "new".
         sqlx::query(
-            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
-             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review')",
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) \
+             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review', unixepoch('now', '-9 days'))",
         )
         .bind(user_id)
         .execute(&pool)
@@ -611,8 +611,8 @@ mod tests {
         // Card 2 is due, but suppressed - it must not come back even though
         // it would otherwise win on priority.
         sqlx::query(
-            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
-             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review')",
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) \
+             VALUES (?, 2, 1, 0, datetime('now', '-10 days'), 'review', unixepoch('now', '-9 days'))",
         )
         .bind(user_id)
         .execute(&pool)
@@ -658,6 +658,10 @@ mod tests {
         // none due, nothing is available.
         let envelope = next_card(&pool, user_id, vec![]).await;
         assert!(envelope.card.is_none());
+        assert!(
+            envelope.next_due_at.is_none(),
+            "a zero limit does not reset tomorrow"
+        );
     }
 
     #[tokio::test]
@@ -687,8 +691,8 @@ mod tests {
             .unwrap();
 
             sqlx::query(
-                "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
-                 VALUES (?, ?, 10, 1, datetime('now'), 'learning')",
+                "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) \
+                 VALUES (?, ?, 10, 1, datetime('now'), 'learning', unixepoch('now', '+10 days'))",
             )
             .bind(user_id)
             .bind(card_id)
@@ -724,8 +728,8 @@ mod tests {
         // card 1's is due soonest.
         bury_every_other_card(&pool, user_id, 1).await;
         sqlx::query(
-            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state) \
-             VALUES (?, 1, 3, 0, datetime('now'), 'review')",
+            "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) \
+             VALUES (?, 1, 3, 0, datetime('now'), 'review', unixepoch('now', '+3 days'))",
         )
         .bind(user_id)
         .execute(&pool)
@@ -776,7 +780,7 @@ mod tests {
         )
         .await
         .unwrap();
-        sqlx::query("UPDATE cards_states SET last_review = '2000-01-01T00:00:00Z' WHERE user_id = ? AND card_id = 1")
+        sqlx::query("UPDATE cards_states SET last_review = '2000-01-01T00:00:00Z', due_at = 0 WHERE user_id = ? AND card_id = 1")
             .bind(user_id).execute(&pool).await.unwrap();
         let card = fetch().await.unwrap().0.card.unwrap();
         assert_eq!(card.review_revision, 1);

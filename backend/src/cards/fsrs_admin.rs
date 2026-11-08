@@ -165,6 +165,9 @@ pub async fn optimize_fsrs(
         .compute_parameters(input)
         .map_err(|e| AppError::Internal(format!("FSRS optimization error: {:?}", e)))?;
 
+    // Commit parameters and their resulting deadlines together.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
     // Store the optimized parameters
     let params_json = serde_json::to_string(&parameters)
         .map_err(|e| AppError::Internal(format!("JSON serialization error: {}", e)))?;
@@ -178,8 +181,10 @@ pub async fn optimize_fsrs(
     )
     .bind(user_id)
     .bind(&params_json)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await?;
+    super::scheduling::reschedule_user(&mut tx, user_id).await?;
+    tx.commit().await?;
 
     info!("FSRS parameters optimized from {} reviews", review_count);
 
@@ -208,10 +213,13 @@ pub async fn reset_fsrs_parameters(
     let user_id = auth.0;
     info!("Resetting FSRS parameters for user_id: {}", user_id);
 
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query("DELETE FROM users_fsrs_parameters WHERE user_id = ?")
         .bind(user_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await?;
+    super::scheduling::reschedule_user(&mut tx, user_id).await?;
+    tx.commit().await?;
 
     info!("FSRS parameters reset to defaults");
 

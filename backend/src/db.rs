@@ -43,6 +43,7 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
     // Run migrations
     debug!("Running database migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
+    crate::cards::scheduling::backfill_due_dates(&pool).await?;
     debug!("Database migrations complete");
 
     // Seed admin user if doesn't exist
