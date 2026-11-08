@@ -16,7 +16,6 @@ export type AdminUserSummary = {
 
 export type AuthResponse = {
     is_admin: boolean;
-    token: string;
     /**
      * `None` for an account created via passkey, which has no username -
      * see [`crate::passkey`].
@@ -653,6 +652,12 @@ export type SearchCardsResponse2 = SearchCardsResponses[keyof SearchCardsRespons
 
 export type EditCardData = {
     body: UpdateCardRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Card ID
@@ -767,6 +772,12 @@ export type ListUsersResponse2 = ListUsersResponses[keyof ListUsersResponses];
 
 export type LoginData = {
     body: LoginRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/login';
@@ -794,8 +805,36 @@ export type LoginResponses = {
 
 export type LoginResponse = LoginResponses[keyof LoginResponses];
 
+export type LogoutData = {
+    body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/auth/logout';
+};
+
+export type LogoutResponses = {
+    /**
+     * Authentication cookie cleared
+     */
+    204: void;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
 export type LoginFinishData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/passkey/login/finish';
@@ -829,6 +868,12 @@ export type LoginFinishResponse = LoginFinishResponses[keyof LoginFinishResponse
 
 export type LoginStartData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/passkey/login/start';
@@ -843,6 +888,12 @@ export type LoginStartResponses = {
 
 export type RegisterFinishData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/passkey/register/finish';
@@ -872,6 +923,12 @@ export type RegisterFinishResponse = RegisterFinishResponses[keyof RegisterFinis
 
 export type RegisterStartData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/passkey/register/start';
@@ -886,6 +943,12 @@ export type RegisterStartResponses = {
 
 export type SignupData = {
     body: SignupRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/auth/signup';
@@ -966,6 +1029,12 @@ export type ListFieldValuesResponse = ListFieldValuesResponses[keyof ListFieldVa
 
 export type ResetFsrsParametersData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/cards/fsrs-parameters';
@@ -991,6 +1060,12 @@ export type ResetFsrsParametersResponse = ResetFsrsParametersResponses[keyof Res
 
 export type OptimizeFsrsData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/cards/fsrs-parameters';
@@ -1163,6 +1238,12 @@ export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof Lis
 
 export type CheckAnswerData = {
     body: CheckRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Card ID
@@ -1205,6 +1286,12 @@ export type CheckAnswerResponse = CheckAnswerResponses[keyof CheckAnswerResponse
 
 export type CommentOnCardData = {
     body: CommentRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Card ID
@@ -1239,6 +1326,12 @@ export type CommentOnCardResponse = CommentOnCardResponses[keyof CommentOnCardRe
 
 export type SuppressCardData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Card ID
@@ -1269,6 +1362,12 @@ export type SuppressCardResponse = SuppressCardResponses[keyof SuppressCardRespo
 
 export type UnsuppressCardData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Card ID
@@ -1340,6 +1439,12 @@ export type ExportDataResponse = ExportDataResponses[keyof ExportDataResponses];
 
 export type ImportDataData = {
     body: ImportDataRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/user/import';
@@ -1419,6 +1524,12 @@ export type ListPasskeysResponse2 = ListPasskeysResponses[keyof ListPasskeysResp
 
 export type AddPasskeyFinishData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/user/passkeys/register/finish';
@@ -1456,6 +1567,12 @@ export type AddPasskeyFinishResponse = AddPasskeyFinishResponses[keyof AddPasske
 
 export type AddPasskeyStartData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/user/passkeys/register/start';
@@ -1479,6 +1596,12 @@ export type AddPasskeyStartResponses = {
 
 export type DeletePasskeyData = {
     body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path: {
         /**
          * Passkey ID
@@ -1542,6 +1665,12 @@ export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponse
 
 export type UpdateSettingsData = {
     body: UpdateSettingsRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
     path?: never;
     query?: never;
     url: '/api/user/settings';

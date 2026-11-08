@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -10,7 +10,10 @@ use std::time::Duration;
 const DEFAULT_BASE_URL: &str = "http://localhost:15000";
 
 pub fn base_url() -> String {
-    env::var("HWAITING_API_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
+    env::var("HWAITING_API_URL")
+        .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 fn home_dir() -> io::Result<PathBuf> {
@@ -19,10 +22,7 @@ fn home_dir() -> io::Result<PathBuf> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))
 }
 
-/// Holds the JWT saved by `login` and read by every other command. Not the
-/// same env vars a browser session would use - this is a standing dummy
-/// account whose token just needs to survive between separate process
-/// invocations, since each `hwaiting-agent` call starts cold.
+/// Private per-user state shared by successive CLI invocations.
 fn state_dir() -> io::Result<PathBuf> {
     let base = match env::var_os("XDG_CONFIG_HOME") {
         Some(v) => PathBuf::from(v),
@@ -36,23 +36,68 @@ fn state_dir() -> io::Result<PathBuf> {
     Ok(dir)
 }
 
-fn token_path() -> io::Result<PathBuf> {
-    Ok(state_dir()?.join("token"))
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedCookies {
+    api_url: String,
+    jar: String,
 }
 
-pub fn save_token(token: &str) -> io::Result<()> {
-    let path = token_path()?;
-    fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?
-        .write_all(token.as_bytes())
+pub fn save_cookies(agent: &ureq::Agent) -> io::Result<()> {
+    let mut jar = Vec::new();
+    agent
+        .cookie_jar_lock()
+        .save_json(&mut jar)
+        .map_err(io::Error::other)?;
+    let saved = SavedCookies {
+        api_url: base_url(),
+        jar: String::from_utf8(jar).map_err(io::Error::other)?,
+    };
+    let bytes = serde_json::to_vec(&saved).map_err(io::Error::other)?;
+    let path = state_dir()?.join("cookies.json");
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_nanos();
+    let temporary = path.with_extension(format!("tmp-{}-{nonce}", std::process::id()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
-pub fn load_token() -> io::Result<String> {
-    fs::read_to_string(token_path()?)
+pub fn load_cookies(agent: &ureq::Agent) -> io::Result<()> {
+    let path = state_dir()?.join("cookies.json");
+    let saved: SavedCookies =
+        serde_json::from_reader(BufReader::new(fs::File::open(path)?)).map_err(io::Error::other)?;
+    // Cookies normally span ports. Bind saved CLI credentials to the exact
+    // configured backend, so changing HWAITING_API_URL requires a new login.
+    if saved.api_url != base_url() {
+        return Err(io::Error::other(
+            "saved login belongs to a different API URL",
+        ));
+    }
+    agent
+        .cookie_jar_lock()
+        .load_json(saved.jar.as_bytes())
+        .map_err(io::Error::other)
+}
+
+pub fn remove_legacy_token() -> io::Result<()> {
+    match fs::remove_file(state_dir()?.join("token")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 /// How long an unreleased lease is honored before it's assumed to belong to
@@ -126,14 +171,7 @@ pub fn live_leases() -> io::Result<Vec<i64>> {
                 .map(|m| m.elapsed().unwrap_or_default() <= LEASE_TTL)
                 .unwrap_or(false)
         })
-        .filter_map(|entry| {
-            entry
-                .path()
-                .file_stem()?
-                .to_str()?
-                .parse::<i64>()
-                .ok()
-        })
+        .filter_map(|entry| entry.path().file_stem()?.to_str()?.parse::<i64>().ok())
         .collect();
     Ok(ids)
 }

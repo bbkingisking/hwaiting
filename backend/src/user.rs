@@ -143,7 +143,7 @@ pub struct UpdateSettingsResponse {
         (status = 200, description = "Current user's profile", body = UserProfile),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn get_profile(
@@ -170,7 +170,7 @@ pub async fn get_profile(
         (status = 200, description = "Current user settings (row lazily created on first access)", body = UserSettings),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn get_settings(
@@ -216,7 +216,7 @@ pub async fn get_settings(
         (status = 400, description = "Out-of-range value or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn update_settings(

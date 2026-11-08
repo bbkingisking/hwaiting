@@ -97,7 +97,7 @@ fn build_fsrs_items(rows: &[(i64, String, String)]) -> Result<Vec<FSRSItem>, App
         (status = 400, description = "No/insufficient review history to optimize from", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn optimize_fsrs(
@@ -198,7 +198,7 @@ pub async fn optimize_fsrs(
         (status = 204, description = "FSRS parameters reset to library defaults"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn reset_fsrs_parameters(

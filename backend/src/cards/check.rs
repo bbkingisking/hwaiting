@@ -111,7 +111,7 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn check_answer(

@@ -34,7 +34,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
-  const { token, passkeysEnabled } = useAuth()
+  const { isAuthenticated, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
   const { resolvedTheme, setTheme } = useTheme()
   const [isExporting, setIsExporting] = useState(false)
@@ -53,7 +53,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [preferredLimit, setPreferredLimit] = useState(20)
 
   const fetchPasskeys = async () => {
-    if (!token) return
+    if (!isAuthenticated) return
 
     setIsLoadingPasskeys(true)
     try {

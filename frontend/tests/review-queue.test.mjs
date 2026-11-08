@@ -16,8 +16,11 @@ function moduleUrl(source) {
 }
 
 const webauthnUrl = moduleUrl(transpile('../src/lib/webauthn.ts').replaceAll('import.meta.env', '({})'))
+const httpUrl = moduleUrl(transpile('../src/lib/http.ts'))
 const api = await import(moduleUrl(
-  transpile('../src/lib/api.ts').replace("'./webauthn'", JSON.stringify(webauthnUrl))
+  transpile('../src/lib/api.ts')
+    .replace("'./webauthn'", JSON.stringify(webauthnUrl))
+    .replace("'./http'", JSON.stringify(httpUrl))
 ))
 
 let changes
@@ -31,7 +34,7 @@ beforeEach(context => {
     configurable: true, value: { location: { origin: 'http://localhost' } },
   })
   Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true, value: { getItem: () => 'test-token' },
+    configurable: true, value: { getItem: () => { throw new Error('API requests must not read stored JWTs') } },
   })
   changes = []
   requests = []

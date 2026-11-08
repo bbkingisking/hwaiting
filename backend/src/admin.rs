@@ -53,7 +53,7 @@ pub struct ListUsersResponse {
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "admin"
 )]
 pub async fn list_users(
@@ -114,7 +114,7 @@ pub struct SearchCardsResponse {
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "admin"
 )]
 pub async fn search_cards(
@@ -231,7 +231,7 @@ pub struct CardInflectionsResponse {
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "admin"
 )]
 pub async fn get_card_inflections(
@@ -321,7 +321,7 @@ pub struct EditCardResponse {
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "admin"
 )]
 pub async fn edit_card(

@@ -156,6 +156,14 @@ pub fn jwt_expiry_seconds() -> Option<String> {
     read_config("HWAITING_JWT_EXPIRY_SECONDS")
 }
 
+pub fn cookie_secure() -> Option<String> {
+    read_config("HWAITING_COOKIE_SECURE")
+}
+
+pub fn cookie_same_site() -> Option<String> {
+    read_config("HWAITING_COOKIE_SAME_SITE")
+}
+
 pub fn static_dir() -> Option<String> {
     read_config("HWAITING_STATIC_DIR")
 }

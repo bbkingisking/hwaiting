@@ -79,7 +79,7 @@ pub struct ImportStats {
         (status = 200, description = "Full data export: settings, review history, suppressed cards", body = ExportData),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn export_data(
@@ -167,7 +167,7 @@ pub async fn export_data(
         (status = 400, description = "Unsupported export version, out-of-range settings, or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn import_data(

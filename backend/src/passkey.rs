@@ -98,7 +98,7 @@ use webauthn_rp::{
     },
 };
 
-use crate::auth::{AuthResponse, AuthUser, generate_token};
+use crate::auth::{AuthResponse, AuthUser, authenticated_response};
 use crate::error::{AppError, AppJson, AppPath};
 
 /// How long a `start` ceremony's state is kept before `finish` must have
@@ -575,19 +575,14 @@ pub async fn register_finish(
     AppJson(req): AppJson<
         FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
     >,
-) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+) -> Result<(StatusCode, axum::response::Response), AppError> {
     let (user_id, _for_user) =
         finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
     info!("passkey register/finish: created user_id={user_id}");
 
-    let token = generate_token(user_id)?;
     Ok((
         StatusCode::CREATED,
-        Json(AuthResponse {
-            token,
-            username: None,
-            is_admin: false,
-        }),
+        authenticated_response(user_id, None, false)?,
     ))
 }
 
@@ -641,7 +636,7 @@ pub async fn login_finish(
     AppJson(req): AppJson<
         FinishRequest<webauthn_rp::response::auth::ser_relaxed::AuthenticationRelaxed<16, true>>,
     >,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let ceremony = state.take_ceremony(req.ceremony_id)?;
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
@@ -768,12 +763,7 @@ pub async fn login_finish(
         "passkey login/finish: user_id={user_id} signed in (matched against {candidate_count} \
          candidate passkeys server-wide)"
     );
-    let token = generate_token(user_id)?;
-    Ok(Json(AuthResponse {
-        token,
-        username: None,
-        is_admin,
-    }))
+    authenticated_response(user_id, None, is_admin)
 }
 
 // ---------------------------------------------------------------- authenticated: manage passkeys
@@ -785,7 +775,7 @@ pub async fn login_finish(
         (status = 200, description = "The caller's registered passkeys", body = ListPasskeysResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn list_passkeys(
@@ -819,7 +809,7 @@ pub async fn list_passkeys(
             caller's existing account. Opaque to OpenAPI."),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn add_passkey_start(
@@ -847,7 +837,7 @@ pub async fn add_passkey_start(
         (status = 403, description = "Ceremony belongs to a different account", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn add_passkey_finish(
@@ -896,7 +886,7 @@ pub async fn add_passkey_finish(
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "No such passkey on the caller's account", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "user"
 )]
 pub async fn delete_passkey(

@@ -255,7 +255,7 @@ pub struct FieldValues {
         (status = 400, description = "Unknown name in `?fields=`", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
+    security(("cookie_auth" = [])),
     tag = "cards"
 )]
 pub async fn list_field_values(
