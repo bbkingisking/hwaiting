@@ -1,0 +1,122 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { afterEach, beforeEach, test } from 'node:test'
+import ts from 'typescript'
+
+// Exercise the real API functions without Vite or additional test dependencies.
+function transpile(file) {
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+  return ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
+  }).outputText
+}
+
+function moduleUrl(source) {
+  return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
+}
+
+const webauthnUrl = moduleUrl(transpile('../src/lib/webauthn.ts').replaceAll('import.meta.env', '({})'))
+const api = await import(moduleUrl(
+  transpile('../src/lib/api.ts').replace("'./webauthn'", JSON.stringify(webauthnUrl))
+))
+
+let changes
+let unsubscribe
+let requests
+let respond
+const originals = new Map(['window', 'localStorage'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+
+beforeEach(context => {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true, value: { location: { origin: 'http://localhost' } },
+  })
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true, value: { getItem: () => 'test-token' },
+  })
+  changes = []
+  requests = []
+  respond = () => Response.json({ success: true })
+  context.mock.method(globalThis, 'fetch', (url, options) => {
+    requests.push({ url, options })
+    return Promise.resolve(respond(url, options))
+  })
+  unsubscribe = api.subscribeReviewQueueChanges(change => changes.push(change))
+})
+
+afterEach(() => {
+  unsubscribe()
+  for (const [key, descriptor] of originals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+    else delete globalThis[key]
+  }
+})
+
+test('restoring a card invalidates the queue only after the server succeeds', async () => {
+  let complete
+  respond = () => new Promise(resolve => { complete = resolve })
+  const restoring = api.unsuppressCard(42)
+  assert.deepEqual(changes, [])
+  complete(Response.json({ success: true }))
+  await restoring
+  assert.deepEqual(changes, ['availability'])
+
+  respond = () => Response.json({ error: 'Save failed' }, { status: 500 })
+  await assert.rejects(api.unsuppressCard(42))
+  assert.deepEqual(changes, ['availability'])
+})
+
+test('an import announces replaced review state only after a successful import', async () => {
+  const file = new File(['{}'], 'reviews.json')
+  await api.importUserData(file, true)
+  assert.deepEqual(changes, ['import'])
+
+  respond = () => Response.json({ error: 'Invalid import' }, { status: 400 })
+  await assert.rejects(api.importUserData(file, true))
+  assert.deepEqual(changes, ['import'])
+})
+
+test('queue settings invalidate availability, including zero limits and midnight boundaries', async () => {
+  for (const settings of [
+    { daily_new_card_limit: 20 }, { daily_new_card_limit: 0 },
+    { day_boundary_hour: 4 }, { day_boundary_hour: 0 },
+  ]) {
+    await api.updateUserSettings(settings)
+  }
+  assert.deepEqual(changes, Array(4).fill('availability'))
+
+  respond = () => Response.json({ error: 'Save failed' }, { status: 500 })
+  await assert.rejects(api.updateUserSettings({ daily_new_card_limit: 30 }))
+  assert.equal(changes.length, 4)
+})
+
+test('display settings and reads do not cause queue refreshes', async () => {
+  await api.updateUserSettings({ red_threshold: 45, show_hanja_hints: true })
+  await api.getStats()
+  await api.listSuppressedCards()
+  assert.deepEqual(changes, [])
+})
+
+test('a queue change during a next-card request discards its stale response', async () => {
+  let completeOldRead
+  let reads = 0
+  respond = url => {
+    if (!url.includes('/api/cards/next')) return Response.json({ success: true })
+    reads++
+    if (reads === 1) return new Promise(resolve => { completeOldRead = resolve })
+    return Response.json({ card: { card_id: 42 } })
+  }
+  const nextCard = api.getNextCard({ excludeCardIds: [7] })
+  await api.unsuppressCard(42)
+  completeOldRead(Response.json({ card: null, next_due_at: '2026-11-09T12:00:00Z' }))
+
+  assert.deepEqual(await nextCard, { card: { card_id: 42 } })
+  assert.equal(reads, 2)
+  assert.ok(requests.filter(request => request.url.includes('/api/cards/next'))
+    .every(request => request.url.endsWith('?exclude=7')))
+})
+
+test('removing a queue subscription stops further notifications', async () => {
+  unsubscribe()
+  await api.unsuppressCard(42)
+  assert.deepEqual(changes, [])
+})

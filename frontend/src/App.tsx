@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useEffectEvent, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -11,8 +11,8 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getNextCard, checkAnswer, ApiError } from '@/lib/api'
-import type { NextCardEnvelope, AdminCard } from '@/lib/api'
+import { getNextCard, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
+import type { NextCardEnvelope, AdminCard, ReviewQueueChange } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
@@ -55,12 +55,30 @@ function AppContent() {
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
   const coldLoadRef = useRef<Promise<boolean> | null>(null)
+  const cardRequestId = useRef(0)
   useEffect(() => {
     setReviewNotice(null)
     if (isAuthenticated) {
       loadCardCold()
     }
   }, [isAuthenticated])
+
+  const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
+    if (!isAuthenticated) return
+    cancelPrefetch()
+    setStatsKey(prev => prev + 1)
+    if (change === 'import') {
+      setCard(null)
+      setSubmitError(null)
+      setReviewNotice(null)
+      setLastCheckMs(null)
+    }
+    if (change === 'import' || !card || loading) {
+      loadCardCold()
+    }
+  })
+
+  useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.
   const cancelPrefetch = () => {
@@ -114,11 +132,13 @@ function AppContent() {
   }
 
   const fetchCardCold = async (): Promise<boolean> => {
+    const requestId = ++cardRequestId.current
     cancelPrefetch()
     setLoading(true)
     setError(null)
     try {
       const envelope = await getNextCard()
+      if (requestId !== cardRequestId.current) return true
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
@@ -130,6 +150,7 @@ function AppContent() {
       }
       return true
     } catch (err) {
+      if (requestId !== cardRequestId.current) return true
       if (err instanceof ApiError) {
         setError(err.message)
       } else {
@@ -138,7 +159,7 @@ function AppContent() {
       console.error('Error fetching card:', err)
       return false
     } finally {
-      setLoading(false)
+      if (requestId === cardRequestId.current) setLoading(false)
     }
   }
 
@@ -147,6 +168,7 @@ function AppContent() {
   // card-to-card transition — the old card stays visible until
   // the new one arrives, so there's no flash.
   const advanceToNextCard = async () => {
+    const requestId = ++cardRequestId.current
     setReviewNotice(null)
     setError(null)
     setNoCards(false)
@@ -168,6 +190,7 @@ function AppContent() {
     prefetchRef.current = null
     try {
       const envelope = await getNextCard()
+      if (requestId !== cardRequestId.current) return
       if (envelope.card) {
         setCard(envelope.card)
         setNoCards(false)
@@ -178,6 +201,7 @@ function AppContent() {
         setNextDueAt(envelope.next_due_at ?? null)
       }
     } catch (err) {
+      if (requestId !== cardRequestId.current) return
       if (err instanceof ApiError) {
         setError(err.message)
       } else {
