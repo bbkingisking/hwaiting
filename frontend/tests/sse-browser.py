@@ -1,0 +1,197 @@
+"""Two-tab integration test against an isolated real backend.
+Requires built backend/frontend, Firefox, geckodriver, and Python selenium.
+Run: python3 tests/sse-browser.py
+"""
+import http.cookiejar
+import json
+import os
+from pathlib import Path
+import secrets
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[2]
+work = Path(tempfile.mkdtemp(prefix='hwaiting-sse-e2e-'))
+with socket.socket() as listener:
+    listener.bind(('127.0.0.1', 0))
+    port = listener.getsockname()[1]
+base = f'http://localhost:{port}'
+key = secrets.token_hex(32)
+env = {name: value for name, value in os.environ.items() if not name.startswith('HWAITING_')}
+for name in ('CREDENTIALS_DIRECTORY', 'HWAITING_UNIX_SOCKET', 'LISTEN_PID', 'LISTEN_FDS'):
+    env.pop(name, None)
+env.update({
+    'HWAITING_DATABASE_URL': f'sqlite://{work}/test.db',
+    'HWAITING_JWT_SECRET': key,
+    'HWAITING_ADMIN_PASSWORD': 'cookie-test-password',
+    'HWAITING_ADMIN_USERNAME': 'cookie-test-admin',
+    'HWAITING_HOST': '127.0.0.1', 'HWAITING_PORT': str(port),
+    'HWAITING_COOKIE_PARTITIONED': 'false',
+    'HWAITING_COOKIE_SECURE': 'false', 'HWAITING_COOKIE_SAME_SITE': 'lax',
+    'HWAITING_JWT_EXPIRY_SECONDS': '3600',
+    'HWAITING_RP_ID': 'localhost', 'HWAITING_RP_ORIGINS': base,
+    'HWAITING_CORS_ALLOWED_ORIGINS': 'http://localhost:5173',
+    'HWAITING_STATIC_DIR': str(ROOT / 'frontend/dist'),
+    'RUST_LOG': 'error',
+})
+server = None
+driver = None
+log = (work / 'server.log').open('ab')
+
+def start_server():
+    global server
+    server = subprocess.Popen([str(ROOT / 'backend/target/debug/hwaiting')], env=env, cwd=work, stdout=log, stderr=log)
+    for _ in range(200):
+        if server.poll() is not None:
+            raise AssertionError('Backend exited: ' + (work / 'server.log').read_text())
+        try:
+            with urllib.request.urlopen(base + '/api/health', timeout=0.2) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            time.sleep(0.05)
+    raise AssertionError('Backend startup timed out')
+
+def stop_server():
+    if server and server.poll() is None:
+        server.terminate()
+        server.wait(timeout=10)
+
+jar = http.cookiejar.CookieJar()
+client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+plain = urllib.request.build_opener()
+
+def request(path, method='GET', body=None, csrf=True, headers=None, opener=client):
+    headers = dict(headers or {})
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers['Content-Type'] = 'application/json'
+    if method not in ('GET', 'HEAD', 'OPTIONS') and csrf:
+        headers['X-Requested-With'] = 'hwaiting'
+    req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+    try:
+        response = opener.open(req, timeout=10)
+    except urllib.error.HTTPError as error:
+        response = error
+    raw = response.read()
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        parsed = raw
+    return response.status, response.headers, parsed
+
+import sqlite3
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.firefox.options import Options
+try:
+    static = work / 'static'
+    shutil.copytree(ROOT / 'frontend/dist', static)
+    env['HWAITING_STATIC_DIR'] = str(static)
+    start_server()
+    assert request('/api/auth/signup', 'POST', {'username':'sse-user','password':'sse-test-password'})[0] == 201
+    assert request('/api/user/settings','PATCH',{'auto_progress_on_correct':False})[0] == 200
+    options=Options();options.add_argument('-headless')
+    driver=webdriver.Firefox(options=options)
+    wait=WebDriverWait(driver,15)
+    driver.get(base)
+    driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
+    # Observe browser requests and streams without changing production code.
+    instrument="""
+    window.sseStreams=[]; window.reads=[];
+    const RealSource=window.EventSource;
+    window.EventSource=class extends RealSource { constructor(...args) {super(...args);window.sseStreams.push(this)} };
+    const realFetch=window.fetch;
+    window.fetch=async (...args)=>{window.reads.push(String(args[0]));const result=await realFetch(...args);if(String(args[0]).endsWith('/check')) await new Promise(r=>setTimeout(r,700));return result};
+    """
+    # Inject before application scripts by serving a transient instrumented index.
+    index=Path(env['HWAITING_STATIC_DIR'])/'index.html'
+    original=index.read_text()
+    index.write_text(original.replace('<head>','<head><script>'+instrument+'</script>'))
+    driver.refresh()
+    first=driver.current_window_handle
+    wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
+    cid=int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))
+    driver.switch_to.new_window('tab'); second=driver.current_window_handle;driver.get(base)
+    wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
+    assert int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))==cid
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('preserve my answer')
+    wait.until(lambda d: d.execute_script('return window.sseStreams.some(s=>s.readyState===1)'))
+    driver.execute_script('window.reads=[]')
+    # Card far down the queue: stats may change; active card must not refetch.
+    other=40 if cid!=40 else 41
+    revision=request(f'/api/cards/{other}/state')[2]['review_revision']
+    assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
+    wait.until(lambda d: any('/cards/stats' in p for p in d.execute_script('return window.reads')))
+    assert not any('/cards/next' in p for p in driver.execute_script('return window.reads'))
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='preserve my answer'
+    driver.switch_to.window(first)
+    with sqlite3.connect(work/'test.db') as db:
+        answer=db.execute('SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id=s.id WHERE s.card_id=?',(cid,)).fetchone()[0]
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys(answer)
+    driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
+    wait.until(lambda d:'Correct! The answer was' in d.find_element(By.TAG_NAME,'body').text)
+    assert 'already been reviewed' not in driver.find_element(By.TAG_NAME,'body').text
+    driver.switch_to.window(second)
+    wait.until(lambda d:'already been reviewed' in d.find_element(By.TAG_NAME,'body').text)
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='preserve my answer'
+    assert not driver.find_elements(By.CSS_SELECTOR,'button[type="submit"]')
+    # Fresh prompt; close the stream deliberately to miss a review, then return.
+    driver.find_element(By.XPATH,"//button[text()='Next']").click()
+    wait.until(lambda d:'already been reviewed' not in d.find_element(By.TAG_NAME,'body').text)
+    newcid=int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep through reconnect')
+    driver.execute_script('window.sseStreams.forEach(s=>s.close())')
+    revision=request(f'/api/cards/{newcid}/state')[2]['review_revision']
+    assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
+    driver.execute_script("window.dispatchEvent(new Event('online'))")
+    wait.until(lambda d:'changed while you were away' in d.find_element(By.TAG_NAME,'body').text)
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='keep through reconnect'
+    # A genuinely empty queue wakes up on a remote settings change.
+    assert request('/api/auth/signup','POST',{'username':'empty-user','password':'sse-test-password'})[0]==201
+    assert request('/api/user/settings','PATCH',{'daily_new_card_limit':0})[0]==200
+    driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
+    driver.refresh()
+    wait.until(lambda d: not d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and 'No cards' in d.find_element(By.TAG_NAME,'body').text)
+    wait.until(lambda d: d.execute_script('return window.sseStreams.some(s=>s.readyState===1)'))
+    assert request('/api/user/settings','PATCH',{'daily_new_card_limit':1})[0]==200
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
+    cid=int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep on suppression')
+    assert request(f'/api/cards/{cid}/suppress','PUT')[0]==200
+    wait.until(lambda d:'suppressed elsewhere' in d.find_element(By.TAG_NAME,'body').text)
+    assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='keep on suppression'
+    # An edit made in this tab is already applied; reconnect must not mark it stale.
+    assert request('/api/auth/login','POST',{'username':env['HWAITING_ADMIN_USERNAME'],'password':env['HWAITING_ADMIN_PASSWORD']})[0]==200
+    assert request('/api/user/settings','PATCH',{'auto_progress_on_correct':False})[0]==200
+    driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
+    driver.refresh()
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('wrong')
+    driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
+    wait.until(lambda d:'Incorrect. You typed' in d.find_element(By.TAG_NAME,'body').text)
+    driver.find_element(By.CSS_SELECTOR,'button[aria-label="Card options"]').click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Edit card')]" )).click()
+    label=wait.until(lambda d:d.find_element(By.XPATH,"//label[text()='Translation word (English)']"))
+    field=driver.find_element(By.ID,label.get_attribute('for'))
+    field.clear();field.send_keys('edited in this tab')
+    driver.find_element(By.XPATH,"//button[text()='Save']").click()
+    wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'[role="dialog"]'))
+    driver.execute_script("window.reads=[];window.sseStreams.forEach(s=>s.close());window.dispatchEvent(new Event('online'))")
+    wait.until(lambda d:any('/state' in p for p in d.execute_script('return window.reads')))
+    time.sleep(0.5)
+    assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
+    assert 'Incorrect. You typed' in driver.find_element(By.TAG_NAME,'body').text
+    print('PASS: two tabs, own event before response, distant-card request counts, preserved text, missed review recovery, empty queue, suppression, own edit reconnect')
+finally:
+    if 'original' in globals(): index.write_text(original)
+    if driver: driver.quit()
+    stop_server();log.close()
+    shutil.rmtree(work)

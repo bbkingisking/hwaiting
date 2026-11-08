@@ -1,3 +1,5 @@
+import { subscribeLiveEvents } from '@/lib/live-events'
+import { createRefreshTask } from '@/lib/refresh-task'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Settings } from '@/lib/types'
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
@@ -46,7 +48,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    const fetchSettings = async () => {
+    const fetchSettings = async (current: () => boolean) => {
       try {
         const userSettings = await getUserSettings()
         const fetchedSettings: Settings = {
@@ -65,17 +67,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           // Not part of the backend response - see readDebugStatusBar.
           debugStatusBar: readDebugStatusBar(),
         }
+        if (!current()) return
         settingsRef.current = fetchedSettings
         setSettings(fetchedSettings)
       } catch (err) {
         console.error('Failed to fetch settings:', err)
+        throw err
       }
     }
 
-    fetchSettings()
-    return subscribeReviewQueueChanges(change => {
-      if (change === 'import') fetchSettings()
-    })
+    const task = createRefreshTask(fetchSettings)
+    task.request()
+    const local = subscribeReviewQueueChanges(change => { if (change === 'import') task.request() })
+    const live = subscribeLiveEvents(event => { if (event.type === 'settings-changed' || event.type === 'state-reset' || event.type === 'resync-required') task.request() })
+    return () => { local(); live(); task.dispose() }
   }, [isAuthenticated])
 
   const updateSettings = async (updates: Partial<Settings>) => {

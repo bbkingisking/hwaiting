@@ -1,3 +1,4 @@
+import { subscribeLiveEvents } from './live-events'
 // API module for card operations and user management
 //
 // Request/response types are generated from the backend's OpenAPI spec
@@ -22,6 +23,7 @@ type UserProfile = Schemas.UserProfile
 export type ReviewQueueChange = 'availability' | 'import'
 const reviewQueueChanges = new EventTarget()
 let reviewQueueRevision = 0
+subscribeLiveEvents(() => { reviewQueueRevision++ })
 
 // Review submissions and suppression already refresh through App's handlers.
 // Mutations elsewhere publish here, after the server has committed them.
@@ -274,7 +276,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
     method: 'PATCH',
     body: JSON.stringify(settings),
   })
-  if (settings.daily_new_card_limit != null || settings.day_boundary_hour != null) {
+  if (settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
     notifyReviewQueueChanged('availability')
   }
   return result
@@ -332,16 +334,20 @@ type OptimizeFsrsResponse = Schemas.OptimizeFsrsResponse
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
   const url = `${apiBase()}/api/cards/fsrs-parameters`
-  return fetchWithAuth(url, {
+  const result = await fetchWithAuth(url, {
     method: 'POST',
   })
+  notifyReviewQueueChanged('availability')
+  return result
 }
 
 export async function resetFsrsParameters(): Promise<{ success: boolean }> {
   const url = `${apiBase()}/api/cards/fsrs-parameters`
-  return fetchWithAuth(url, {
+  const result = await fetchWithAuth(url, {
     method: 'DELETE',
   })
+  notifyReviewQueueChanged('availability')
+  return result
 }
 
 export { ApiError }
@@ -353,4 +359,8 @@ export type {
   HanjaDrill,
   AdminCard,
   PasskeySummary,
+}
+
+export function getCardState(cardId: number): Promise<Schemas.CardState> {
+  return fetchWithAuth(`${apiBase()}/api/cards/${cardId}/state`)
 }

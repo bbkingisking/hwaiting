@@ -23,6 +23,7 @@ import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/component
 import { alignedAnswerCharacters } from '@/lib/answer-diff'
 
 interface FlashcardProps {
+  staleReason?: string | null
   card: CardPrompt
   // Grades `answer` server-side and records the FSRS review; resolves with
   // whether it was correct and the card's secret half. Callers hold the
@@ -34,7 +35,7 @@ interface FlashcardProps {
   // path - see startPrefetch in App.tsx. Rejects if fetching the next card fails.
   onAdvance: () => void | Promise<void>
   onSuppress?: () => void
-  onCardUpdated?: (updates: Partial<AdminCard>) => void
+  onCardUpdated?: (updates: Partial<AdminCard>, contentRevision: number) => void
 }
 
 // CARD_BACK_FIELDS (lib/api.ts) is the subset of AdminCard's editable
@@ -211,7 +212,9 @@ function GrammarPatternPill({
   )
 }
 
-export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
+export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
+  const staleRef = useRef(staleReason)
+  staleRef.current = staleReason
   const [input, setInput] = useState('')
   const [checking, setChecking] = useState(false)
   const [answered, setAnswered] = useState(false)
@@ -234,6 +237,9 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
   const { theme: cardTheme } = useCardTheme()
   const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
+  const autoProgressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.card_id, card.review_revision, card.content_revision])
+  useEffect(() => { if (staleReason) clearTimeout(autoProgressTimer.current) }, [staleReason])
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === 'verb' || card.pos === 'adjective')
 
@@ -243,7 +249,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
   // card stays put by design), so without this a click that looks like it
   // did nothing invites a retry.
   const handleAdvance = useCallback(async () => {
-    if (!answered || advancing) return
+    if ((!answered && !staleReason) || advancing || checking) return
     setAdvancing(true)
     try {
       await onAdvance()
@@ -253,7 +259,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     } finally {
       setAdvancing(false)
     }
-  }, [answered, advancing, onAdvance])
+  }, [answered, staleReason, advancing, checking, onAdvance])
 
   useEffect(() => {
     setInput('')
@@ -277,7 +283,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
     // *same* card, which must not look like a new card arriving and wipe
     // out the answer/reveal being displayed. A refreshed revision of the same
     // card does start a new attempt after a stale submission.
-  }, [card.card_id, card.review_revision])
+  }, [card.card_id, card.review_revision, card.content_revision])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -302,13 +308,13 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (answered || checking) return
+    if (answered || checking || staleReason) return
     const trimmed = input.trim()
     setSubmittedAnswer(trimmed)
     setChecking(true)
     try {
       const result = await onCheck(trimmed)
-      // A stale review was handled by loading a fresh prompt. It has no reveal
+      // A stale review leaves the current prompt visible. It has no reveal
       // and must not trigger correctness feedback or auto-progress.
       if (result === null) return
       const { correct: isCorrect, reveal: revealData } = result
@@ -320,7 +326,8 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
         hasAutoProgressedRef.current = true
         setIsAutoProgressing(true)
         // Use configurable delay before progressing
-        setTimeout(async () => {
+        autoProgressTimer.current = setTimeout(async () => {
+          if (staleRef.current) return
           try {
             await onAdvance()
           } catch (err) {
@@ -620,7 +627,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
           open={editOpen}
           onOpenChange={setEditOpen}
           card={toAdminCard(card, reveal)}
-          onSaved={(updates) => {
+          onSaved={(updates, contentRevision) => {
             // `card` (App.tsx state) only holds CardPrompt's fields; patch
             // the CardReveal-shaped rest directly into our own local state
             // rather than routing it through a prop round-trip.
@@ -628,7 +635,7 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
               Object.entries(updates).filter(([key, v]) => CARD_BACK_FIELDS.has(key) && v !== undefined)
             ) as Partial<CardReveal>
             setReveal((prev) => (prev ? { ...prev, ...revealUpdates } : prev))
-            onCardUpdated?.(updates)
+            onCardUpdated?.(updates, contentRevision)
           }}
         />
       )}
@@ -652,10 +659,15 @@ export function Flashcard({ card, onCheck, onAdvance, onSuppress, onCardUpdated 
         cannot be clicked.
       */}
       <CardFooter
-        className={cn("flex-col gap-3", isAutoProgressing && "invisible")}
-        inert={isAutoProgressing}
+        className={cn("flex-col gap-3", isAutoProgressing && !staleReason && "invisible")}
+        inert={isAutoProgressing && !staleReason}
       >
-        {!answered && !isAutoProgressing ? (
+        {staleReason ? (
+          <>
+            <p role="status" className="text-sm text-muted-foreground">{staleReason}</p>
+            <Button onClick={handleAdvance} disabled={advancing || checking} className="w-full">Next</Button>
+          </>
+        ) : !answered && !isAutoProgressing ? (
           <Button ref={submitButtonRef} type="submit" onClick={handleSubmit} disabled={checking} className="w-full">
             {checking ? 'Checking…' : cardTheme.checkLabel}
           </Button>

@@ -16,9 +16,11 @@ function moduleUrl(source) {
 }
 
 const webauthnUrl = moduleUrl(transpile('../src/lib/webauthn.ts').replaceAll('import.meta.env', '({})'))
-const httpUrl = moduleUrl(transpile('../src/lib/http.ts'))
+const liveUrl = moduleUrl(transpile('../src/lib/live-events.ts'))
+const httpUrl = moduleUrl(transpile('../src/lib/http.ts').replace("'./live-events'", JSON.stringify(liveUrl)))
 const api = await import(moduleUrl(
   transpile('../src/lib/api.ts')
+    .replace("'./live-events'", JSON.stringify(liveUrl))
     .replace("'./webauthn'", JSON.stringify(webauthnUrl))
     .replace("'./http'", JSON.stringify(httpUrl))
 ))

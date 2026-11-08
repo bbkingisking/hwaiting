@@ -1,3 +1,5 @@
+import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
+import { createRefreshTask } from '@/lib/refresh-task'
 import { useState, useEffect, useEffectEvent, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
@@ -11,7 +13,7 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getNextCard, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
+import { getNextCard, getCardState, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
 import type { NextCardEnvelope, AdminCard, ReviewQueueChange } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
@@ -39,7 +41,6 @@ function AppContent() {
   // moments earlier in the same batch.
   const [error, setError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   // Checking an answer is the one network call left in the review loop that
   // can't be hidden behind a prefetch - the DOM stays put while it's in
   // flight (Flashcard disables the Check button itself), and this publishes
@@ -49,6 +50,18 @@ function AppContent() {
   const [noCards, setNoCards] = useState(false)
   const [nextDueAt, setNextDueAt] = useState<string | null>(null)
   const [statsKey, setStatsKey] = useState(0)
+  const [staleReason, setStaleReason] = useState<string | null>(null)
+  const currentCard = useRef(card)
+  currentCard.current = card
+  const acceptedReview = useRef<{ cardId: number; revision: number } | null>(null)
+  const acceptedContent = useRef<{ cardId: number; revision: number } | null>(null)
+  const checkingRef = useRef(false)
+  const validationTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
+  useEffect(() => {
+    setStaleReason(null)
+    acceptedReview.current = null
+    acceptedContent.current = null
+  }, [card?.card_id, card?.review_revision, card?.content_revision])
 
   const { isAuthenticated } = useAuth()
   const { cardThemeId } = useCardTheme()
@@ -57,10 +70,10 @@ function AppContent() {
   const coldLoadRef = useRef<Promise<boolean> | null>(null)
   const cardRequestId = useRef(0)
   useEffect(() => {
-    setReviewNotice(null)
     if (isAuthenticated) {
       loadCardCold()
     }
+    return () => { ++cardRequestId.current; cancelPrefetch() }
   }, [isAuthenticated])
 
   const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
@@ -70,7 +83,6 @@ function AppContent() {
     if (change === 'import') {
       setCard(null)
       setSubmitError(null)
-      setReviewNotice(null)
       setLastCheckMs(null)
     }
     if (change === 'import' || !card || loading) {
@@ -79,6 +91,58 @@ function AppContent() {
   })
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
+
+  const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
+    if (!isAuthenticated || event.own) return
+    if (event.type === 'settings-changed' && !event.queue_affected) return
+    setStatsKey(value => value + 1)
+    const active = currentCard.current
+    // Even a review of another card can consume the daily new-card allowance
+    // or change ordering. Invalidate conservatively, but fetch only on Next.
+    cancelPrefetch()
+    if (event.type === 'card-reviewed' && active?.card_id === event.card_id && event.review_revision > active.review_revision) {
+      const accepted = acceptedReview.current
+      if (!accepted || accepted.cardId !== active.card_id || accepted.revision < event.review_revision) {
+        setStaleReason('This card has already been reviewed. Continue to the next card.')
+      }
+    } else if (event.type === 'queue-changed' && event.suppressed && active?.card_id === event.card_id) {
+      setStaleReason('This card was suppressed elsewhere. Continue to the next card.')
+    } else if (event.type === 'card-updated' && active?.card_id === event.card_id) {
+      setStaleReason('This card was edited elsewhere. Continue to load a fresh card.')
+    } else if (event.type === 'resync-required' || event.type === 'state-reset') {
+      validationTask.current?.request()
+    }
+    if (!active) validationTask.current?.request()
+  })
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const task = createRefreshTask(async current => {
+      const active = currentCard.current
+      if (!active) {
+        if (!await loadCardCold()) throw new Error('Queue refresh failed')
+        return
+      }
+      if (checkingRef.current) throw new Error('Wait for pending review')
+      const reviewAtStart = acceptedReview.current
+      const contentAtStart = acceptedContent.current
+      const state = await getCardState(active.card_id)
+      if (!current() || currentCard.current !== active) return
+      if (checkingRef.current || acceptedReview.current !== reviewAtStart || acceptedContent.current !== contentAtStart) {
+        throw new Error('Local mutation superseded card-state read')
+      }
+      const accepted = acceptedReview.current
+      const revision = accepted?.cardId === active.card_id ? Math.max(active.review_revision, accepted.revision) : active.review_revision
+      const edited = acceptedContent.current
+      const contentRevision = edited?.cardId === active.card_id ? edited.revision : active.content_revision
+      if (!state.exists || state.suppressed || state.review_revision !== revision || state.content_revision !== contentRevision) {
+        setStaleReason('This card changed while you were away. Continue to load a fresh card.')
+      }
+    })
+    validationTask.current = task
+    const unsubscribe = subscribeLiveEvents(handleLiveEvent)
+    return () => { unsubscribe(); task.dispose(); validationTask.current = null }
+  }, [isAuthenticated])
 
   // Cancel any in-flight prefetch and clear the cached prefetched card.
   const cancelPrefetch = () => {
@@ -140,6 +204,7 @@ function AppContent() {
       const envelope = await getNextCard()
       if (requestId !== cardRequestId.current) return true
       if (envelope.card) {
+        setStaleReason(null)
         setCard(envelope.card)
         setNoCards(false)
         startPrefetch(envelope.card.card_id)
@@ -169,7 +234,6 @@ function AppContent() {
   // the new one arrives, so there's no flash.
   const advanceToNextCard = async () => {
     const requestId = ++cardRequestId.current
-    setReviewNotice(null)
     setError(null)
     setNoCards(false)
 
@@ -179,6 +243,7 @@ function AppContent() {
     if (slot?.result?.card) {
       const nextCard = slot.result.card
       prefetchRef.current = null
+      setStaleReason(null)
       setCard(nextCard)
       setNoCards(false)
       startPrefetch(nextCard.card_id)
@@ -192,6 +257,7 @@ function AppContent() {
       const envelope = await getNextCard()
       if (requestId !== cardRequestId.current) return
       if (envelope.card) {
+        setStaleReason(null)
         setCard(envelope.card)
         setNoCards(false)
         startPrefetch(envelope.card.card_id)
@@ -226,20 +292,21 @@ function AppContent() {
   // never arrived. Returns null after recovering from a stale review.
   const handleCheck = async (answer: string): Promise<{ correct: boolean; reveal: CardReveal } | null> => {
     if (!card) throw new Error('No card to check')
+    if (staleReason) return null
     const cardId = card.card_id
 
     setSubmitError(null)
-    setReviewNotice(null)
     setChecking(true)
+    checkingRef.current = true
 
     try {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, answer, card.review_revision)
+      acceptedReview.current = { cardId, revision: card.review_revision + 1 }
       setLastCheckMs(performance.now() - startedAt)
-      // Bumped only now, not before the request: StatusIndicator remounts
-      // on this key change and fetches stats on mount, and check_answer is
+      // Refresh only after the committed response: check_answer is
       // what actually records the review server-side - firing this before
       // the request even started meant the stats fetch usually won the race
       // against its own write and rendered the accuracy from before this
@@ -249,13 +316,9 @@ function AppContent() {
       return { correct, reveal }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.code === 'stale_review') {
-        setReviewNotice('This card was updated elsewhere. Your answer wasn’t recorded.')
-        setLastCheckMs(null)
-        // Discard the stale prompt even if the fresh fetch fails, and bypass
-        // the prefetch cache because other cards may have changed too.
-        setCard(null)
-        await loadCardCold()
-        setStatsKey((prev) => prev + 1)
+        setStaleReason('This card has already been reviewed. Your answer was not recorded.')
+        cancelPrefetch()
+        setStatsKey(value => value + 1)
         return null
       }
       if (err instanceof ApiError) {
@@ -263,10 +326,12 @@ function AppContent() {
       } else {
         setSubmitError('Failed to check answer')
       }
+      validationTask.current?.request()
       console.error('Error checking answer:', err)
       throw err
     } finally {
       setChecking(false)
+      checkingRef.current = false
     }
   }
 
@@ -290,7 +355,8 @@ function AppContent() {
   // patches itself directly from the same `updates` (see flashcard.tsx's own
   // onSaved wrapper). Only the fields CardPrompt actually has are relevant
   // here.
-  const handleCardUpdated = (updates: Partial<AdminCard>) => {
+  const handleCardUpdated = (updates: Partial<AdminCard>, contentRevision: number) => {
+    if (card) acceptedContent.current = { cardId: card.card_id, revision: contentRevision }
     const filtered = Object.fromEntries(
       Object.entries(updates).filter(([key, v]) => CARD_PROMPT_FIELDS.has(key) && v !== undefined)
     ) as Partial<CardPrompt>
@@ -307,9 +373,6 @@ function AppContent() {
         className="ct-page min-h-screen flex flex-col items-center justify-center p-6"
       >
         <h1 className="sr-only">Hwaiting — Korean review</h1>
-        {isAuthenticated && reviewNotice && (
-          <p role="status" className="text-muted-foreground text-sm mb-4">{reviewNotice}</p>
-        )}
         {!isAuthenticated ? null : loading ? (
           <div role="status" className="text-center text-muted-foreground">
             <p>Loading card...</p>
@@ -350,6 +413,7 @@ function AppContent() {
             */}
             <Flashcard
               card={card}
+              staleReason={staleReason}
               onCheck={handleCheck}
               onAdvance={advanceToNextCard}
               onSuppress={handleSuppress}
@@ -366,7 +430,7 @@ function AppContent() {
         <div className="fixed inset-x-4 bottom-4 grid justify-items-center gap-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end">
           <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
           <StatusIndicator
-            key={statsKey}
+            refreshKey={statsKey}
             nextCardDueAt={noCards ? nextDueAt : null}
             onCardsAvailable={handleCardsAvailable}
           />
