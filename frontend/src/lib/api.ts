@@ -20,6 +20,23 @@ type CheckResponse = Schemas['CheckResponse']
 type ReviewResponse = Schemas['ReviewResponse']
 type UserProfile = Schemas['UserProfile']
 
+export type ReviewQueueChange = 'availability' | 'import'
+const reviewQueueChanges = new EventTarget()
+let reviewQueueRevision = 0
+
+// Review submissions and suppression already refresh through App's handlers.
+// Mutations elsewhere publish here, after the server has committed them.
+function notifyReviewQueueChanged(change: ReviewQueueChange) {
+  reviewQueueRevision++
+  reviewQueueChanges.dispatchEvent(new CustomEvent('change', { detail: change }))
+}
+
+export function subscribeReviewQueueChanges(listener: (change: ReviewQueueChange) => void): () => void {
+  const onChange = (event: Event) => listener((event as CustomEvent<ReviewQueueChange>).detail)
+  reviewQueueChanges.addEventListener('change', onChange)
+  return () => reviewQueueChanges.removeEventListener('change', onChange)
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string, public code?: string) {
     super(message)
@@ -84,7 +101,13 @@ export async function getNextCard(options: GetNextCardOptions = {}): Promise<Nex
   }
   const qs = params.toString()
   const url = `${apiBase()}/api/cards/next${qs ? `?${qs}` : ''}`
-  return fetchWithAuth(url, { signal: options.signal })
+  // A queue mutation can commit while an older read is still in flight.
+  // Discard that response and read again against the new queue.
+  while (true) {
+    const revision = reviewQueueRevision
+    const envelope = await fetchWithAuth(url, { signal: options.signal })
+    if (revision === reviewQueueRevision) return envelope
+  }
 }
 
 export type FieldValue = Schemas['FieldValue']
@@ -126,9 +149,11 @@ export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
 
 export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
   const url = `${apiBase()}/api/cards/${cardId}/unsuppress`
-  return fetchWithAuth(url, {
+  const result = await fetchWithAuth(url, {
     method: 'PUT',
   })
+  notifyReviewQueueChanged('availability')
+  return result
 }
 
 type HanjaDrill = Schemas['HanjaDrill']
@@ -195,10 +220,12 @@ export async function importUserData(file: File, overwrite: boolean = false): Pr
   const data = JSON.parse(text)
 
   const url = `${apiBase()}/api/user/import`
-  return fetchWithAuth(url, {
+  const result = await fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify({ data, overwrite }),
   })
+  notifyReviewQueueChanged('import')
+  return result
 }
 
 export async function exportUserData(): Promise<void> {
@@ -248,10 +275,14 @@ export async function getUserSettings(): Promise<UserSettings> {
 
 export async function updateUserSettings(settings: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
   const url = `${apiBase()}/api/user/settings`
-  return fetchWithAuth(url, {
+  const result = await fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(settings),
   })
+  if (settings.daily_new_card_limit != null || settings.day_boundary_hour != null) {
+    notifyReviewQueueChanged('availability')
+  }
+  return result
 }
 
 // Backend's admin::AdminCard and cards::NextCardResponse used to be two

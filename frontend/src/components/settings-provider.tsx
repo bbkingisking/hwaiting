@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Settings } from '@/lib/types'
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
-import { getUserSettings, updateUserSettings } from '@/lib/api'
+import { getUserSettings, subscribeReviewQueueChanges, updateUserSettings } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 
 interface SettingsContextType {
@@ -73,6 +73,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
 
     fetchSettings()
+    return subscribeReviewQueueChanges(change => {
+      if (change === 'import') fetchSettings()
+    })
   }, [isAuthenticated])
 
   const updateSettings = async (updates: Partial<Settings>) => {
