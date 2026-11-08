@@ -195,10 +195,11 @@ impl WebauthnConfig {
 /// `Clone` (axum requires the router's state type to be `Clone`) is cheap:
 /// `SqlitePool` is itself an `Arc`-backed handle, and `webauthn`/
 /// `ceremonies` are wrapped the same way, so cloning `AppState` is just
-/// bumping three refcounts, not copying the ceremony table.
+/// bumping refcounts, not copying the ceremony table.
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
+    pub events: crate::events::EventHub,
     /// `None` when `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS` aren't configured - passkey sign-in
     /// is an optional feature, not a required one, see `build_webauthn_config`.
     webauthn: Option<Arc<WebauthnConfig>>,
@@ -209,6 +210,7 @@ impl AppState {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
+            events: crate::events::EventHub::default(),
             webauthn: build_webauthn_config().map(Arc::new),
             ceremonies: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -952,6 +954,7 @@ mod tests {
         .await
         .unwrap();
         let state = AppState {
+            events: crate::events::EventHub::default(),
             pool: pool.clone(),
             webauthn: None,
             ceremonies: Arc::new(Mutex::new(HashMap::new())),

@@ -93,6 +93,7 @@ pub struct NextCardResponse {
     prompt: CardPrompt,
     /// Return unchanged when submitting an answer.
     review_revision: i64,
+    content_revision: i64,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
@@ -249,7 +250,7 @@ pub async fn get_next_card(
             tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern,
             cs.difficulty, cs.last_review, cs.stability,
-            COALESCE(cs.review_revision, 0) AS review_revision
+            c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision
         FROM cards c
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
         INNER JOIN sentences s ON c.id = s.card_id
@@ -440,6 +441,7 @@ pub async fn get_next_card(
                 hanja_hint_words,
             },
             review_revision: row.get("review_revision"),
+            content_revision: row.get("content_revision"),
             difficulty,
             guess_count,
             wrong_guess_count,

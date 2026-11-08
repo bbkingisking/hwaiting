@@ -224,7 +224,7 @@ fn encode_token(user_id: i64, secret: &str, ttl_seconds: Option<i64>) -> Result<
 /// secret as a plain argument for the same testability reason as
 /// `encode_token`. `exp`, when present, is still validated (rejecting an
 /// expired token) even though it's never required to be present.
-fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError> {
+pub(crate) fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.required_spec_claims.clear(); // Don't require exp, iat, etc.
 

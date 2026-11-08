@@ -307,6 +307,7 @@ pub struct UpdateCardRequest {
 #[derive(Serialize, ToSchema)]
 pub struct EditCardResponse {
     pub success: bool,
+    pub content_revision: i64,
 }
 
 #[utoipa::path(
@@ -627,10 +628,18 @@ pub async fn edit_card(
         }
     }
 
+    let content_revision = sqlx::query_scalar("UPDATE cards SET content_revision = content_revision + 1 WHERE id = ? RETURNING content_revision")
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
     tx.commit().await?;
 
     info!("Card {} updated successfully", card_id);
-    Ok(Json(EditCardResponse { success: true }))
+    Ok(Json(EditCardResponse {
+        success: true,
+        content_revision,
+    }))
 }
 
 #[cfg(test)]
