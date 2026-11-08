@@ -49,6 +49,46 @@ The backend can generate a complete OpenAPI contract if you run it with the `--p
 
 All data is stored in a single SQLite database. The shape of the data is highly domain-specific for Korean, and unlikely to be useful for any other language unless explicitly repurposed. A fresh backend run bootstraps the database with 50 cards, so you can inspect the standard/expected structure for the cards, how they appear in the frontend, and use that information to add your own cards. 
 
+### Review scheduling
+
+The pinned Rust `fsrs` 5.2.0 crate implements FSRS-6. Stability is the time in days
+until predicted recall reaches **90%**, not a general-purpose review interval.
+For positive decay `d = w[20]`, the model's raw interval is:
+
+```text
+factor   = 0.9^(-1/d) - 1
+interval = stability / factor * (desired_retention^(-1/d) - 1)
+due_at   = last_review + interval days
+```
+
+The backend calls the crate's `next_states` when grading and `next_interval` when
+rescheduling; it does not duplicate this formula in SQL. The crate also upgrades
+legacy 17/19-parameter models, which use a different decay from the FSRS-6 default.
+See the [FSRS algorithm specification](https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm)
+and the [pinned crate implementation](https://github.com/open-spaced-repetition/fsrs-rs/blob/aca2838bfbdc6f15ca3f7a0c96a99fae466c9e9c/src/inference.rs).
+
+Intervals remain fractional days, converted to UTC deadlines rounded up to a
+second. There are no additional learning steps, whole-day rounding, fuzz, or
+maximum-interval cap. The existing grading/optimization convention measures elapsed
+time in completed 24-hour periods, as the Rust API takes integer elapsed days;
+the configurable day boundary controls daily limits/statistics, not these intervals.
+
+Each reviewed card stores its current deadline in `cards_states.due_at` (Unix
+seconds). Queue selection, due counts, and review countdowns all use it. Changing
+retention, optimizing/resetting parameters, or importing data recalculates current
+deadlines from stored stability and last-review time, atomically with the change.
+This changes neither the memory state nor review history and does not count as a
+review. `review_history.scheduled_days` preserves the interval calculated at that
+historical review; it is not the source of the current deadline after rescheduling.
+
+On upgrading from the old stability-based scheduler, startup backfills deadlines
+using each user's current retention and model. No review history is replayed or
+rewritten. At 90% the schedule is effectively unchanged, apart from second-level
+rounding; at other retentions, existing cards may become due sooner or later.
+Backups retain their existing format: deadlines are reconstructed after restoring
+memory state, settings, and parameters. Invalid model parameters or unrepresentable
+deadlines are rejected instead of storing unusable schedules.
+
 ### Auth
 
 Username/password (Argon2 hashes stored in the DB) and passkey sign-in both issue the same JWT in a host-only `hwaiting-auth` cookie (`HttpOnly`, `Path=/`, `SameSite=Lax` by default). The JSON response contains profile information only. Requests authenticate through that cookie; bearer headers are no longer accepted. The JWT signing secret and `HWAITING_JWT_EXPIRY_SECONDS` retain their existing meaning: tokens have no expiry by default. Cookie persistence follows a configured JWT lifetime, or defaults to 400 days when JWT expiry is disabled (browsers may impose their own storage limits).

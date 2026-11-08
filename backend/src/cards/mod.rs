@@ -10,6 +10,7 @@ mod fsrs_admin;
 mod hanja_drill;
 mod moderation;
 mod next;
+pub(crate) mod scheduling;
 mod stats;
 mod time;
 
@@ -43,20 +44,12 @@ use crate::error::AppError;
 /// `COUNTED_REVIEW_SQL`/`CORRECT_REVIEW_SQL` document for accuracy stats.
 pub(crate) const MASTERED_STATE: &str = "review";
 
-/// The `users_settings` columns read (never written) from outside `user`/
-/// `export_import`, which deal with the settings row as a whole and go
-/// through `user::ensure_settings_row` instead. `next` (new-card gating),
-/// `stats` (status bar + history) and `check` (FSRS desired retention) each
-/// only need a couple of these - before this existed, each fetched its own
-/// subset via its own single/double-column query, hand-repeating the same
-/// fallback defaults (`day_boundary_hour: 4`, `daily_new_card_limit: 20`,
-/// `desired_retention: 0.9` - see `review_prefs` below) at every call site,
-/// with nothing keeping them in sync but convention.
+/// Availability preferences shared by queue selection and statistics.
+/// Scheduling's model/retention are loaded separately under its transaction.
 #[derive(sqlx::FromRow)]
 pub(crate) struct ReviewPrefs {
     pub day_boundary_hour: i64,
     pub daily_new_card_limit: i64,
-    pub desired_retention: f64,
 }
 
 /// Loads `ReviewPrefs` for `user_id`, falling back to this app's defaults -
@@ -69,7 +62,7 @@ pub(crate) struct ReviewPrefs {
 /// effect of a `GET`.
 pub(crate) async fn review_prefs(pool: &SqlitePool, user_id: i64) -> Result<ReviewPrefs, AppError> {
     let prefs = sqlx::query_as::<_, ReviewPrefs>(
-        "SELECT day_boundary_hour, daily_new_card_limit, desired_retention FROM users_settings WHERE user_id = ?",
+        "SELECT day_boundary_hour, daily_new_card_limit FROM users_settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -78,7 +71,6 @@ pub(crate) async fn review_prefs(pool: &SqlitePool, user_id: i64) -> Result<Revi
     Ok(prefs.unwrap_or(ReviewPrefs {
         day_boundary_hour: 4,
         daily_new_card_limit: 20,
-        desired_retention: 0.9,
     }))
 }
 

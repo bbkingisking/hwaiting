@@ -3,8 +3,8 @@
 //! [`super::next::CardPrompt`].
 
 use axum::{Json, extract::State};
-use chrono::Utc;
-use fsrs::{DEFAULT_PARAMETERS, FSRS, MemoryState};
+use chrono::{Timelike, Utc};
+use fsrs::MemoryState;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::info;
@@ -12,8 +12,9 @@ use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson, AppPath};
 
+use super::scheduling::{Scheduler, due_at};
 use super::time::parse_flexible_datetime;
-use super::{HanjaHint, hanja_hints_for, review_prefs};
+use super::{HanjaHint, hanja_hints_for};
 
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
@@ -185,23 +186,12 @@ pub async fn check_answer(
     // are never produced by this handler.
     let rating_str = if correct { "good" } else { "again" };
 
-    // Load user's optimized FSRS parameters, or fall back to defaults
-    let params_json: Option<String> =
-        sqlx::query_scalar("SELECT parameters FROM users_fsrs_parameters WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_optional(&pool)
-            .await?;
-
-    let default_params = DEFAULT_PARAMETERS;
-    let custom_params: Option<Vec<f32>> =
-        params_json.and_then(|json| serde_json::from_str(&json).ok());
-    let params: &[f32] = custom_params.as_deref().unwrap_or(&default_params);
-
-    let desired_retention = review_prefs(&pool, user_id).await?.desired_retention;
-
-    // Reserve the SQLite writer before reading scheduling state. A concurrent
-    // answer waits, then sees the committed revision instead of the old state.
+    // Read the model and retention under the same writer reservation as the
+    // review: a settings change must not reschedule and then be overwritten
+    // by an in-flight answer using the previous policy.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let scheduler = Scheduler::load(&mut tx, user_id).await?;
+    let now = Utc::now().with_nanosecond(0).unwrap();
     let card_state_row = sqlx::query(
         "SELECT stability, difficulty, last_review, review_revision
          FROM cards_states WHERE user_id = ? AND card_id = ?",
@@ -219,9 +209,6 @@ pub async fn check_answer(
         return Err(AppError::StaleReview);
     }
 
-    let fsrs = FSRS::new(Some(params))
-        .map_err(|e| AppError::Internal(format!("FSRS init error: {:?}", e)))?;
-
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
         let stability: Option<f64> = row.get("stability");
@@ -234,7 +221,6 @@ pub async fn check_answer(
             let last_review_time = parse_flexible_datetime(&last_review_str)
                 .map_err(|e| AppError::Internal(format!("Invalid date format: {}", e)))?;
 
-            let now = Utc::now();
             let elapsed_days = (now - last_review_time).num_days().max(0) as u32;
 
             let state = MemoryState {
@@ -253,8 +239,9 @@ pub async fn check_answer(
     };
 
     // Get next states from FSRS
-    let next_states = fsrs
-        .next_states(memory_state, desired_retention as f32, elapsed_days)
+    let next_states = scheduler
+        .model
+        .next_states(memory_state, scheduler.retention, elapsed_days)
         .map_err(|e| AppError::Internal(format!("FSRS error: {:?}", e)))?;
 
     // This handler only ever grades binary correct/incorrect (see above), so
@@ -267,7 +254,7 @@ pub async fn check_answer(
 
     // Calculate scheduled days for tracking
     let scheduled_days = scheduled_state.interval;
-    let now = Utc::now();
+    let deadline = due_at(now, scheduled_days)?;
 
     // Determine new state based on rating
     let new_state = if memory_state.is_none() {
@@ -285,14 +272,15 @@ pub async fn check_answer(
     // disagreeing about what this review did.
     sqlx::query(
         r#"
-        INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision, due_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, card_id) DO UPDATE SET
             stability = excluded.stability,
             difficulty = excluded.difficulty,
             last_review = excluded.last_review,
             state = excluded.state,
-            review_revision = excluded.review_revision
+            review_revision = excluded.review_revision,
+            due_at = excluded.due_at
         "#,
     )
     .bind(user_id)
@@ -302,14 +290,15 @@ pub async fn check_answer(
     .bind(now.to_rfc3339())
     .bind(new_state)
     .bind(revision + 1)
+    .bind(deadline)
     .execute(&mut *tx)
     .await?;
 
     // Insert into review_history with full FSRS metadata
     let review_id = sqlx::query(
         r#"
-        INSERT INTO review_history (user_id, card_id, rating, scheduled_days, elapsed_days, stability, difficulty, state)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO review_history (user_id, card_id, rating, scheduled_days, elapsed_days, stability, difficulty, state, reviewed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(user_id)
@@ -320,6 +309,7 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.stability as f64)
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(new_state)
+    .bind(super::time::sqlite_datetime(now))
     .execute(&mut *tx)
     .await?
     .last_insert_rowid();

@@ -255,7 +255,7 @@ pub async fn update_settings(
     // matters here specifically because there used to be none: a failure
     // partway through the old field-by-field version could leave settings
     // half-applied.
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     ensure_settings_row(&mut *tx, user_id).await?;
 
     let mut sets: Vec<&str> = Vec::new();
@@ -335,6 +335,9 @@ pub async fn update_settings(
         q.bind(user_id).execute(&mut *tx).await?;
     }
 
+    if desired_retention.is_some() {
+        crate::cards::scheduling::reschedule_user(&mut tx, user_id).await?;
+    }
     tx.commit().await?;
 
     info!("Settings updated successfully");

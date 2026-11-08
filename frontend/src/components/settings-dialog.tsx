@@ -34,6 +34,10 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, updateSettings } = useSettings()
+  // Rescheduling touches the whole reviewed deck. Preview a drag locally and
+  // commit once on release (or keyboard commit), rather than on every pixel.
+  const [retentionDraft, setRetentionDraft] = useState(settings.desiredRetention * 100)
+  useEffect(() => setRetentionDraft(settings.desiredRetention * 100), [settings.desiredRetention])
   const { isAuthenticated, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
   const { resolvedTheme, setTheme } = useTheme()
@@ -453,18 +457,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <Label id="desired-retention-label">Desired retention</Label>
-                  <Percentage value={settings.desiredRetention * 100} className="text-sm text-muted-foreground" />
+                  <Percentage value={retentionDraft} className="text-sm text-muted-foreground" />
                 </div>
                 <Slider
                   aria-labelledby="desired-retention-label"
                   min={DESIRED_RETENTION_CONSTRAINTS.MIN * 100}
                   max={DESIRED_RETENTION_CONSTRAINTS.MAX * 100}
                   step={DESIRED_RETENTION_CONSTRAINTS.STEP * 100}
-                  value={settings.desiredRetention * 100}
-                  onValueChange={(value) => updateSettings({ desiredRetention: (value as number) / 100 })}
+                  value={retentionDraft}
+                  onValueChange={(value) => setRetentionDraft(value as number)}
+                  onValueCommitted={(value) => updateSettings({ desiredRetention: (value as number) / 100 })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Target probability of recalling a card at review time. Higher = more frequent reviews, lower = fewer reviews
+                  Target probability of recalling a card at review time. Higher = more frequent reviews, lower = fewer reviews. Changes reschedule existing cards immediately.
                 </p>
               </div>
 

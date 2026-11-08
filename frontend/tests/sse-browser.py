@@ -92,6 +92,7 @@ from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 try:
     static = work / 'static'
     shutil.copytree(ROOT / 'frontend/dist', static)
@@ -106,11 +107,13 @@ try:
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     # Observe browser requests and streams without changing production code.
     instrument="""
-    window.sseStreams=[]; window.reads=[]; window.nextReplies=[]; window.blockNext=false;
+    window.sseStreams=[]; window.reads=[]; window.settingsWrites=[]; window.nextReplies=[]; window.blockNext=false;
     const RealSource=window.EventSource;
     window.EventSource=class extends RealSource { constructor(...args) {super(...args);window.sseStreams.push(this)} };
     const realFetch=window.fetch;
-    window.fetch=async (...args)=>{window.reads.push(String(args[0]));const result=await realFetch(...args);
+    window.fetch=async (...args)=>{window.reads.push(String(args[0]));
+    if(String(args[0]).endsWith('/user/settings') && args[1]?.method==='PATCH') window.settingsWrites.push(JSON.parse(args[1].body));
+    const result=await realFetch(...args);
     if(String(args[0]).includes('/cards/next')) {if(window.blockNext) await new Promise(r=>window.releaseNext=r);window.nextReplies.push(await result.clone().json())}
     if(String(args[0]).endsWith('/check')) {if(window.holdCheck) await new Promise(r=>window.releaseCheck=r);else await new Promise(r=>setTimeout(r,700));}return result};
     """
@@ -199,7 +202,7 @@ try:
     with sqlite3.connect(work/'test.db') as db:
         uid=db.execute("SELECT id FROM users WHERE username='due-user'").fetchone()[0]
         for card_id in (1,2,3,4,5):
-            db.execute("INSERT INTO cards_states(user_id,card_id,stability,difficulty,last_review,state,review_revision) VALUES(?,?,1,3,?,'review',0)",(uid,card_id,f'2020-01-0{card_id}T00:00:00Z'))
+            db.execute("INSERT INTO cards_states(user_id,card_id,stability,difficulty,last_review,state,review_revision,due_at) VALUES(?,?,1,3,?,'review',0,0)",(uid,card_id,f'2020-01-0{card_id}T00:00:00Z'))
             db.execute("INSERT INTO review_history(user_id,card_id,rating,reviewed_at,stability,difficulty,state) VALUES(?,?,'good',?,1,3,'review')",(uid,card_id,f'2020-01-0{card_id}T00:00:00Z'))
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     driver.refresh()
@@ -242,7 +245,30 @@ try:
     driver.execute_script('window.releaseCheck()')
     time.sleep(0.5)
     assert 'Incorrect. You typed' not in driver.find_element(By.TAG_NAME,'body').text
-    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits')
+    # A retention drag previews locally, then atomically reschedules once on release.
+    driver.find_element(By.CSS_SELECTOR,'button[aria-label="Account menu"]').click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Settings')]" )).click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//button[contains(., 'Review settings')]" )).click()
+    thumb=wait.until(lambda d:d.find_element(By.CSS_SELECTOR,'[aria-labelledby="desired-retention-label"]')).find_element(By.XPATH,'ancestor::*[@data-slot="slider-thumb"]')
+    time.sleep(0.6)  # Let the accordion finish expanding before locating the drag target.
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'})",thumb)
+    before=request('/api/user/export')[2]
+    with sqlite3.connect(work/'test.db') as db:
+        before_due=db.execute('SELECT due_at FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]
+    driver.execute_script('window.settingsWrites=[]')
+    ActionChains(driver).move_to_element(thumb).click_and_hold().move_by_offset(-40,0).pause(0.1).move_by_offset(-40,0).perform()
+    assert driver.execute_script('return window.settingsWrites.length')==0
+    ActionChains(driver).release().perform()
+    wait.until(lambda d:d.execute_script('return window.settingsWrites.length')==1)
+    changed=driver.execute_script('return window.settingsWrites[0].desired_retention')
+    assert changed < before['settings']['desired_retention']
+    wait.until(lambda d:request('/api/user/settings')[2]['desired_retention']==changed)
+    after=request('/api/user/export')[2]
+    assert before['review_history']==after['review_history']
+    with sqlite3.connect(work/'test.db') as db:
+        after_due=db.execute('SELECT due_at FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]
+    assert after_due > before_due
+    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, retention drag and rescheduling')
 finally:
     if 'original' in globals(): index.write_text(original)
     if driver: driver.quit()

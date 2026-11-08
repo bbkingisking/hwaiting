@@ -199,6 +199,13 @@ pub async fn import_data(
         Some(data.settings.core.daily_new_card_limit),
     )?;
 
+    // Reject unusable model parameters before replacing any data. The same
+    // model is used below to reconstruct current deadlines from memory state.
+    crate::cards::scheduling::Scheduler::new(
+        data.settings.fsrs_parameters.as_deref(),
+        data.settings.core.desired_retention,
+    )?;
+
     // Begin transaction
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -225,7 +232,7 @@ pub async fn import_data(
         // after an overwrite removes this card's review history.
         sqlx::query(
             "UPDATE cards_states SET stability = 0, difficulty = 0, last_review = NULL,
-             state = 'new', review_revision = review_revision + 1 WHERE user_id = ?",
+             state = 'new', due_at = NULL, review_revision = review_revision + 1 WHERE user_id = ?",
         )
         .bind(user_id)
         .execute(&mut *tx)
@@ -422,7 +429,9 @@ pub async fn import_data(
         .await?;
     }
 
-    // Commit transaction
+    // Historical scheduled_days describes the policy at the time of review.
+    // Current deadlines use the restored settings/model, including merge imports.
+    crate::cards::scheduling::reschedule_user(&mut tx, user_id).await?;
     tx.commit().await?;
 
     info!("Import complete: {:?}", stats);
@@ -481,7 +490,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[1.0,2.0,3.0]')",
+            "INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2]')",
         )
         .bind(user_id)
         .execute(pool)
@@ -674,7 +683,9 @@ mod tests {
         assert!(!dest_settings.core.show_hanja_hints);
         assert_eq!(
             dest_settings.fsrs_parameters.as_deref(),
-            Some("[1.0,2.0,3.0]")
+            Some(
+                "[0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2]"
+            )
         );
 
         // cards_states derived from the *latest* review per card: card 1's
@@ -706,9 +717,14 @@ mod tests {
         setup_source_user(&pool, source_id).await;
 
         for overwrite in [false, true] {
-            for replacement in [None, Some("[4.0,5.0,6.0]")] {
+            for replacement in [
+                None,
+                Some(
+                    "[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3]",
+                ),
+            ] {
                 let dest_id = test_user(&pool).await;
-                sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[7.0,8.0,9.0]')")
+                sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4]')")
                     .bind(dest_id).execute(&pool).await.unwrap();
                 let mut data = export_data(State(pool.clone()), AuthUser(source_id))
                     .await
@@ -725,17 +741,22 @@ mod tests {
                 .unwrap();
 
                 let settings = get_user_settings(&pool, dest_id).await.unwrap();
-                let expected = replacement.or_else(|| {
+                let expected = replacement.or({
                     if overwrite {
                         None
                     } else {
-                        Some("[7.0,8.0,9.0]")
+                        Some("[0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4]")
                     }
                 });
                 assert_eq!(settings.fsrs_parameters.as_deref(), expected);
                 // Clearing the destination must leave other users' parameters intact.
                 let source = get_user_settings(&pool, source_id).await.unwrap();
-                assert_eq!(source.fsrs_parameters.as_deref(), Some("[1.0,2.0,3.0]"));
+                assert_eq!(
+                    source.fsrs_parameters.as_deref(),
+                    Some(
+                        "[0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2]"
+                    )
+                );
             }
         }
     }
@@ -878,7 +899,7 @@ mod tests {
         let source_id = test_user(&pool).await;
         setup_source_user(&pool, source_id).await;
         let dest_id = test_user(&pool).await;
-        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 10, 3, 2, '2026-01-01', 'review', 7)")
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 10, 3, 2, '2026-01-01 00:00:00', 'review', 7)")
             .bind(dest_id).execute(&pool).await.unwrap();
         // Card 1 initially has no row (revision zero). Merging must invalidate
         // that prompt; later merges and overwrites must keep advancing it.
