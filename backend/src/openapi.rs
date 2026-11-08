@@ -34,6 +34,15 @@ impl Modify for SecurityAddon {
             {
                 operation.parameters.get_or_insert_with(Vec::new).push(
                     ParameterBuilder::new()
+                        .name("X-Mutation-Id")
+                        .parameter_in(ParameterIn::Header)
+                        .required(Required::False)
+                        .description(Some("Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key."))
+                        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
+                        .build(),
+                );
+                operation.parameters.get_or_insert_with(Vec::new).push(
+                    ParameterBuilder::new()
                         .name("X-Requested-With")
                         .parameter_in(ParameterIn::Header)
                         .required(Required::True)
@@ -56,6 +65,8 @@ impl Modify for SecurityAddon {
         description = "Korean FSRS flashcard backend. Authentication uses an HttpOnly JWT cookie. All POST, PUT, PATCH, and DELETE requests require X-Requested-With: hwaiting; cross-origin browser clients must be explicitly allowed through CORS."
     ),
     paths(
+        crate::events::subscribe,
+        crate::events::card_state,
         crate::passkey::capabilities,
         crate::auth::login,
         crate::auth::signup,
@@ -92,6 +103,8 @@ impl Modify for SecurityAddon {
         crate::health_check,
     ),
     components(schemas(
+        crate::events::Change,
+        crate::events::CardState,
         crate::error::ErrorResponse,
         crate::error::StaleReviewResponse,
         crate::auth::LoginRequest,

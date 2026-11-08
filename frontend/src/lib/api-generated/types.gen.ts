@@ -193,6 +193,33 @@ export type CardReveal = CardBack & {
     inflections: Array<CardInflection>;
 };
 
+export type CardState = {
+    content_revision: number;
+    exists: boolean;
+    review_revision: number;
+    suppressed: boolean;
+};
+
+export type Change = {
+    card_id: number;
+    review_revision: number;
+    type: 'card-reviewed';
+} | {
+    card_id: number;
+    suppressed: boolean;
+    type: 'queue-changed';
+} | {
+    queue_affected: boolean;
+    type: 'settings-changed';
+} | {
+    card_id: number;
+    type: 'card-updated';
+} | {
+    type: 'state-reset';
+} | {
+    type: 'resync-required';
+};
+
 export type CheckRequest = {
     answer: string;
     /**
@@ -224,6 +251,7 @@ export type DayHistory = {
 };
 
 export type EditCardResponse = {
+    content_revision: number;
     success: boolean;
 };
 
@@ -418,6 +446,7 @@ export type NextCardEnvelope = {
 };
 
 export type NextCardResponse = CardPrompt & {
+    content_revision: number;
     difficulty?: number | null;
     guess_count: number;
     /**
@@ -654,6 +683,10 @@ export type EditCardData = {
     body: UpdateCardRequest;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -774,6 +807,10 @@ export type LoginData = {
     body: LoginRequest;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -809,6 +846,10 @@ export type LogoutData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -830,6 +871,10 @@ export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 export type LoginFinishData = {
     body?: never;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -870,6 +915,10 @@ export type LoginStartData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -889,6 +938,10 @@ export type LoginStartResponses = {
 export type RegisterFinishData = {
     body?: never;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -925,6 +978,10 @@ export type RegisterStartData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -944,6 +1001,10 @@ export type RegisterStartResponses = {
 export type SignupData = {
     body: SignupRequest;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1031,6 +1092,10 @@ export type ResetFsrsParametersData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1061,6 +1126,10 @@ export type ResetFsrsParametersResponse = ResetFsrsParametersResponses[keyof Res
 export type OptimizeFsrsData = {
     body?: never;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1240,6 +1309,10 @@ export type CheckAnswerData = {
     body: CheckRequest;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1288,6 +1361,10 @@ export type CommentOnCardData = {
     body: CommentRequest;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1324,9 +1401,38 @@ export type CommentOnCardResponses = {
 
 export type CommentOnCardResponse = CommentOnCardResponses[keyof CommentOnCardResponses];
 
+export type CardStateData = {
+    body?: never;
+    path: {
+        card_id: number;
+    };
+    query?: never;
+    url: '/api/cards/{card_id}/state';
+};
+
+export type CardStateErrors = {
+    /**
+     * Missing authentication
+     */
+    401: unknown;
+};
+
+export type CardStateResponses = {
+    /**
+     * Current prompt validity, without answer fields
+     */
+    200: CardState;
+};
+
+export type CardStateResponse = CardStateResponses[keyof CardStateResponses];
+
 export type SuppressCardData = {
     body?: never;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1364,6 +1470,10 @@ export type UnsuppressCardData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1395,6 +1505,29 @@ export type UnsuppressCardResponses = {
 };
 
 export type UnsuppressCardResponse = UnsuppressCardResponses[keyof UnsuppressCardResponses];
+
+export type SubscribeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/events';
+};
+
+export type SubscribeErrors = {
+    /**
+     * Missing or expired authentication
+     */
+    401: unknown;
+};
+
+export type SubscribeResponses = {
+    /**
+     * Named SSE invalidations; first event requests resynchronisation. No replay or Last-Event-ID contract.
+     */
+    200: string;
+};
+
+export type SubscribeResponse = SubscribeResponses[keyof SubscribeResponses];
 
 export type HealthCheckData = {
     body?: never;
@@ -1440,6 +1573,10 @@ export type ExportDataResponse = ExportDataResponses[keyof ExportDataResponses];
 export type ImportDataData = {
     body: ImportDataRequest;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1526,6 +1663,10 @@ export type AddPasskeyFinishData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1569,6 +1710,10 @@ export type AddPasskeyStartData = {
     body?: never;
     headers: {
         /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1597,6 +1742,10 @@ export type AddPasskeyStartResponses = {
 export type DeletePasskeyData = {
     body?: never;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1666,6 +1815,10 @@ export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponse
 export type UpdateSettingsData = {
     body: UpdateSettingsRequest;
     headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */

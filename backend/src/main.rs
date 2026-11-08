@@ -24,6 +24,7 @@ mod credentials;
 mod db;
 mod enum_lookup;
 mod error;
+mod events;
 mod export_import;
 mod inflection_hints;
 mod openapi;
@@ -87,6 +88,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Build API routes
     let api_routes = Router::new()
+        .route("/events", get(events::subscribe))
+        .route("/cards/{card_id}/state", get(events::card_state))
         .route("/capabilities", get(passkey::capabilities))
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
@@ -103,28 +106,40 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
         .route("/cards/next", get(cards::get_next_card))
         .route("/cards/field-values", get(cards::list_field_values))
-        .route("/cards/{card_id}/check", post(cards::check_answer))
+        .route(
+            "/cards/{card_id}/check",
+            post(events::mutations::check_answer),
+        )
         .route("/cards/{card_id}/comment", post(cards::comment_on_card))
-        .route("/cards/{card_id}/suppress", put(cards::suppress_card))
+        .route(
+            "/cards/{card_id}/suppress",
+            put(events::mutations::suppress_card),
+        )
         .route("/cards/suppressed", get(cards::list_suppressed_cards))
         .route("/cards/hanja-drill", get(cards::get_hanja_drill))
-        .route("/cards/{card_id}/unsuppress", put(cards::unsuppress_card))
+        .route(
+            "/cards/{card_id}/unsuppress",
+            put(events::mutations::unsuppress_card),
+        )
         .route("/cards/stats", get(cards::get_stats))
         .route("/cards/history", get(cards::get_history))
-        .route("/cards/fsrs-parameters", post(cards::optimize_fsrs))
         .route(
             "/cards/fsrs-parameters",
-            delete(cards::reset_fsrs_parameters),
+            post(events::mutations::optimize_fsrs),
+        )
+        .route(
+            "/cards/fsrs-parameters",
+            delete(events::mutations::reset_fsrs_parameters),
         )
         .route("/user/me", get(user::get_profile))
         .route("/user/settings", get(user::get_settings))
-        .route("/user/settings", patch(user::update_settings))
+        .route("/user/settings", patch(events::mutations::update_settings))
         .route("/user/export", get(export_import::export_data))
         .route(
             "/user/import",
             // Backups include the user's full review history and can exceed
             // Axum's default 2 MiB limit. Allow up to 64 MiB for restores.
-            post(export_import::import_data).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+            post(events::mutations::import_data).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route("/user/passkeys", get(passkey::list_passkeys))
         .route(
@@ -141,7 +156,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/users", get(admin::list_users))
         .route("/admin/cards/search", get(admin::search_cards))
-        .route("/admin/cards/{card_id}", patch(admin::edit_card))
+        .route(
+            "/admin/cards/{card_id}",
+            patch(events::mutations::edit_card),
+        )
         .route(
             "/admin/cards/{card_id}/inflections",
             get(admin::get_card_inflections),
@@ -206,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
                 .allow_headers([
                     header::CONTENT_TYPE,
                     HeaderName::from_static(auth_cookie::CSRF_HEADER),
+                    HeaderName::from_static(events::MUTATION_HEADER),
                 ])
                 .allow_credentials(true);
 

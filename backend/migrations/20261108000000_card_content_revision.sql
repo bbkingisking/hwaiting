@@ -1,0 +1,1 @@
+ALTER TABLE cards ADD COLUMN content_revision INTEGER NOT NULL DEFAULT 0;
