@@ -54,6 +54,7 @@ function AppContent() {
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
+  const coldLoadRef = useRef<Promise<boolean> | null>(null)
   useEffect(() => {
     setReviewNotice(null)
     if (isAuthenticated) {
@@ -106,11 +107,16 @@ function AppContent() {
 
   // Cold load: shows a loading state. Used for initial load, after
   // errors, after suppress, and when cards become available again.
-  const loadCardCold = async () => {
+  const loadCardCold = (): Promise<boolean> => {
+    const request = fetchCardCold()
+    coldLoadRef.current = request
+    return request
+  }
+
+  const fetchCardCold = async (): Promise<boolean> => {
     cancelPrefetch()
     setLoading(true)
     setError(null)
-    setNoCards(false)
     try {
       const envelope = await getNextCard()
       if (envelope.card) {
@@ -122,6 +128,7 @@ function AppContent() {
         setNoCards(true)
         setNextDueAt(envelope.next_due_at ?? null)
       }
+      return true
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message)
@@ -129,6 +136,7 @@ function AppContent() {
         setError('Failed to load card')
       }
       console.error('Error fetching card:', err)
+      return false
     } finally {
       setLoading(false)
     }
@@ -245,8 +253,10 @@ function AppContent() {
 
   // Recheck the empty state at a deadline or when returning after it passed.
   // A card already on screen must never be swapped out from under the user.
-  const handleCardsAvailable = () => {
-    if (noCards && !card && !loading) loadCardCold()
+  const handleCardsAvailable = async (): Promise<boolean> => {
+    if (loading && coldLoadRef.current) return coldLoadRef.current
+    if (noCards && !card) return loadCardCold()
+    return true
   }
 
   // EditCardDialog edits the backend's canonical full-card shape (see its
@@ -280,7 +290,7 @@ function AppContent() {
           <div role="status" className="text-center text-muted-foreground">
             <p>Loading card...</p>
           </div>
-        ) : noCards && !card ? (
+        ) : noCards && !card && !error ? (
           <div role="status" className="text-center text-muted-foreground">
             <div aria-hidden className="w-64 mx-auto mb-4">
               <DotLottieReact

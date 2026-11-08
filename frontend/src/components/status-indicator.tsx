@@ -8,7 +8,7 @@ import { Percentage } from '@/components/percentage'
 
 export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
   nextCardDueAt?: string | null
-  onCardsAvailable?: () => void
+  onCardsAvailable?: () => Promise<boolean>
 }) {
   const { settings } = useSettings()
   const [dueCount, setDueCount] = useState<number | null>(null)
@@ -17,32 +17,32 @@ export function StatusIndicator({ nextCardDueAt = null, onCardsAvailable }: {
   const [newTodayCount, setNewTodayCount] = useState<number | null>(null)
   const remaining = useTimeUntil(dueCount === 0 ? nextCardDueAt ?? nextDueAt : null)
 
-  const fetchStats = useEffectEvent(async () => {
+  const refresh = useEffectEvent(async (refreshQueue: boolean) => {
     try {
       const stats = await getStats()
+      // Keep the old deadline until both reads succeed so a failed card
+      // request can retry it, even if stats already know a later due date.
+      if (refreshQueue && await onCardsAvailable?.() === false) return false
       setDueCount(stats.due_count)
       setPercentage(stats.percentage ?? null)
       setNextDueAt(stats.next_due_at ?? null)
       setNewTodayCount(stats.new_today_count)
+      return true
     } catch (err) {
       console.error('Failed to fetch stats:', err)
+      return false
     }
   })
 
   useEffect(() => {
-    fetchStats()
+    refresh(false)
   }, [])
 
   // The empty-state deadline also accounts for the daily new-card reset.
   const deadline = [nextCardDueAt, nextDueAt]
     .filter((value): value is string => value !== null && Number.isFinite(parseDueAt(value)))
     .sort((a, b) => parseDueAt(a) - parseDueAt(b))[0] ?? null
-  const refresh = useEffectEvent(() => {
-    fetchStats()
-    onCardsAvailable?.()
-  })
-
-  useEffect(() => scheduleReviewRefresh(deadline, refresh), [deadline])
+  useEffect(() => scheduleReviewRefresh(deadline, () => refresh(true)), [deadline])
 
   // Update tab title with due count
   useEffect(() => {
