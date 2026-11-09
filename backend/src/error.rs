@@ -21,7 +21,7 @@ pub struct ErrorResponse {
 
 /// Machine-readable response for a rejected stale answer.
 #[derive(Serialize, ToSchema)]
-pub struct StaleReviewResponse {
+pub struct StaleAnswerResponse {
     pub error: String,
     pub code: String,
 }
@@ -30,6 +30,9 @@ pub struct StaleReviewResponse {
 pub enum AppError {
     #[error("Card review state has changed")]
     StaleReview,
+
+    #[error("Card content has changed")]
+    StaleContent,
 
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
@@ -104,9 +107,19 @@ impl IntoResponse for AppError {
             AppError::StaleReview => {
                 return (
                     StatusCode::CONFLICT,
-                    Json(StaleReviewResponse {
+                    Json(StaleAnswerResponse {
                         error: "Card review state has changed".to_string(),
                         code: "stale_review".to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+            AppError::StaleContent => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(StaleAnswerResponse {
+                        error: "Card content has changed".to_string(),
+                        code: "stale_content".to_string(),
                     }),
                 )
                     .into_response();

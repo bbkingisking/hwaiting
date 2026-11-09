@@ -375,6 +375,7 @@ mod tests {
             AppJson(crate::cards::CheckRequest {
                 answer: answer.clone(),
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -406,7 +407,8 @@ mod tests {
                 HeaderMap::new(),
                 AppJson(crate::cards::CheckRequest {
                     answer,
-                    review_revision: 0
+                    review_revision: 0,
+                    content_revision: 0,
                 })
             )
             .await

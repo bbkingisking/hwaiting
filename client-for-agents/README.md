@@ -6,6 +6,8 @@ The `krdict` command is unrelated to the review flow above: it takes a KRDICT ta
 
 Going through the content in the same way as a user would (one card at a time) results, I found, in much more useful feedback, compared to just dumping the database and asking the agent to spot what's wrong in it. To that end, `answer` suppresses the card it just graded, right or wrong - the agent isn't here to learn Korean via spaced repetition, so once a card has been seen, it drops out of rotation and the next `review` call surfaces a fresh one. Point the agent at a fresh user made for this purpose (see the `daily_new_card_limit` trick below) so it works through the deck exactly once.
 
+Pass both revisions from the `review` response when answering: `hwaiting-agent answer CARD_ID ANSWER REVIEW_REVISION CONTENT_REVISION`. If another review or an edit changed the card, the server rejects the stale answer without grading it; run `review` again for a fresh prompt.
+
 Some useful SQL commands to set up a workflow:
 
 ```sql

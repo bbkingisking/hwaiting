@@ -232,9 +232,14 @@ pub fn review() -> Result<Value, AppError> {
 /// again for this user - right or wrong, the agent has now seen it once, and
 /// the point is coverage of the deck rather than mastering it via spaced
 /// repetition.
-pub fn answer(card_id: &str, guess: &str) -> Result<Value, AppError> {
+pub fn answer(
+    card_id: &str,
+    guess: &str,
+    review_revision: i64,
+    content_revision: i64,
+) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let body = json!({ "answer": guess });
+    let body = json!({ "answer": guess, "review_revision": review_revision, "content_revision": content_revision });
     let mut result = parse(&post_json(
         &format!("/api/cards/{card_id}/check"),
         &client,

@@ -23,7 +23,12 @@ enum Command {
     /// Fetch the next due card.
     Review,
     /// Submit a guess for a card and get back the graded result.
-    Answer { card_id: String, answer: String },
+    Answer {
+        card_id: String,
+        answer: String,
+        review_revision: i64,
+        content_revision: i64,
+    },
     /// Record a content-review note against a card.
     Comment { card_id: String, text: String },
     /// Fetch the pos/speech_level/tense/grammar_pattern lookup tables.
@@ -41,7 +46,12 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Login => cmd_login(),
         Command::Review => http::review(),
-        Command::Answer { card_id, answer } => http::answer(&card_id, &answer),
+        Command::Answer {
+            card_id,
+            answer,
+            review_revision,
+            content_revision,
+        } => http::answer(&card_id, &answer, review_revision, content_revision),
         Command::Comment { card_id, text } => http::comment(&card_id, &text),
         Command::FieldValues => http::field_values(),
         Command::Krdict { word_id } => lookup::lookup(word_id),

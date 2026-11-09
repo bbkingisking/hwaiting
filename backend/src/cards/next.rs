@@ -776,6 +776,7 @@ mod tests {
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer: answer.clone(),
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -791,6 +792,7 @@ mod tests {
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer,
                 review_revision: card.review_revision,
+                content_revision: card.content_revision,
             }),
         )
         .await
