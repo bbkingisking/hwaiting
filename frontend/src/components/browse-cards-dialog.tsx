@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Loader2 } from 'lucide-react'
-import { searchCardsByTarget, subscribeCardEdits, type AdminCard } from '@/lib/api'
+import { subscribeCardEdits, type AdminCard } from '@/lib/api'
 import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface BrowseCardsDialogProps {
@@ -18,12 +18,9 @@ interface BrowseCardsDialogProps {
 }
 
 export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps) {
-  const { query, setQuery, cards, setCards, isLoading, hasSearched, error, setError } = useDebouncedCardSearch(open)
+  const { query, setQuery, cards, refreshSearch, isLoading, hasSearched, error } = useDebouncedCardSearch(open)
   const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
   const [editOpen, setEditOpen] = useState(false)
-  const currentQuery = useRef(query)
-  currentQuery.current = query
-
   const handleCardClick = (card: AdminCard) => {
     setSelectedCard(card)
     setEditOpen(true)
@@ -33,21 +30,11 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
     if (!open) return
     return subscribeCardEdits(({ card }) => {
       setSelectedCard(prev => prev?.sentence_id === card.sentence_id ? card : prev)
-      // Card-wide fields affect every sentence and a changed target may no
-      // longer match this search. Replace the edited row immediately, then
-      // read the server's full canonical result set.
-      setCards(prev => prev.map(row => row.sentence_id === card.sentence_id ? card : row))
-      const searched = currentQuery.current.trim()
-      if (!searched) return
-      void searchCardsByTarget(searched).then(result => {
-        if (currentQuery.current.trim() === searched) setCards(result.cards)
-      }).catch(err => {
-        if (currentQuery.current.trim() === searched) {
-          setError(err instanceof Error ? err.message : 'Could not refresh cards')
-        }
-      })
+      // Search owns the result list, including whether the edited card still
+      // matches the query and any card-wide fields on sibling sentences.
+      refreshSearch()
     })
-  }, [open, setCards, setError])
+  }, [open, refreshSearch])
 
   return (
     <>
