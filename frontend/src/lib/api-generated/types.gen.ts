@@ -458,6 +458,9 @@ export type NextCardResponse = CardPrompt & {
 
 export type OptimizeFsrsResponse = {
     parameters: Array<number>;
+    /**
+     * Delayed review outcomes supplied to the optimizer, excluding repeated history prefixes.
+     */
     review_count: number;
     success: boolean;
 };

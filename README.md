@@ -89,6 +89,15 @@ Backups retain their existing format: deadlines are reconstructed after restorin
 memory state, settings, and parameters. Invalid model parameters or unrepresentable
 deadlines are rejected instead of storing unusable schedules.
 
+Optimization supplies one training example per delayed review, with that card's
+preceding reviews retained as context. Same-day reviews contribute to context;
+examples are ordered by review time for the crate's recency weighting. The
+reported review count is the number of prediction targets supplied, not the sum
+of overlapping history lengths. Fitting runs outside the async request executor.
+With sparse data, the crate may return default or partially fitted parameters.
+Previously fitted parameters are not automatically retrained by an upgrade; use
+**Optimize scheduling** to fit them again with the corrected training data.
+
 ### Auth
 
 Username/password (Argon2 hashes stored in the DB) and passkey sign-in both issue the same JWT in a host-only `hwaiting-auth` cookie (`HttpOnly`, `Path=/`, `SameSite=Lax` by default). The JSON response contains profile information only. Requests authenticate through that cookie; bearer headers are no longer accepted. The JWT signing secret and `HWAITING_JWT_EXPIRY_SECONDS` retain their existing meaning: tokens have no expiry by default. Cookie persistence follows a configured JWT lifetime, or defaults to 400 days when JWT expiry is disabled (browsers may impose their own storage limits).
