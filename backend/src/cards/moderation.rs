@@ -64,9 +64,8 @@ pub async fn comment_on_card(
 ) -> Result<Json<CommentResponse>, AppError> {
     let user_id = auth.0;
 
-    // foreign_keys isn't turned on for this connection (see db.rs), so the
-    // FK in the migration is documentation, not enforcement - check by hand
-    // so a bad card_id 404s instead of silently inserting an orphaned row.
+    // Return the API's 404 for an unknown card. The FK also protects this
+    // relationship if another write path forgets the check.
     let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM cards WHERE id = ?")
         .bind(card_id)
         .fetch_optional(&pool)
@@ -98,6 +97,7 @@ pub async fn comment_on_card(
     responses(
         (status = 200, description = "Card suppressed from review rotation", body = ReviewResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
     tag = "cards"
@@ -113,11 +113,12 @@ pub async fn suppress_card(
         user_id, card_id
     );
 
-    // Insert or update users_card_flags to mark as suppressed
-    sqlx::query(
+    // Select from cards in the same statement so a nonexistent id produces a
+    // 404 without ever attempting to insert a dangling flag.
+    let result = sqlx::query(
         r#"
         INSERT INTO users_card_flags (user_id, card_id, suppressed)
-        VALUES (?, ?, 1)
+        SELECT ?, id, 1 FROM cards WHERE id = ?
         ON CONFLICT(user_id, card_id) DO UPDATE SET
             suppressed = 1,
             flagged_at = datetime('now')
@@ -127,6 +128,9 @@ pub async fn suppress_card(
     .bind(card_id)
     .execute(&pool)
     .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
 
     info!("Card suppressed successfully");
 
@@ -231,4 +235,41 @@ pub async fn unsuppress_card(
     info!("Card unsuppressed successfully");
 
     Ok(Json(ReviewResponse { success: true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        auth::AuthUser,
+        test_support::{test_pool, test_user},
+    };
+
+    #[tokio::test]
+    async fn suppressing_missing_card_returns_404_without_a_flag() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let result = suppress_card(State(pool.clone()), AppPath(999999), AuthUser(user_id)).await;
+        assert!(matches!(result, Err(AppError::NotFound)));
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM users_card_flags WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0);
+
+        let response = suppress_card(State(pool.clone()), AppPath(1), AuthUser(user_id))
+            .await
+            .unwrap();
+        assert!(response.0.success);
+        let suppressed: bool = sqlx::query_scalar(
+            "SELECT suppressed FROM users_card_flags WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(suppressed);
+    }
 }

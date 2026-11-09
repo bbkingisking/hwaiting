@@ -1,3 +1,4 @@
+use sqlx::Row;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 use std::time::Duration;
@@ -5,7 +6,23 @@ use tracing::{debug, info};
 
 pub async fn init() -> anyhow::Result<SqlitePool> {
     let database_url = crate::credentials::database_url();
+    let pool = connect_migrated(&database_url).await?;
+    crate::cards::scheduling::backfill_due_dates(&pool).await?;
+    debug!("Database migrations complete");
 
+    // Seed admin user if doesn't exist
+    seed_admin_user(&pool).await?;
+
+    // Seed sample cards if doesn't exist
+    seed_sample_cards(&pool).await?;
+
+    Ok(pool)
+}
+
+/// Table rebuild migrations need foreign keys disabled while they drop and
+/// replace referenced tables. Keep that exception on a dedicated migration
+/// pool; every connection returned to the application enforces relationships.
+pub(crate) async fn connect_migrated(database_url: &str) -> anyhow::Result<SqlitePool> {
     // WAL lets readers (GET /cards/next's "pick a due card" query, in
     // particular - it's the slowest read in the app) run concurrently with a
     // writer instead of blocking it. Without this, the pool's 5 connections
@@ -16,41 +33,45 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
     // once busy_timeout (5s, sqlx's default - set explicitly below so it's
     // not just an assumption) is exhausted, every connection in the pool
     // starts failing with "database is locked", not just the two involved.
-    // The rest of this codebase was written assuming FK constraints aren't
-    // enforced (see e.g. moderation::comment_on_card's "check by hand so a
-    // bad card_id 404s instead of silently inserting an orphaned row" -
-    // manual existence checks stand in for FK enforcement throughout) - but
-    // sqlx's SqliteConnectOptions defaults `foreign_keys` to `ON`, and
-    // nothing here ever overrode it. That mismatch went unnoticed until
-    // migration 20240101000041's `parts_of_speech` rebuild (DROP + recreate
-    // + rename, needed to work around an ALTER TABLE DROP COLUMN quirk)
-    // failed with "FOREIGN KEY constraint failed": SQLite's DROP TABLE,
-    // under FK enforcement, does an implicit delete-every-row first, which
-    // trips every un-cascaded FK still pointing at that table (cards.pos_id
-    // among them). Disabling it here makes actual behavior match what the
-    // rest of the code already assumed.
     let options = SqliteConnectOptions::from_str(&database_url)?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .foreign_keys(false)
         .busy_timeout(Duration::from_secs(5));
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+    let migration_pool = SqlitePoolOptions::new()
+        .max_connections(1)
         .connect_with(options)
         .await?;
 
-    // Run migrations
     debug!("Running database migrations...");
-    sqlx::migrate!("./migrations").run(&pool).await?;
-    crate::cards::scheduling::backfill_due_dates(&pool).await?;
-    debug!("Database migrations complete");
+    sqlx::migrate!("./migrations").run(&migration_pool).await?;
 
-    // Seed admin user if doesn't exist
-    seed_admin_user(&pool).await?;
+    // Existing installations may contain orphaned rows written while FK
+    // enforcement was disabled. Fail with the offending relationship rather
+    // than silently treating that data as valid after the policy change.
+    if let Some(row) = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_optional(&migration_pool)
+        .await?
+    {
+        let table: String = row.get("table");
+        let rowid: Option<i64> = row.get("rowid");
+        let parent: String = row.get("parent");
+        anyhow::bail!(
+            "Database has a foreign-key violation: {table} row {rowid:?} references missing {parent}; repair it before starting the application"
+        );
+    }
+    migration_pool.close().await;
 
-    // Seed sample cards if doesn't exist
-    seed_sample_cards(&pool).await?;
+    let runtime_options = SqliteConnectOptions::from_str(database_url)?
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .foreign_keys(true)
+        .busy_timeout(Duration::from_secs(5));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(runtime_options)
+        .await?;
 
     Ok(pool)
 }
@@ -128,4 +149,73 @@ async fn seed_sample_cards(pool: &SqlitePool) -> anyhow::Result<()> {
     info!("Sample cards seeded successfully");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::test_pool;
+
+    #[tokio::test]
+    async fn every_runtime_connection_enforces_foreign_keys() {
+        let pool = test_pool().await;
+        let mut connections = Vec::new();
+        for _ in 0..5 {
+            connections.push(pool.acquire().await.unwrap());
+        }
+        for connection in &mut connections {
+            let enabled: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+                .fetch_one(&mut **connection)
+                .await
+                .unwrap();
+            assert_eq!(enabled, 1);
+        }
+        drop(connections);
+
+        let result = sqlx::query(
+            "INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (999999, 999999, 1)",
+        )
+        .execute(&pool)
+        .await;
+        assert!(
+            result.is_err(),
+            "an orphaned flag must be rejected by SQLite"
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_foreign_key_violations_block_startup() {
+        let path = std::env::temp_dir().join(format!(
+            "hwaiting_fk_test_{}_{}.db",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite://{}", path.display());
+        connect_migrated(&database_url).await.unwrap().close().await;
+
+        // Simulate a row written by an older application connection with
+        // foreign keys disabled, then verify the next startup catches it.
+        let old_options = SqliteConnectOptions::from_str(&database_url)
+            .unwrap()
+            .foreign_keys(false);
+        let old_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(old_options)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (999999, 999999, 1)",
+        )
+        .execute(&old_pool)
+        .await
+        .unwrap();
+        old_pool.close().await;
+
+        let error = match connect_migrated(&database_url).await {
+            Ok(_) => panic!("startup should reject the orphaned flag"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("users_card_flags"), "{error}");
+        assert!(error.contains("missing"), "{error}");
+    }
 }
