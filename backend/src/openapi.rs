@@ -106,7 +106,7 @@ impl Modify for SecurityAddon {
         crate::events::Change,
         crate::events::CardState,
         crate::error::ErrorResponse,
-        crate::error::StaleReviewResponse,
+        crate::error::StaleAnswerResponse,
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,

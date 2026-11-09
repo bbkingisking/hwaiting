@@ -267,6 +267,7 @@ mod tests {
             AppJson(cards::CheckRequest {
                 answer: answer.into(),
                 review_revision: revision,
+                content_revision: 0,
             }),
         )
         .await

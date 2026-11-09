@@ -134,7 +134,7 @@ try:
     # Card far down the queue: replenish the new-card successor, preserving active work.
     other=40 if cid!=40 else 41
     revision=request(f'/api/cards/{other}/state')[2]['review_revision']
-    assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
+    assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','review_revision':revision,'content_revision':0})[0]==200
     wait.until(lambda d: any('/cards/stats' in p for p in d.execute_script('return window.reads')))
     wait.until(lambda d: any('/cards/next' in p for p in d.execute_script('return window.reads')))
     assert int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))==cid
@@ -155,7 +155,7 @@ try:
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep through reconnect')
     driver.execute_script('window.sseStreams.forEach(s=>s.close())')
     revision=request(f'/api/cards/{newcid}/state')[2]['review_revision']
-    assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','review_revision':revision})[0]==200
+    assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','review_revision':revision,'content_revision':0})[0]==200
     driver.execute_script("window.dispatchEvent(new Event('online'))")
     wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and int(d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))!=newcid)
     assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
@@ -195,6 +195,28 @@ try:
     time.sleep(0.5)
     assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
     assert 'Incorrect. You typed' in driver.find_element(By.TAG_NAME,'body').text
+    # An edit missed by the live stream must be caught by the grading
+    # transaction. The old answer records nothing, and the browser reloads
+    # the revised prompt instead of revealing/grading it.
+    assert request('/api/auth/signup','POST',{'username':'stale-content-user','password':'sse-test-password'})[0]==201
+    assert request('/api/user/settings','PATCH',{'daily_new_card_limit':0})[0]==200
+    with sqlite3.connect(work/'test.db') as db:
+        stale_uid=db.execute("SELECT id FROM users WHERE username='stale-content-user'").fetchone()[0]
+        db.execute("INSERT INTO cards_states(user_id,card_id,stability,difficulty,last_review,state,review_revision,due_at) VALUES(?,40,1,3,'2020-01-01T00:00:00Z','review',0,0)",(stale_uid,))
+        db.execute("INSERT INTO review_history(user_id,card_id,rating,reviewed_at,stability,difficulty,state) VALUES(?,40,'good','2020-01-01T00:00:00Z',1,3,'review')",(stale_uid,))
+    driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
+    driver.refresh()
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='40')
+    driver.execute_script('window.sseStreams.forEach(s=>s.close())')
+    assert request('/api/auth/login','POST',{'username':env['HWAITING_ADMIN_USERNAME'],'password':env['HWAITING_ADMIN_PASSWORD']})[0]==200
+    assert request('/api/admin/cards/40','PATCH',{'sentence':'새 답입니다.','target':'답'})[0]==200
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('old answer')
+    driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
+    wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===40 && r.card?.content_revision===1)'))
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='40' and d.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='')
+    assert 'Incorrect. You typed' not in driver.find_element(By.TAG_NAME,'body').text
+    with sqlite3.connect(work/'test.db') as db:
+        assert db.execute('SELECT COUNT(*) FROM review_history WHERE user_id=? AND card_id=40',(stale_uid,)).fetchone()[0]==1
     # With due review cards, a ready successor can be promoted even while all
     # subsequent next-card responses are blocked. Only the new prefetch waits.
     assert request('/api/auth/signup','POST',{'username':'due-user','password':'sse-test-password'})[0]==201
@@ -210,11 +232,11 @@ try:
     wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===2)'))
     time.sleep(0.2)
     driver.execute_script('window.reads=[]')
-    assert request('/api/cards/5/check','POST',{'answer':'wrong','review_revision':0})[0]==200
+    assert request('/api/cards/5/check','POST',{'answer':'wrong','review_revision':0,'content_revision':0})[0]==200
     wait.until(lambda d:any('/cards/stats' in p for p in d.execute_script('return window.reads')))
     assert not any('/cards/next' in p for p in driver.execute_script('return window.reads'))
     driver.execute_script('window.reads=[];window.blockNext=true')
-    assert request('/api/cards/1/check','POST',{'answer':'wrong','review_revision':0})[0]==200
+    assert request('/api/cards/1/check','POST',{'answer':'wrong','review_revision':0,'content_revision':request('/api/cards/1/state')[2]['content_revision']})[0]==200
     wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='2')
     wait.until(lambda d:d.execute_script('return !!window.releaseNext'))
     assert len([p for p in driver.execute_script('return window.reads') if '/cards/next' in p])==1
@@ -240,7 +262,7 @@ try:
     driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
     wait.until(lambda d:d.execute_script('return !!window.releaseCheck'))
     assert request('/api/cards/4/state')[2]['review_revision']==1
-    assert request('/api/cards/4/check','POST',{'answer':'wrong','review_revision':1})[0]==200
+    assert request('/api/cards/4/check','POST',{'answer':'wrong','review_revision':1,'content_revision':0})[0]==200
     wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and 'No cards' in d.find_element(By.TAG_NAME,'body').text)
     driver.execute_script('window.releaseCheck()')
     time.sleep(0.5)
@@ -268,7 +290,7 @@ try:
     with sqlite3.connect(work/'test.db') as db:
         after_due=db.execute('SELECT due_at FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]
     assert after_due > before_due
-    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, retention drag and rescheduling')
+    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, stale content rejection, retention drag and rescheduling')
 finally:
     if 'original' in globals(): index.write_text(original)
     if driver: driver.quit()

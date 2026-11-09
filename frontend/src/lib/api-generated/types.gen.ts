@@ -223,6 +223,10 @@ export type Change = {
 export type CheckRequest = {
     answer: string;
     /**
+     * Content revision returned with the due card; grading must use that version.
+     */
+    content_revision: number;
+    /**
      * Revision returned with the due card; stale revisions cannot record a review.
      */
     review_revision: number;
@@ -499,7 +503,7 @@ export type SignupRequest = {
 /**
  * Machine-readable response for a rejected stale answer.
  */
-export type StaleReviewResponse = {
+export type StaleAnswerResponse = {
     code: string;
     error: string;
 };
@@ -1332,7 +1336,7 @@ export type CheckAnswerData = {
 
 export type CheckAnswerErrors = {
     /**
-     * Invalid request, including missing review_revision
+     * Invalid request, including missing revisions
      */
     400: ErrorResponse;
     /**
@@ -1344,9 +1348,9 @@ export type CheckAnswerErrors = {
      */
     404: ErrorResponse;
     /**
-     * Review state changed since the card was fetched
+     * Review state or card content changed since the card was fetched
      */
-    409: StaleReviewResponse;
+    409: StaleAnswerResponse;
 };
 
 export type CheckAnswerError = CheckAnswerErrors[keyof CheckAnswerErrors];

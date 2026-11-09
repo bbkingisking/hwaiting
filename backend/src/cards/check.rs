@@ -21,6 +21,8 @@ pub struct CheckRequest {
     pub answer: String,
     /// Revision returned with the due card; stale revisions cannot record a review.
     pub review_revision: i64,
+    /// Content revision returned with the due card; grading must use that version.
+    pub content_revision: i64,
 }
 
 /// The card fields disclosed once an answer is graded, shared with the
@@ -107,8 +109,8 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
-        (status = 400, description = "Invalid request, including missing review_revision", body = crate::error::ErrorResponse),
-        (status = 409, description = "Review state changed since the card was fetched", body = crate::error::StaleReviewResponse),
+        (status = 400, description = "Invalid request, including missing revisions", body = crate::error::ErrorResponse),
+        (status = 409, description = "Review state or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
@@ -123,6 +125,11 @@ pub async fn check_answer(
 ) -> Result<Json<CheckResponse>, AppError> {
     let user_id = auth.0;
 
+    // Reserve the writer before reading any grading content. Admin edits
+    // update that content and its revision in one transaction, so this read,
+    // the revision comparison, and the recorded review share one snapshot.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
     //
@@ -133,7 +140,7 @@ pub async fn check_answer(
     // grammar_patterns' own public listing.
     let row = sqlx::query(
         r#"
-        SELECT c.word, c.definition, c.hanja,
+        SELECT c.word, c.definition, c.hanja, c.content_revision,
                s.id as sentence_id, s.text as sentence, tg.form as target,
                COALESCE((SELECT json_group_array(ending) FROM
                 (SELECT ending FROM grammar_patterns_endings
@@ -146,9 +153,13 @@ pub async fn check_answer(
         "#,
     )
     .bind(card_id)
-    .fetch_optional(&pool)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
+
+    if payload.content_revision != row.get::<i64, _>("content_revision") {
+        return Err(AppError::StaleContent);
+    }
 
     let word: String = row.get("word");
     let definition: Option<String> = row.get("definition");
@@ -163,14 +174,14 @@ pub async fn check_answer(
     let alternatives: Vec<String> =
         sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
             .bind(sentence_id)
-            .fetch_all(&pool)
+            .fetch_all(&mut *tx)
             .await?;
 
     let correct = is_correct(&payload.answer, &target, &alternatives);
 
     let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
 
-    let inflections = super::inflections_for(&pool, card_id).await?;
+    let inflections = super::inflections_for(&mut *tx, card_id).await?;
 
     info!(
         "Checking answer for user_id: {}, card_id: {}, correct: {}",
@@ -189,7 +200,6 @@ pub async fn check_answer(
     // Read the model and retention under the same writer reservation as the
     // review: a settings change must not reschedule and then be overwritten
     // by an in-flight answer using the previous policy.
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let scheduler = Scheduler::load(&mut tx, user_id).await?;
     let now = Utc::now().with_nanosecond(0).unwrap();
     let card_state_row = sqlx::query(
@@ -422,6 +432,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: target,
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -469,6 +480,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: "definitely wrong".to_string(),
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -498,6 +510,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: target,
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -512,6 +525,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: "definitely wrong".to_string(),
                 review_revision: 1,
+                content_revision: 0,
             }),
         )
         .await
@@ -564,6 +578,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: target,
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -599,6 +614,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer,
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await
@@ -611,6 +627,7 @@ mod tests {
             AppJson(CheckRequest {
                 answer: "wrong".into(),
                 review_revision: 0,
+                content_revision: 0,
             }),
         )
         .await;
@@ -624,6 +641,69 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn edit_rejects_old_prompt_without_recording_a_review() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let old_answer = target_for(&pool, 1).await;
+        let edit: crate::admin::UpdateCardRequest =
+            serde_json::from_value(serde_json::json!({"sentence": "새 답입니다.", "target": "답"}))
+                .unwrap();
+        let edited = crate::admin::edit_card(
+            crate::auth::AdminUser(user_id),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(edit),
+        )
+        .await
+        .unwrap();
+        assert_eq!(edited.0.content_revision, 1);
+
+        let stale = check_answer(
+            State(pool.clone()),
+            AppPath(1),
+            AuthUser(user_id),
+            AppJson(CheckRequest {
+                answer: old_answer,
+                review_revision: 0,
+                content_revision: 0,
+            }),
+        )
+        .await;
+        assert!(matches!(stale, Err(AppError::StaleContent)));
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM review_history WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 0);
+        let state_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(state_count, 0);
+
+        let fresh = check_answer(
+            State(pool.clone()),
+            AppPath(1),
+            AuthUser(user_id),
+            AppJson(CheckRequest {
+                answer: "답".into(),
+                review_revision: 0,
+                content_revision: edited.0.content_revision,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(fresh.0.correct);
+        assert_eq!(fresh.0.reveal.back.target, "답");
     }
 
     #[tokio::test]
@@ -641,6 +721,7 @@ mod tests {
                     AppJson(CheckRequest {
                         answer: answer.clone(),
                         review_revision: revision,
+                        content_revision: 0,
                     }),
                 )
             };
@@ -661,7 +742,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_revision_is_a_bad_request_and_stale_error_has_a_code() {
+    async fn missing_revision_is_a_bad_request_and_stale_errors_have_codes() {
         use axum::{
             body::{Body, to_bytes},
             extract::FromRequest,
@@ -674,10 +755,21 @@ mod tests {
             .unwrap();
         let parsed = AppJson::<CheckRequest>::from_request(request, &()).await;
         assert!(matches!(parsed, Err(AppError::BadRequest(_))));
+        let request = Request::builder()
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"answer":"test","review_revision":0}"#))
+            .unwrap();
+        let parsed = AppJson::<CheckRequest>::from_request(request, &()).await;
+        assert!(matches!(parsed, Err(AppError::BadRequest(_))));
         let response = AppError::StaleReview.into_response();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["code"], "stale_review");
+        let response = AppError::StaleContent.into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "stale_content");
     }
 }

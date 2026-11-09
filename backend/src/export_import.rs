@@ -942,6 +942,7 @@ mod tests {
             AppJson(crate::cards::CheckRequest {
                 answer: "test".into(),
                 review_revision: 7,
+                content_revision: 0,
             }),
         )
         .await;
