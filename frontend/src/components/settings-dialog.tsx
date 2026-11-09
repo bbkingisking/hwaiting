@@ -26,6 +26,8 @@ import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTI
 import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Percentage } from '@/components/percentage'
+import { changedSettings } from '@/lib/settings-draft'
+import type { Settings } from '@/lib/types'
 
 interface SettingsDialogProps {
   open: boolean
@@ -33,14 +35,16 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { settings, updateSettings, saveStatus, saveError, retrySettings, discardSettings } = useSettings()
-  // Rescheduling touches the whole reviewed deck. Preview a drag locally and
-  // commit once on release (or keyboard commit), rather than on every pixel.
-  const [retentionDraft, setRetentionDraft] = useState(settings.desiredRetention * 100)
-  useEffect(() => setRetentionDraft(settings.desiredRetention * 100), [settings.desiredRetention])
+  const { settings, saveSettings, saveStatus, saveError, refreshSettings, clearSaveError } = useSettings()
+  const [base, setBase] = useState(settings)
+  const [draft, setDraft] = useState(settings)
   const { isAuthenticated, passkeysEnabled } = useAuth()
   const { cardThemeId, setCardThemeId } = useCardTheme()
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
+  const [themeBase, setThemeBase] = useState(theme)
+  const [themeDraft, setThemeDraft] = useState(theme)
+  const [cardThemeBase, setCardThemeBase] = useState(cardThemeId)
+  const [cardThemeDraft, setCardThemeDraft] = useState(cardThemeId)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -55,6 +59,50 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   // Track user's preferred limit when they toggle suppress on/off
   const [preferredLimit, setPreferredLimit] = useState(20)
+
+  useEffect(() => {
+    if (!open) return
+    setBase(settings)
+    setDraft(settings)
+    setThemeBase(theme)
+    setThemeDraft(theme)
+    setCardThemeBase(cardThemeId)
+    setCardThemeDraft(cardThemeId)
+    setPreferredLimit(settings.dailyNewCardLimit || 20)
+    clearSaveError()
+  }, [open])
+
+  const changes = changedSettings(base, draft)
+  const dirty = Object.keys(changes).length > 0 || themeDraft !== themeBase || cardThemeDraft !== cardThemeBase
+
+  const changeDraft = (updates: Partial<Settings>) => {
+    setDraft(previous => {
+      const next = { ...previous, ...updates }
+      if (updates.redThreshold !== undefined && next.redThreshold >= next.yellowThreshold) {
+        next.redThreshold = Math.max(0, next.yellowThreshold - 5)
+      }
+      if (updates.yellowThreshold !== undefined && next.yellowThreshold <= next.redThreshold) {
+        next.yellowThreshold = Math.min(100, next.redThreshold + 5)
+      }
+      return next
+    })
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    if (saveStatus === 'saving') return
+    if (!next) clearSaveError()
+    onOpenChange(next)
+  }
+
+  const handleSave = async () => {
+    if (!dirty || saveStatus === 'saving') return
+    try {
+      await saveSettings(changes)
+      setTheme(themeDraft)
+      setCardThemeId(cardThemeDraft)
+      onOpenChange(false)
+    } catch { /* The provider exposes the error in this dialog. */ }
+  }
 
   const fetchPasskeys = async () => {
     if (!isAuthenticated) return
@@ -160,7 +208,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         type: 'success',
         text: `Optimized from ${result.review_count} reviews`
       })
-      updateSettings({ hasFsrsParameters: true })
+      refreshSettings()
     } catch (error) {
       console.error('Failed to optimize FSRS parameters:', error)
       setOptimizeMessage({
@@ -176,18 +224,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     try {
       await resetFsrsParameters()
       setOptimizeMessage(null)
-      updateSettings({ hasFsrsParameters: false })
+      refreshSettings()
     } catch (error) {
       console.error('Failed to reset FSRS parameters:', error)
     }
   }
-
-  // Initialize preferred limit from current settings
-  useEffect(() => {
-    if (settings.dailyNewCardLimit > 0) {
-      setPreferredLimit(settings.dailyNewCardLimit)
-    }
-  }, [])
 
   useEffect(() => {
     if (open && passkeysEnabled) {
@@ -196,7 +237,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }, [open, passkeysEnabled])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-106.25 flex flex-col max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
@@ -208,15 +249,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <p role="status" className="text-sm text-muted-foreground">Saving settings…</p>
         )}
         {saveStatus === 'failed' && (
-          <div role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
-            <p>Settings have not been saved: {saveError}</p>
-            <div className="mt-2 flex gap-3">
-              <button type="button" className="underline" onClick={retrySettings}>Retry</button>
-              <button type="button" className="underline" onClick={discardSettings}>Discard changes</button>
-            </div>
-          </div>
+          <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
+            Settings have not been saved: {saveError}
+          </p>
         )}
-        <Accordion className="overflow-y-auto pr-1">
+        <Accordion inert={saveStatus === 'saving'} className="overflow-y-auto pr-1">
           {/* General */}
           <AccordionItem value="general">
             <AccordionTrigger>General</AccordionTrigger>
@@ -228,8 +265,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </Label>
                   <Switch
                     id="auto-progress"
-                    checked={settings.autoProgressOnCorrect}
-                    onCheckedChange={(checked) => updateSettings({ autoProgressOnCorrect: checked })}
+                    checked={draft.autoProgressOnCorrect}
+                    onCheckedChange={(checked) => changeDraft({ autoProgressOnCorrect: checked })}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -237,12 +274,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </p>
               </div>
 
-              {settings.autoProgressOnCorrect && (
+              {draft.autoProgressOnCorrect && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <Label id="auto-progress-delay-label">Auto-progress delay</Label>
                     <span className="text-sm text-muted-foreground">
-                      {settings.autoProgressDelay === 0 ? 'Instant' : `${(settings.autoProgressDelay / 1000).toFixed(1)}s`}
+                      {draft.autoProgressDelay === 0 ? 'Instant' : `${(draft.autoProgressDelay / 1000).toFixed(1)}s`}
                     </span>
                   </div>
                   <Slider
@@ -250,8 +287,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     min={AUTO_PROGRESS_DELAY_CONSTRAINTS.MIN}
                     max={AUTO_PROGRESS_DELAY_CONSTRAINTS.MAX}
                     step={AUTO_PROGRESS_DELAY_CONSTRAINTS.STEP}
-                    value={settings.autoProgressDelay}
-                    onValueChange={(value) => updateSettings({ autoProgressDelay: value as number })}
+                    value={draft.autoProgressDelay}
+                    onValueChange={(value) => changeDraft({ autoProgressDelay: value as number })}
                   />
                   <p className="text-xs text-muted-foreground">
                     How long to show correct answer before moving to next card
@@ -269,8 +306,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <Label htmlFor="dark-mode" className="flex-1">Dark mode</Label>
                 <Switch
                   id="dark-mode"
-                  checked={resolvedTheme === 'dark'}
-                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                  checked={themeDraft === 'system' ? resolvedTheme === 'dark' : themeDraft === 'dark'}
+                  onCheckedChange={(checked) => setThemeDraft(checked ? 'dark' : 'light')}
                 />
               </div>
 
@@ -283,8 +320,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <Switch
                       id="show-hanja-hints"
-                      checked={settings.showHanjaHints}
-                      onCheckedChange={(checked) => updateSettings({ showHanjaHints: checked })}
+                      checked={draft.showHanjaHints}
+                      onCheckedChange={(checked) => changeDraft({ showHanjaHints: checked })}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -300,8 +337,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <Label id="red-threshold-label">Red threshold (below)</Label>
-                      <Percentage value={settings.redThreshold} className="text-sm text-muted-foreground">
-                        {settings.redThreshold}%
+                      <Percentage value={draft.redThreshold} className="text-sm text-muted-foreground">
+                        {draft.redThreshold}%
                       </Percentage>
                     </div>
                     <Slider
@@ -309,8 +346,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       min={THRESHOLD_CONSTRAINTS.MIN}
                       max={THRESHOLD_CONSTRAINTS.MAX}
                       step={THRESHOLD_CONSTRAINTS.STEP}
-                      value={settings.redThreshold}
-                      onValueChange={(value) => updateSettings({ redThreshold: value as number })}
+                      value={draft.redThreshold}
+                      onValueChange={(value) => changeDraft({ redThreshold: value as number })}
                       className="**:[[data-slot=slider-thumb]]:bg-destructive"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -321,8 +358,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <Label id="yellow-threshold-label">Yellow threshold (below)</Label>
-                      <Percentage value={settings.yellowThreshold} className="text-sm text-muted-foreground">
-                        {settings.yellowThreshold}%
+                      <Percentage value={draft.yellowThreshold} className="text-sm text-muted-foreground">
+                        {draft.yellowThreshold}%
                       </Percentage>
                     </div>
                     <Slider
@@ -330,8 +367,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       min={THRESHOLD_CONSTRAINTS.MIN}
                       max={THRESHOLD_CONSTRAINTS.MAX}
                       step={THRESHOLD_CONSTRAINTS.STEP}
-                      value={settings.yellowThreshold}
-                      onValueChange={(value) => updateSettings({ yellowThreshold: value as number })}
+                      value={draft.yellowThreshold}
+                      onValueChange={(value) => changeDraft({ yellowThreshold: value as number })}
                       className="**:[[data-slot=slider-thumb]]:bg-yellow-600"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -347,8 +384,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <Switch
                       id="debug-status-bar"
-                      checked={settings.debugStatusBar}
-                      onCheckedChange={(checked) => updateSettings({ debugStatusBar: checked })}
+                      checked={draft.debugStatusBar}
+                      onCheckedChange={(checked) => changeDraft({ debugStatusBar: checked })}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -364,11 +401,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <button
                       key={cardTheme.id}
                       type="button"
-                      aria-pressed={cardThemeId === cardTheme.id}
-                      onClick={() => setCardThemeId(cardTheme.id)}
+                      aria-pressed={cardThemeDraft === cardTheme.id}
+                      onClick={() => setCardThemeDraft(cardTheme.id)}
                       className={cn(
                         'flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent',
-                        cardThemeId === cardTheme.id
+                        cardThemeDraft === cardTheme.id
                           ? 'border-primary ring-1 ring-primary'
                           : 'border-border',
                       )}
@@ -402,15 +439,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </Label>
                   <Switch
                     id="suppress-new-cards"
-                    checked={settings.dailyNewCardLimit === 0}
+                    checked={draft.dailyNewCardLimit === 0}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         // Save current limit before suppressing
-                        setPreferredLimit(settings.dailyNewCardLimit || 20)
-                        updateSettings({ dailyNewCardLimit: 0 })
+                        setPreferredLimit(draft.dailyNewCardLimit || 20)
+                        changeDraft({ dailyNewCardLimit: 0 })
                       } else {
                         // Restore preferred limit
-                        updateSettings({ dailyNewCardLimit: preferredLimit })
+                        changeDraft({ dailyNewCardLimit: preferredLimit })
                       }
                     }}
                   />
@@ -420,12 +457,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </p>
               </div>
 
-              {settings.dailyNewCardLimit > 0 && (
+              {draft.dailyNewCardLimit > 0 && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <Label id="daily-new-card-limit-label">Daily new card limit</Label>
                     <span className="text-sm text-muted-foreground">
-                      {settings.dailyNewCardLimit}
+                      {draft.dailyNewCardLimit}
                     </span>
                   </div>
                   <Slider
@@ -433,10 +470,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     min={1}
                     max={100}
                     step={1}
-                    value={settings.dailyNewCardLimit}
+                    value={draft.dailyNewCardLimit}
                     onValueChange={(value) => {
                       const limit = value as number
-                      updateSettings({ dailyNewCardLimit: limit })
+                      changeDraft({ dailyNewCardLimit: limit })
                       setPreferredLimit(limit)
                     }}
                   />
@@ -450,7 +487,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <div className="flex items-center justify-between">
                   <Label id="day-boundary-label">Day ends at</Label>
                   <span className="text-sm text-muted-foreground">
-                    {settings.dayBoundaryHour.toString().padStart(2, '0')}:00
+                    {draft.dayBoundaryHour.toString().padStart(2, '0')}:00
                   </span>
                 </div>
                 <Slider
@@ -458,8 +495,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   min={0}
                   max={23}
                   step={1}
-                  value={settings.dayBoundaryHour}
-                  onValueChange={(value) => updateSettings({ dayBoundaryHour: value as number })}
+                  value={draft.dayBoundaryHour}
+                  onValueChange={(value) => changeDraft({ dayBoundaryHour: value as number })}
                 />
                 <p className="text-xs text-muted-foreground">
                   Reviews before this hour count as the previous day
@@ -469,16 +506,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <Label id="desired-retention-label">Desired retention</Label>
-                  <Percentage value={retentionDraft} className="text-sm text-muted-foreground" />
+                  <Percentage value={draft.desiredRetention * 100} className="text-sm text-muted-foreground" />
                 </div>
                 <Slider
                   aria-labelledby="desired-retention-label"
                   min={DESIRED_RETENTION_CONSTRAINTS.MIN * 100}
                   max={DESIRED_RETENTION_CONSTRAINTS.MAX * 100}
                   step={DESIRED_RETENTION_CONSTRAINTS.STEP * 100}
-                  value={retentionDraft}
-                  onValueChange={(value) => setRetentionDraft(value as number)}
-                  onValueCommitted={(value) => updateSettings({ desiredRetention: (value as number) / 100 })}
+                  value={draft.desiredRetention * 100}
+                  onValueChange={(value) => changeDraft({ desiredRetention: (value as number) / 100 })}
                 />
                 <p className="text-xs text-muted-foreground">
                   Target probability of recalling a card at review time. Higher = more frequent reviews, lower = fewer reviews. Changes reschedule existing cards immediately.
@@ -616,6 +652,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </AccordionItem>
           )}
         </Accordion>
+        <div className="flex justify-end gap-2 border-t pt-3">
+          <Button type="button" variant="outline" disabled={saveStatus === 'saving'} onClick={() => handleOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" disabled={!dirty || saveStatus === 'saving'} onClick={handleSave}>
+            {saveStatus === 'saving' ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
       </DialogContent>
 
       {/* Import Confirmation Dialog */}

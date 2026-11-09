@@ -272,11 +272,12 @@ export async function getUserSettings(): Promise<UserSettings> {
   return fetchWithAuth(url)
 }
 
-export async function updateUserSettings(settings: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
+export async function updateUserSettings(settings: UpdateSettingsRequest, signal?: AbortSignal): Promise<UpdateSettingsResponse> {
   const url = `${apiBase()}/api/user/settings`
   const result = await fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(settings),
+    signal,
   })
   if (settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
     notifyReviewQueueChanged('availability')

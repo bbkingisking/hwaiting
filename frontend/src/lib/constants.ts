@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS = {
   // Unlike the rest of Settings, this is never sent to the backend - it's a
   // device-local debug preference, same as card theme (see
   // card-theme-provider.tsx). Kept in settings-provider.tsx anyway so it
-  // shows up through the same useSettings()/updateSettings() surface
+  // shows up through the same useSettings()/saveSettings() surface
   // everything else in the settings dialog already uses.
   DEBUG_STATUS_BAR: false,
 } as const

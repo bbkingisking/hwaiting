@@ -108,12 +108,12 @@ try:
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     # Observe browser requests and streams without changing production code.
     instrument="""
-    window.sseStreams=[]; window.reads=[]; window.settingsWrites=[]; window.nextReplies=[]; window.blockNext=false;window.failSettingsOnce=false;
+    window.sseStreams=[]; window.reads=[]; window.settingsWrites=[]; window.nextReplies=[]; window.blockNext=false;window.failSettingsOnce=false;window.timeoutSettingsOnce=false;
     const RealSource=window.EventSource;
     window.EventSource=class extends RealSource { constructor(...args) {super(...args);window.sseStreams.push(this)} };
     const realFetch=window.fetch;
     window.fetch=async (...args)=>{window.reads.push(String(args[0]));
-    if(String(args[0]).endsWith('/user/settings') && args[1]?.method==='PATCH') {window.settingsWrites.push(JSON.parse(args[1].body));if(window.failSettingsOnce){window.failSettingsOnce=false;throw new Error('simulated settings failure')}}
+    if(String(args[0]).endsWith('/user/settings') && args[1]?.method==='PATCH') {window.settingsWrites.push(JSON.parse(args[1].body));if(window.failSettingsOnce){window.failSettingsOnce=false;throw new Error('simulated settings failure')}if(window.timeoutSettingsOnce){window.timeoutSettingsOnce=false;return await new Promise((_,reject)=>args[1].signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError'))))}}
     const result=await realFetch(...args);
     if(String(args[0]).includes('/cards/next')) {if(window.blockNext) await new Promise(r=>window.releaseNext=r);window.nextReplies.push(await result.clone().json())}
     if(String(args[0]).endsWith('/check')) {if(window.holdCheck) await new Promise(r=>window.releaseCheck=r);else await new Promise(r=>setTimeout(r,700));}return result};
@@ -291,7 +291,7 @@ try:
     driver.execute_script('window.releaseCheck()')
     time.sleep(0.5)
     assert 'Incorrect. You typed' not in driver.find_element(By.TAG_NAME,'body').text
-    # A retention drag previews locally, then atomically reschedules once on release.
+    # A retention drag stays local until Save, then reschedules once.
     driver.find_element(By.CSS_SELECTOR,'button[aria-label="Account menu"]').click()
     wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Settings')]" )).click()
     wait.until(lambda d:d.find_element(By.XPATH,"//button[contains(., 'Review settings')]" )).click()
@@ -305,7 +305,10 @@ try:
     ActionChains(driver).move_to_element(thumb).click_and_hold().move_by_offset(-40,0).pause(0.1).move_by_offset(-40,0).perform()
     assert driver.execute_script('return window.settingsWrites.length')==0
     ActionChains(driver).release().perform()
+    assert driver.execute_script('return window.settingsWrites.length')==0
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]//button[text()='Save']").click()
     wait.until(lambda d:d.execute_script('return window.settingsWrites.length')==1)
+    wait.until(lambda d:not d.find_elements(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]"))
     changed=driver.execute_script('return window.settingsWrites[0].desired_retention')
     assert changed < before['settings']['desired_retention']
     wait.until(lambda d:request('/api/user/settings')[2]['desired_retention']==changed)
@@ -314,18 +317,41 @@ try:
     with sqlite3.connect(work/'test.db') as db:
         after_due=db.execute('SELECT due_at FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]
     assert after_due > before_due
-    wait.until(lambda d:'Saving settings' not in d.find_element(By.TAG_NAME,'body').text)
+    # A failed Save keeps the menu open with the edited draft and a retryable
+    # error. Changing a switch alone must not send a PATCH.
+    driver.find_element(By.CSS_SELECTOR,'button[aria-label="Account menu"]').click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Settings')]" )).click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//button[contains(., 'Review settings')]" )).click()
     old_limit=request('/api/user/settings')[2]['daily_new_card_limit']
-    driver.execute_script('window.failSettingsOnce=true')
+    driver.execute_script('window.settingsWrites=[]')
     suppress_label=driver.find_element(By.CSS_SELECTOR,'label[for="suppress-new-cards"]')
     driver.execute_script("arguments[0].scrollIntoView({block:'center'})",suppress_label)
     suppress_label.click()
+    assert driver.execute_script('return window.settingsWrites.length')==0
+    driver.execute_script('window.failSettingsOnce=true')
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]//button[text()='Save']").click()
     wait.until(lambda d:'Settings have not been saved' in d.find_element(By.TAG_NAME,'body').text)
     assert request('/api/user/settings')[2]['daily_new_card_limit']==old_limit
-    driver.find_element(By.XPATH,"//button[text()='Retry']").click()
+    assert driver.find_elements(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]")
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]//button[text()='Save']").click()
     wait.until(lambda d:request('/api/user/settings')[2]['daily_new_card_limit']!=old_limit)
-    wait.until(lambda d:'Settings have not been saved' not in d.find_element(By.TAG_NAME,'body').text)
-    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, stale content rejection, retention rescheduling, and settings retry')
+    wait.until(lambda d:not d.find_elements(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]"))
+    # A hung request times out, keeps the dialog open, and changes no server state.
+    driver.find_element(By.CSS_SELECTOR,'button[aria-label="Account menu"]').click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Settings')]" )).click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//button[contains(., 'General')]" )).click()
+    old_progress=request('/api/user/settings')[2]['auto_progress_on_correct']
+    progress_label=driver.find_element(By.CSS_SELECTOR,'label[for="auto-progress"]')
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'})",progress_label)
+    progress_label.click()
+    driver.execute_script('window.timeoutSettingsOnce=true')
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]//button[text()='Save']").click()
+    wait.until(lambda d:'Saving settings' in d.find_element(By.TAG_NAME,'body').text)
+    assert driver.find_elements(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]")
+    wait.until(lambda d:'timed out' in d.find_element(By.TAG_NAME,'body').text)
+    assert request('/api/user/settings')[2]['auto_progress_on_correct']==old_progress
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Settings']]//button[text()='Cancel']").click()
+    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, stale content rejection, explicit settings Save, retention rescheduling, failed Save retry, and timeout')
 finally:
     if 'original' in globals(): index.write_text(original)
     if driver: driver.quit()
