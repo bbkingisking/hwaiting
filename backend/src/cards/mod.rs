@@ -29,6 +29,7 @@ pub(crate) use hanja_drill::*;
 pub(crate) use moderation::*;
 pub(crate) use next::*;
 pub(crate) use stats::*;
+pub(crate) use time::parse_flexible_datetime;
 
 use serde::Serialize;
 use sqlx::{Row, Sqlite, SqlitePool};

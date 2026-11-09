@@ -127,7 +127,7 @@ pub(super) fn accuracy_percentage(correct: i64, total: i64) -> Option<f64> {
 /// a given caller actually tolerated (and whether an RFC3339 timestamp with
 /// a non-UTC offset would even survive it) wasn't answerable by reading any
 /// one of them in isolation.
-pub(super) fn parse_flexible_datetime(
+pub(crate) fn parse_flexible_datetime(
     s: &str,
 ) -> Result<chrono::DateTime<Utc>, chrono::ParseError> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
