@@ -117,7 +117,7 @@ test('a queue change during a queue request discards its stale response', async 
   assert.deepEqual(await nextCard, { card: { card_id: 42 } })
   assert.equal(reads, 2)
   assert.ok(requests.filter(request => request.url.includes('/api/cards/queue'))
-    .every(request => request.url.endsWith('/api/cards/queue')))
+    .every(request => request.url.endsWith('/api/cards/queue?limit=2')))
 })
 
 test('removing a queue subscription stops further notifications', async () => {
@@ -152,7 +152,7 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
   finish(Response.json({ cards: [{ card_id: 1 }] }))
   assert.deepEqual((await pending).cards, [{ card_id: 8 }])
   assert.equal(reads, 2)
-  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue')))
+  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue?limit=2')))
 })
 
 const { reconcileQueue } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
