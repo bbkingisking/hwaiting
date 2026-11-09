@@ -245,18 +245,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-106.25 flex flex-col max-h-[85vh]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-106.25 flex flex-col gap-0 max-h-[85vh]">
+        <DialogHeader className="mb-4">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
             Customize your flashcard experience
           </DialogDescription>
         </DialogHeader>
         {saveStatus === 'saving' && (
-          <p role="status" className="text-sm text-muted-foreground">Saving settings…</p>
+          <p role="status" className="mb-4 text-sm text-muted-foreground">Saving settings…</p>
         )}
         {saveStatus === 'failed' && (
-          <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
+          <p role="alert" className="mb-4 rounded-md border border-destructive p-3 text-sm text-destructive">
             Settings have not been saved: {saveError}
           </p>
         )}
@@ -626,26 +626,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <AccordionTrigger>Passkeys</AccordionTrigger>
             <AccordionContent className="flex flex-col gap-4">
               <p className="text-xs text-muted-foreground">
-                Add a passkey from another device to sign in there too. You need at least one at all times.
+                These are all the passkeys associated with your account.
               </p>
-              <Button
-                onClick={handleAddPasskey}
-                disabled={isAddingPasskey}
-                variant="outline"
-                className="self-start"
-              >
-                {isAddingPasskey ? 'Waiting for passkey…' : 'Add a passkey'}
-              </Button>
-              {passkeyMessage && (
-                <p className={`text-xs ${passkeyMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
-                  {passkeyMessage.text}
-                </p>
-              )}
               <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
                 {isLoadingPasskeys ? (
                   <p className="text-sm text-muted-foreground">Loading...</p>
                 ) : passkeys.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No passkeys yet</p>
+                  <p className="text-sm text-muted-foreground">No passkeys added</p>
                 ) : (
                   passkeys.map((passkey) => (
                     <div
@@ -672,6 +659,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   ))
                 )}
               </div>
+              <Button
+                onClick={handleAddPasskey}
+                disabled={isAddingPasskey}
+                variant="outline"
+                className="self-center"
+              >
+                {isAddingPasskey ? 'Waiting for passkey…' : 'Add a passkey'}
+              </Button>
+              {passkeyMessage && (
+                <p className={`text-xs ${passkeyMessage.type === 'success' ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                  {passkeyMessage.text}
+                </p>
+              )}
             </AccordionContent>
           </AccordionItem>
           )}
