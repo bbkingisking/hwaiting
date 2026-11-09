@@ -131,6 +131,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
     setError(null)
     try {
       const updates = {
+        sentence_id: card.sentence_id,
         word: form.word.trim() || undefined,
         hanja: nullIfEmpty(form.hanja),
         trans_word: form.trans_word.trim() || undefined,
@@ -200,6 +201,9 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         <div className="flex flex-col gap-3 py-1">
           <Field label="Card ID">
             {id => <Input id={id} value={card.card_id} readOnly className="text-muted-foreground font-mono" />}
+          </Field>
+          <Field label="Sentence ID">
+            {id => <Input id={id} value={card.sentence_id} readOnly className="text-muted-foreground font-mono" />}
           </Field>
 
           <Field label="Target (conjugated form in sentence)">

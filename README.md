@@ -81,6 +81,15 @@ This changes neither the memory state nor review history and does not count as a
 review. `review_history.scheduled_days` preserves the interval calculated at that
 historical review; it is not the source of the current deadline after rescheduling.
 
+A card may have several sentence prompts but has one FSRS state and one due date.
+The backend selects the due card first, then the sentence that user has seen
+least recently (unseen sentences first, ties by sentence ID). A review records
+that sentence ID and grades only its target; adding another sentence does not
+create an extra review. The sentence ID and revisions returned by `/api/cards/next`
+must be sent back to `/api/cards/{id}/check`. On upgrade, historical reviews
+are assigned a sentence ID only when it can be inferred from a wrong-answer
+record or the card has exactly one sentence.
+
 On upgrading from the old stability-based scheduler, startup backfills deadlines
 using each user's current retention and model. No review history is replayed or
 rewritten. At 90% the schedule is effectively unchanged, apart from second-level

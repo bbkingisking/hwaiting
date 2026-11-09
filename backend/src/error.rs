@@ -34,6 +34,9 @@ pub enum AppError {
     #[error("Card content has changed")]
     StaleContent,
 
+    #[error("The selected sentence has changed")]
+    StalePrompt,
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
@@ -120,6 +123,16 @@ impl IntoResponse for AppError {
                     Json(StaleAnswerResponse {
                         error: "Card content has changed".to_string(),
                         code: "stale_content".to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+            AppError::StalePrompt => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(StaleAnswerResponse {
+                        error: "The selected sentence has changed".to_string(),
+                        code: "stale_prompt".to_string(),
                     }),
                 )
                     .into_response();

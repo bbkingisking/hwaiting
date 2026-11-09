@@ -374,6 +374,7 @@ mod tests {
             headers,
             AppJson(crate::cards::CheckRequest {
                 answer: answer.clone(),
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -407,6 +408,7 @@ mod tests {
                 HeaderMap::new(),
                 AppJson(crate::cards::CheckRequest {
                     answer,
+                    sentence_id: 1,
                     review_revision: 0,
                     content_revision: 0,
                 })
@@ -519,7 +521,8 @@ mod tests {
         let admin = crate::test_support::test_admin_user(&pool).await;
         let state = AppState::new(pool.clone());
         let mut sub = state.events.subscribe(123);
-        let payload = serde_json::from_value(serde_json::json!({"hanja": "test"})).unwrap();
+        let payload =
+            serde_json::from_value(serde_json::json!({"sentence_id": 1, "hanja": "test"})).unwrap();
         let _ = mutations::edit_card(
             crate::auth::AdminUser(admin),
             State(state),

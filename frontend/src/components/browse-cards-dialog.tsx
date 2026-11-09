@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Loader2 } from 'lucide-react'
-import { type AdminCard } from '@/lib/api'
+import { searchCardsByTarget, type AdminCard } from '@/lib/api'
 import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface BrowseCardsDialogProps {
@@ -18,9 +18,11 @@ interface BrowseCardsDialogProps {
 }
 
 export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps) {
-  const { query, setQuery, cards, setCards, isLoading, hasSearched, error } = useDebouncedCardSearch(open)
+  const { query, setQuery, cards, setCards, isLoading, hasSearched, error, setError } = useDebouncedCardSearch(open)
   const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  const currentQuery = useRef(query)
+  currentQuery.current = query
 
   const handleCardClick = (card: AdminCard) => {
     setSelectedCard(card)
@@ -34,7 +36,20 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
     )
     const merged = { ...selectedCard, ...applied }
     setSelectedCard(merged)
-    setCards(prev => prev.map(c => (c.card_id === merged.card_id ? merged : c)))
+    setCards(prev => prev.map(c => (c.sentence_id === merged.sentence_id ? merged : c)))
+    // A card-wide edit affects every sentence row, and sentence/target edits
+    // can also change which rows match the search. Refresh the server's
+    // canonical results once the save has committed.
+    const searched = query.trim()
+    if (searched) {
+      void searchCardsByTarget(searched).then(result => {
+        if (currentQuery.current.trim() === searched) setCards(result.cards)
+      }).catch(err => {
+        if (currentQuery.current.trim() === searched) {
+          setError(err instanceof Error ? err.message : 'Could not refresh cards')
+        }
+      })
+    }
   }
 
   return (
@@ -78,7 +93,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {cards.map(card => (
                   <button
-                    key={card.card_id}
+                    key={card.sentence_id}
                     type="button"
                     onClick={() => handleCardClick(card)}
                     className="w-full text-left p-3 border rounded-md hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -86,7 +101,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
                     <div className="space-y-1">
                       <div className="font-medium">{card.target}</div>
                       <div className="text-sm text-muted-foreground">
-                        {card.word} · {card.trans_word} · #{card.card_id}
+                        {card.word} · {card.trans_word} · card #{card.card_id} · sentence #{card.sentence_id}
                       </div>
                       <div className="text-xs text-muted-foreground/70">
                         {card.sentence}

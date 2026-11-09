@@ -124,6 +124,10 @@ export type CardFront = InflectionHint & {
      * `sentence` and `target` itself are withheld; see `CardBack`.
      */
     sentence_before: string;
+    /**
+     * The particular prompt selected for this review of the card.
+     */
+    sentence_id: number;
     sentence_translation: string;
     trans_dfn?: string | null;
     trans_word: string;
@@ -230,6 +234,10 @@ export type CheckRequest = {
      * Revision returned with the due card; stale revisions cannot record a review.
      */
     review_revision: number;
+    /**
+     * The sentence prompt returned by next-card for this attempt.
+     */
+    sentence_id: number;
 };
 
 export type CheckResponse = CardReveal & {
@@ -482,6 +490,7 @@ export type ReviewHistoryExport = {
     rating: string;
     reviewed_at: string;
     scheduled_days?: number | null;
+    sentence_id?: number | null;
     stability?: number | null;
     state?: string | null;
     wrong_answer?: null | WrongAnswerExport;
@@ -559,6 +568,10 @@ export type UpdateCardRequest = {
     origin_type?: string | null;
     pos?: string | null;
     sentence?: string | null;
+    /**
+     * The sentence variant being edited; it must belong to the card in the path.
+     */
+    sentence_id: number;
     sentence_translation?: string | null;
     speech_level?: string | null;
     target?: string | null;
@@ -1336,7 +1349,7 @@ export type CheckAnswerData = {
 
 export type CheckAnswerErrors = {
     /**
-     * Invalid request, including missing revisions
+     * Invalid request, including missing sentence identity or revisions
      */
     400: ErrorResponse;
     /**
@@ -1348,7 +1361,7 @@ export type CheckAnswerErrors = {
      */
     404: ErrorResponse;
     /**
-     * Review state or card content changed since the card was fetched
+     * Review state, selected sentence, or card content changed since the card was fetched
      */
     409: StaleAnswerResponse;
 };

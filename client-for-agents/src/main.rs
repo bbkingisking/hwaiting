@@ -26,6 +26,7 @@ enum Command {
     Answer {
         card_id: String,
         answer: String,
+        sentence_id: i64,
         review_revision: i64,
         content_revision: i64,
     },
@@ -49,9 +50,16 @@ fn main() -> ExitCode {
         Command::Answer {
             card_id,
             answer,
+            sentence_id,
             review_revision,
             content_revision,
-        } => http::answer(&card_id, &answer, review_revision, content_revision),
+        } => http::answer(
+            &card_id,
+            &answer,
+            sentence_id,
+            review_revision,
+            content_revision,
+        ),
         Command::Comment { card_id, text } => http::comment(&card_id, &text),
         Command::FieldValues => http::field_values(),
         Command::Krdict { word_id } => lookup::lookup(word_id),

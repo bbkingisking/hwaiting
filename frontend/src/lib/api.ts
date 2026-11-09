@@ -118,9 +118,9 @@ export async function getFieldValues(): Promise<FieldValues> {
 // Grades `answer` against `cardId` server-side, records the FSRS review,
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
-export async function checkAnswer(cardId: number, answer: string, reviewRevision: number, contentRevision: number): Promise<CheckResponse> {
+export async function checkAnswer(cardId: number, sentenceId: number, answer: string, reviewRevision: number, contentRevision: number): Promise<CheckResponse> {
   const url = `${apiBase()}/api/cards/${cardId}/check`
-  const body: CheckRequest = { answer, review_revision: reviewRevision, content_revision: contentRevision }
+  const body: CheckRequest = { answer, sentence_id: sentenceId, review_revision: reviewRevision, content_revision: contentRevision }
   return fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify(body),

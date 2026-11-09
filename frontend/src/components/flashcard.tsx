@@ -57,6 +57,7 @@ function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHi
 function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
   return {
     card_id: card.card_id,
+    sentence_id: card.sentence_id,
     krdict_id: card.krdict_id,
     word: reveal.word,
     definition: reveal.definition,
@@ -213,7 +214,7 @@ function GrammarPatternPill({
 }
 
 export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
-  const promptKey = `${card.card_id}:${card.review_revision}:${card.content_revision}`
+  const promptKey = `${card.card_id}:${card.sentence_id}:${card.review_revision}:${card.content_revision}`
   const promptKeyRef = useRef(promptKey)
   promptKeyRef.current = promptKey
   const staleRef = useRef(staleReason)
@@ -241,7 +242,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
   const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
   const autoProgressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.card_id, card.review_revision, card.content_revision])
+  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.card_id, card.sentence_id, card.review_revision, card.content_revision])
   useEffect(() => { if (staleReason) clearTimeout(autoProgressTimer.current) }, [staleReason])
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === 'verb' || card.pos === 'adjective')
@@ -286,7 +287,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
     // *same* card, which must not look like a new card arriving and wipe
     // out the answer/reveal being displayed. A refreshed revision of the same
     // card does start a new attempt after a stale submission.
-  }, [card.card_id, card.review_revision, card.content_revision])
+  }, [card.card_id, card.sentence_id, card.review_revision, card.content_revision])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

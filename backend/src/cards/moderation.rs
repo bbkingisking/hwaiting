@@ -162,7 +162,9 @@ pub async fn list_suppressed_cards(
         FROM cards c
         INNER JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
-        INNER JOIN sentences s ON c.id = s.card_id
+        INNER JOIN sentences s ON s.id = (
+            SELECT MIN(id) FROM sentences WHERE card_id = c.id
+        )
         LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN grades g ON g.id = c.grade_id
