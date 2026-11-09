@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { searchCardsByTarget, ApiError, type AdminCard } from '@/lib/api'
 
 interface DebouncedCardSearch {
   query: string
   setQuery: (query: string) => void
   cards: AdminCard[]
-  setCards: React.Dispatch<React.SetStateAction<AdminCard[]>>
+  refreshSearch: () => void
   isLoading: boolean
   hasSearched: boolean
   error: string | null
@@ -23,6 +23,15 @@ export function useDebouncedCardSearch(open: boolean): DebouncedCardSearch {
   const [isLoading, setIsLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshRevision, setRefreshRevision] = useState(0)
+  const activeSearch = useRef<AbortController | null>(null)
+
+  const refreshSearch = useCallback(() => {
+    // Cancel now, before React runs the effect cleanup: an older response
+    // must not replace results fetched after a card edit.
+    activeSearch.current?.abort()
+    setRefreshRevision(value => value + 1)
+  }, [])
 
   // Reset state when the dialog opens
   useEffect(() => {
@@ -50,10 +59,12 @@ export function useDebouncedCardSearch(open: boolean): DebouncedCardSearch {
     // Set inside the timer, not before it: flagging "loading" during the
     // debounce window advertises a request that hasn't been made yet.
     const controller = new AbortController()
+    activeSearch.current = controller
     const timer = setTimeout(() => {
       setIsLoading(true)
       searchCardsByTarget(trimmed, controller.signal)
         .then(response => {
+          if (controller.signal.aborted) return
           setCards(response.cards)
           setHasSearched(true)
           setError(null)
@@ -69,8 +80,9 @@ export function useDebouncedCardSearch(open: boolean): DebouncedCardSearch {
     return () => {
       clearTimeout(timer)
       controller.abort()
+      if (activeSearch.current === controller) activeSearch.current = null
     }
-  }, [open, query])
+  }, [open, query, refreshRevision])
 
-  return { query, setQuery, cards, setCards, isLoading, hasSearched, error, setError }
+  return { query, setQuery, cards, refreshSearch, isLoading, hasSearched, error, setError }
 }
