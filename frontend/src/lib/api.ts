@@ -294,6 +294,13 @@ export async function updateUserSettings(settings: UpdateSettingsRequest): Promi
 // opening the editor there requires an adapter (toAdminCard in
 // flashcard.tsx) rather than passing the review card straight through.
 type AdminCard = Schemas.Card
+export type CardEdit = { card: AdminCard }
+const cardEdits = new EventTarget()
+export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => void {
+  const onEdit = (event: Event) => listener((event as CustomEvent<CardEdit>).detail)
+  cardEdits.addEventListener('edit', onEdit)
+  return () => cardEdits.removeEventListener('edit', onEdit)
+}
 
 // The subset of AdminCard's fields that CardReveal actually has - i.e. the
 // half of a `Card` row the server withholds from `GET /api/cards/next` and
@@ -313,10 +320,14 @@ export async function searchCardsByTarget(query: string, signal?: AbortSignal): 
 
 export async function editCard(cardId: number, updates: EditCardRequest): Promise<EditCardResponse> {
   const url = `${apiBase()}/api/admin/cards/${cardId}`
-  return fetchWithAuth(url, {
+  const result: EditCardResponse = await fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(updates),
   })
+  cardEdits.dispatchEvent(new CustomEvent<CardEdit>('edit', {
+    detail: { card: result.card },
+  }))
+  return result
 }
 
 type CardInflectionsResponse = Schemas.CardInflectionsResponse

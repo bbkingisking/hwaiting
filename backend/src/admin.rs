@@ -1,6 +1,6 @@
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
 
@@ -104,6 +104,65 @@ pub struct SearchCardsResponse {
     pub cards: Vec<Card>,
 }
 
+// Search and edit responses must project the same joined card data. The
+// latter selects one sentence after the write, so the editor receives the
+// exact canonical row it changed rather than reconstructing it from inputs.
+const CARD_PROJECTION_SQL: &str = r#"
+    SELECT
+        c.id, c.krdict_id, c.word, c.definition, c.hanja,
+        pop.slug as pos, ot.slug as origin_type, g.slug as grade,
+        ct.trans_word, ct.trans_dfn,
+        s.id as sentence_id, s.text as sentence, tg.form as target,
+        st.translation as sentence_translation,
+        sl.slug as speech_level, tn.slug as tense,
+        tg.is_honorific, tg.is_humble,
+        gp.slug as grammar_pattern
+    FROM cards c
+    INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
+    INNER JOIN sentences s ON c.id = s.card_id
+    INNER JOIN targets tg ON tg.sentence_id = s.id
+    LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
+    LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
+    LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
+    LEFT JOIN grades g ON g.id = c.grade_id
+    LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
+    LEFT JOIN tenses tn ON tn.id = tg.tense_id
+    LEFT JOIN grammar_patterns gp ON gp.id = tg.grammar_pattern_id
+"#;
+
+fn project_card(row: SqliteRow, alternatives: Vec<String>) -> Card {
+    let sentence: String = row.get("sentence");
+    let target: String = row.get("target");
+    let (sentence_before, sentence_after) = crate::cards::split_sentence(&sentence, &target);
+    Card {
+        front: CardFront {
+            card_id: row.get("id"),
+            sentence_id: row.get("sentence_id"),
+            krdict_id: row.get("krdict_id"),
+            pos: row.get("pos"),
+            origin_type: row.get("origin_type"),
+            hanja: row.get("hanja"),
+            grade: row.get("grade"),
+            trans_word: row.get("trans_word"),
+            trans_dfn: row.get("trans_dfn"),
+            sentence_before,
+            sentence_after,
+            sentence_translation: row
+                .get::<Option<String>, _>("sentence_translation")
+                .unwrap_or_default(),
+            inflection_hint: crate::inflection_hints::InflectionHint::from_row(&row),
+            grammar_pattern: row.get("grammar_pattern"),
+        },
+        back: CardBack {
+            word: row.get("word"),
+            definition: row.get("definition"),
+            sentence,
+            target,
+            alternatives,
+        },
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/admin/cards/search",
@@ -138,39 +197,17 @@ pub async fn search_cards(
     let card_id: Option<i64> = q.parse().ok();
     let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            c.id, c.krdict_id, c.word, c.definition, c.hanja,
-            pop.slug as pos, ot.slug as origin_type, g.slug as grade,
-            ct.trans_word, ct.trans_dfn,
-            s.id as sentence_id, s.text as sentence, tg.form as target,
-            st.translation as sentence_translation,
-            sl.slug as speech_level, tn.slug as tense,
-            tg.is_honorific, tg.is_humble,
-            gp.slug as grammar_pattern
-        FROM cards c
-        INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
-        INNER JOIN sentences s ON c.id = s.card_id
-        INNER JOIN targets tg ON tg.sentence_id = s.id
-        LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
-        LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
-        LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
-        LEFT JOIN grades g ON g.id = c.grade_id
-        LEFT JOIN speech_levels sl ON sl.id = tg.speech_level_id
-        LEFT JOIN tenses tn ON tn.id = tg.tense_id
-        LEFT JOIN grammar_patterns gp ON gp.id = tg.grammar_pattern_id
-        WHERE tg.form LIKE ? ESCAPE '\' OR c.id = ?
-        ORDER BY length(tg.form) ASC, tg.form ASC
-        LIMIT 50
-        "#,
-    )
-    .bind(eng_id)
-    .bind(eng_id)
-    .bind(&pattern)
-    .bind(card_id)
-    .fetch_all(&pool)
-    .await?;
+    let search_sql = format!(
+        "{CARD_PROJECTION_SQL} WHERE tg.form LIKE ? ESCAPE '\\' OR c.id = ? \
+         ORDER BY length(tg.form) ASC, tg.form ASC LIMIT 50"
+    );
+    let rows = sqlx::query(&search_sql)
+        .bind(eng_id)
+        .bind(eng_id)
+        .bind(&pattern)
+        .bind(card_id)
+        .fetch_all(&pool)
+        .await?;
 
     let mut cards = Vec::with_capacity(rows.len());
     for row in rows {
@@ -181,37 +218,7 @@ pub async fn search_cards(
                 .fetch_all(&pool)
                 .await?;
 
-        let sentence: String = row.get("sentence");
-        let target: String = row.get("target");
-        let (sentence_before, sentence_after) = crate::cards::split_sentence(&sentence, &target);
-
-        cards.push(Card {
-            front: CardFront {
-                card_id: row.get("id"),
-                sentence_id,
-                krdict_id: row.get("krdict_id"),
-                pos: row.get("pos"),
-                origin_type: row.get("origin_type"),
-                hanja: row.get("hanja"),
-                grade: row.get("grade"),
-                trans_word: row.get("trans_word"),
-                trans_dfn: row.get("trans_dfn"),
-                sentence_before,
-                sentence_after,
-                sentence_translation: row
-                    .get::<Option<String>, _>("sentence_translation")
-                    .unwrap_or_default(),
-                inflection_hint: crate::inflection_hints::InflectionHint::from_row(&row),
-                grammar_pattern: row.get("grammar_pattern"),
-            },
-            back: CardBack {
-                word: row.get("word"),
-                definition: row.get("definition"),
-                sentence,
-                target,
-                alternatives,
-            },
-        });
+        cards.push(project_card(row, alternatives));
     }
 
     Ok(Json(SearchCardsResponse { cards }))
@@ -311,6 +318,7 @@ pub struct UpdateCardRequest {
 pub struct EditCardResponse {
     pub success: bool,
     pub content_revision: i64,
+    pub card: Card,
 }
 
 #[utoipa::path(
@@ -641,12 +649,29 @@ pub async fn edit_card(
         .fetch_one(&mut *tx)
         .await?;
 
+    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+    let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
+    let row = sqlx::query(&projection_sql)
+        .bind(eng_id)
+        .bind(eng_id)
+        .bind(card_id)
+        .bind(sentence_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let alternatives: Vec<String> =
+        sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
+            .bind(sentence_id)
+            .fetch_all(&mut *tx)
+            .await?;
+    let card = project_card(row, alternatives);
+
     tx.commit().await?;
 
     info!("Card {} updated successfully", card_id);
     Ok(Json(EditCardResponse {
         success: true,
         content_revision,
+        card,
     }))
 }
 
@@ -762,7 +787,12 @@ mod tests {
             }),
         )
         .await;
-        assert!(result.is_ok());
+        let result = result.unwrap().0;
+        assert_eq!(result.card.front.sentence_id, sentence_id);
+        assert_eq!(result.card.back.sentence, new_sentence);
+        assert_eq!(result.card.back.target, target);
+        assert_eq!(result.card.front.sentence_before, "");
+        assert_eq!(result.card.front.sentence_after, " 그리고 다른 문장입니다");
 
         let stored: String = sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
             .bind(sentence_id)
@@ -770,6 +800,45 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(stored, new_sentence);
+    }
+
+    #[tokio::test]
+    async fn edit_returns_the_same_canonical_projection_as_search() {
+        let pool = test_pool().await;
+        let admin_id = test_admin_user(&pool).await;
+        let response = edit_card(
+            AdminUser(admin_id),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(UpdateCardRequest {
+                sentence_id: 1,
+                sentence: Some("새 답입니다.".into()),
+                target: Some("답".into()),
+                is_honorific: Some(Some(true)),
+                is_humble: Some(Some(true)),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(response.card.front.sentence_before, "새 ");
+        assert_eq!(response.card.front.sentence_after, "입니다.");
+        assert!(response.card.front.inflection_hint.is_honorific);
+        assert!(response.card.front.inflection_hint.is_humble);
+        let search = search_cards(
+            AdminUser(admin_id),
+            State(pool),
+            AppQuery(SearchCardsQuery { q: "1".into() }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(search.cards.len(), 1);
+        assert_eq!(
+            serde_json::to_value(response.card).unwrap(),
+            serde_json::to_value(&search.cards[0]).unwrap()
+        );
     }
 
     #[tokio::test]

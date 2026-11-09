@@ -14,8 +14,8 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getNextCard, getCardState, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
-import type { NextCardEnvelope, AdminCard, ReviewQueueChange } from '@/lib/api'
+import { getNextCard, getCardState, checkAnswer, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
+import type { NextCardEnvelope, ReviewQueueChange, CardEdit } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
@@ -25,13 +25,6 @@ type PrefetchSlot = {
   promise: Promise<NextCardEnvelope | null>
   result: NextCardEnvelope | null
 }
-
-// The subset of AdminCard's editable fields that CardPrompt actually has -
-// see handleCardUpdated below.
-const CARD_PROMPT_FIELDS = new Set([
-  'pos', 'origin_type', 'grade', 'hanja', 'trans_word', 'trans_dfn',
-  'sentence_translation', 'speech_level', 'tense', 'grammar_pattern',
-])
 
 function AppContent() {
   const [card, setCard] = useState<CardPrompt | null>(null)
@@ -55,7 +48,6 @@ function AppContent() {
   const currentCard = useRef(card)
   currentCard.current = card
   const acceptedReview = useRef<{ cardId: number; revision: number } | null>(null)
-  const acceptedContent = useRef<{ cardId: number; revision: number } | null>(null)
   const checkingRef = useRef(false)
   const submissionVersion = useRef(0)
   const allowCurrentCandidate = useRef(false)
@@ -64,7 +56,6 @@ function AppContent() {
   useEffect(() => {
     setStaleReason(null)
     acceptedReview.current = null
-    acceptedContent.current = null
     allowCurrentCandidate.current = false
   }, [card?.card_id, card?.sentence_id, card?.review_revision, card?.content_revision])
 
@@ -99,12 +90,49 @@ function AppContent() {
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
+  // All content edits invalidate the same review projection, whether the
+  // write came from the review editor, Browse Cards, or another device.
+  // A local save reloads immediately; a remote edit leaves an in-progress
+  // answer visible but disables grading until the user continues.
+  const invalidateCardContent = (cardId: number, local: boolean) => {
+    setStatsKey(value => value + 1)
+    cancelPrefetch()
+    const active = currentCard.current
+    if (active?.card_id === cardId) {
+      ++submissionVersion.current
+      checkingRef.current = false
+      setChecking(false)
+      setSubmitError(null)
+      if (local) {
+        setStaleReason('This card was edited. Loading a fresh card.')
+        void loadCardCold()
+      } else {
+        allowCurrentCandidate.current = true
+        setStaleReason('This card was edited elsewhere. Continue to load a fresh card.')
+        refillTask.current?.request()
+      }
+    } else if (!active) {
+      validationTask.current?.request()
+    } else {
+      refillTask.current?.request()
+    }
+  }
+
+  const handleLocalCardEdit = useEffectEvent(({ card: edited }: CardEdit) => {
+    invalidateCardContent(edited.card_id, true)
+  })
+  useEffect(() => subscribeCardEdits(handleLocalCardEdit), [])
+
   // Remote reviews complete this person's attempt on another device. Discard
   // that attempt automatically; own echoes leave the HTTP-response flow alone.
   // Other changes preserve active work and replenish the disposable successor.
   const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
     if (!isAuthenticated || event.own) return
     if (event.type === 'settings-changed' && !event.queue_affected) return
+    if (event.type === 'card-updated') {
+      invalidateCardContent(event.card_id, false)
+      return
+    }
     setStatsKey(value => value + 1)
     const active = currentCard.current
     if (event.type !== 'card-reviewed' || !canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, event.card_id)) {
@@ -118,9 +146,6 @@ function AppContent() {
       }
     } else if (event.type === 'queue-changed' && event.suppressed && active?.card_id === event.card_id) {
       setStaleReason('This card was suppressed elsewhere. Continue to the next card.')
-    } else if (event.type === 'card-updated' && active?.card_id === event.card_id) {
-      allowCurrentCandidate.current = true
-      setStaleReason('This card was edited elsewhere. Continue to load a fresh card.')
     } else if (event.type === 'resync-required' || event.type === 'state-reset') {
       validationTask.current?.request()
     }
@@ -155,16 +180,14 @@ function AppContent() {
       }
       if (checkingRef.current) throw new Error('Wait for pending review')
       const reviewAtStart = acceptedReview.current
-      const contentAtStart = acceptedContent.current
       const state = await getCardState(active.card_id)
       if (!current() || currentCard.current !== active) return
-      if (checkingRef.current || acceptedReview.current !== reviewAtStart || acceptedContent.current !== contentAtStart) {
+      if (checkingRef.current || acceptedReview.current !== reviewAtStart) {
         throw new Error('Local mutation superseded card-state read')
       }
       const accepted = acceptedReview.current
       const revision = accepted?.cardId === active.card_id ? Math.max(active.review_revision, accepted.revision) : active.review_revision
-      const edited = acceptedContent.current
-      const contentRevision = edited?.cardId === active.card_id ? edited.revision : active.content_revision
+      const contentRevision = active.content_revision
       if (state.review_revision > revision && state.exists && !state.suppressed && state.content_revision === contentRevision) {
         discardReviewedCard()
       } else if (!state.exists || state.suppressed || state.review_revision !== revision || state.content_revision !== contentRevision) {
@@ -437,21 +460,6 @@ function AppContent() {
     return true
   }
 
-  // EditCardDialog edits the backend's canonical full-card shape (see its
-  // doc comment in lib/api.ts), most of which - word, definition, sentence,
-  // target, alternatives - isn't part of `card` (CardPrompt) at
-  // all; that half lives only in Flashcard's local `reveal` state, which
-  // patches itself directly from the same `updates` (see flashcard.tsx's own
-  // onSaved wrapper). Only the fields CardPrompt actually has are relevant
-  // here.
-  const handleCardUpdated = (updates: Partial<AdminCard>, contentRevision: number) => {
-    if (card) acceptedContent.current = { cardId: card.card_id, revision: contentRevision }
-    const filtered = Object.fromEntries(
-      Object.entries(updates).filter(([key, v]) => CARD_PROMPT_FIELDS.has(key) && v !== undefined)
-    ) as Partial<CardPrompt>
-    setCard(prev => prev ? { ...prev, ...filtered } : prev)
-  }
-
   return (
     <>
       <AuthDialog />
@@ -506,7 +514,6 @@ function AppContent() {
               onCheck={handleCheck}
               onAdvance={advanceToNextCard}
               onSuppress={handleSuppress}
-              onCardUpdated={handleCardUpdated}
             />
           </>
         ) : (
