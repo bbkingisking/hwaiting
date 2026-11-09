@@ -170,6 +170,13 @@ export async function deletePasskey(id: number): Promise<{ success: boolean }> {
   return fetchWithAuth(url, { method: 'DELETE' })
 }
 
+export async function updatePasskeyLabel(id: number, label: string): Promise<PasskeySummary> {
+  return fetchWithAuth(`${apiBase()}/api/user/passkeys/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ label } satisfies Schemas.UpdatePasskeyRequest),
+  })
+}
+
 // Registers a new passkey and attaches it to the signed-in account - the
 // authenticated counterpart to AuthProvider's public `register()`, which
 // creates the account itself. Runs the full ceremony (start -> browser ->

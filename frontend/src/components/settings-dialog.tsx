@@ -1,4 +1,4 @@
-import { Trash2, Download, Upload } from 'lucide-react'
+import { Download, Upload } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,6 +25,7 @@ import { CARD_THEMES } from '@/lib/card-themes'
 import { THRESHOLD_CONSTRAINTS, AUTO_PROGRESS_DELAY_CONSTRAINTS, DESIRED_RETENTION_CONSTRAINTS } from '@/lib/constants'
 import { addPasskey, deletePasskey, exportUserData, importUserData, listPasskeys, optimizeFsrs, resetFsrsParameters, type ImportResponse, type PasskeySummary } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { PasskeyItem } from '@/components/passkey-item'
 import { Percentage } from '@/components/percentage'
 import { changedSettings } from '@/lib/settings-draft'
 import type { Settings } from '@/lib/types'
@@ -635,27 +636,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <p className="text-sm text-muted-foreground">No passkeys added</p>
                 ) : (
                   passkeys.map((passkey) => (
-                    <div
+                    <PasskeyItem
                       key={passkey.id}
-                      className="flex items-center justify-between p-2 border rounded-md"
-                    >
-                      <div className="flex-1 text-sm">
-                        <p>Added {new Date(passkey.created_at).toLocaleDateString()}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {passkey.last_used_at
-                            ? `Last used ${new Date(passkey.last_used_at).toLocaleDateString()}`
-                            : 'Never used'}
-                        </p>
-                      </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Remove passkey #${passkey.id}`}
-                        onClick={() => handleDeletePasskey(passkey.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                      passkey={passkey}
+                      onUpdate={updated => setPasskeys(previous => previous.map(item => item.id === updated.id ? updated : item))}
+                      onDelete={handleDeletePasskey}
+                    />
                   ))
                 )}
               </div>
