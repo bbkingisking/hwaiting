@@ -364,13 +364,26 @@ pub async fn import_data(
             .sentence_id
             .or_else(|| review.wrong_answer.as_ref().map(|w| w.target_sentence_id))
             .or_else(|| sole_sentence_by_card.get(&review.card_id).copied());
-        let sentence_id =
-            proposed_sentence.filter(|id| valid_target_cards.get(id) == Some(&review.card_id));
-        if proposed_sentence.is_some() && sentence_id.is_none() {
-            warn!(
-                "Skipping invalid sentence_id on imported review for card_id: {}",
+        // A missing identity is valid for old exports of multi-sentence
+        // cards. An identity supplied by the backup must resolve to this
+        // card; silently replacing it with NULL loses review history.
+        if let Some(sentence_id) = proposed_sentence
+            && valid_target_cards.get(&sentence_id) != Some(&review.card_id)
+        {
+            return Err(AppError::BadRequest(format!(
+                "Imported review for card {} has invalid sentence_id {}",
+                review.card_id, sentence_id
+            )));
+        }
+        let sentence_id = proposed_sentence;
+
+        if let Some(ref wrong_answer) = review.wrong_answer
+            && sentence_id != Some(wrong_answer.target_sentence_id)
+        {
+            return Err(AppError::BadRequest(format!(
+                "Imported wrong answer for card {} does not match its sentence_id",
                 review.card_id
-            );
+            )));
         }
 
         let review_id = sqlx::query(
@@ -394,24 +407,15 @@ pub async fn import_data(
         .last_insert_rowid();
 
         if let Some(wrong_answer) = review.wrong_answer {
-            if valid_target_cards.get(&wrong_answer.target_sentence_id) == Some(&review.card_id)
-                && sentence_id == Some(wrong_answer.target_sentence_id)
-            {
-                sqlx::query(
-                    "INSERT INTO wrong_answers (review_id, target_sentence_id, answer)
-                     VALUES (?, ?, ?)",
-                )
-                .bind(review_id)
-                .bind(wrong_answer.target_sentence_id)
-                .bind(wrong_answer.answer)
-                .execute(&mut *tx)
-                .await?;
-            } else {
-                warn!(
-                    "Skipping wrong answer for missing or mismatched target_sentence_id: {}",
-                    wrong_answer.target_sentence_id
-                );
-            }
+            sqlx::query(
+                "INSERT INTO wrong_answers (review_id, target_sentence_id, answer)
+                 VALUES (?, ?, ?)",
+            )
+            .bind(review_id)
+            .bind(wrong_answer.target_sentence_id)
+            .bind(wrong_answer.answer)
+            .execute(&mut *tx)
+            .await?;
         }
 
         stats.reviews_imported += 1;
@@ -855,6 +859,68 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(state_after, state_before);
+    }
+
+    #[tokio::test]
+    async fn invalid_review_sentence_identity_cannot_replace_existing_history() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        setup_source_user(&pool, user_id).await;
+        let before = export_data(State(pool.clone()), AuthUser(user_id))
+            .await
+            .unwrap()
+            .0;
+        let own_sentence: i64 =
+            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = 1 LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let other_sentence: i64 =
+            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = 2 LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        for (name, sentence_id, wrong_answer) in [
+            ("foreign sentence", Some(other_sentence), None),
+            ("missing sentence", Some(i64::MAX), None),
+            (
+                "mismatched wrong answer",
+                Some(own_sentence),
+                Some(WrongAnswerExport {
+                    target_sentence_id: other_sentence,
+                    answer: "wrong".into(),
+                }),
+            ),
+        ] {
+            let mut data = export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
+            data.review_history[0].sentence_id = sentence_id;
+            data.review_history[0].wrong_answer = wrong_answer;
+            let result = import_data(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(ImportDataRequest {
+                    data,
+                    overwrite: true,
+                }),
+            )
+            .await;
+            assert!(matches!(result, Err(AppError::BadRequest(_))), "{name}");
+
+            let mut after = export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
+            after.exported_at = before.exported_at.clone();
+            assert_eq!(
+                serde_json::to_value(after).unwrap(),
+                serde_json::to_value(&before).unwrap(),
+                "{name} must preserve existing history"
+            );
+        }
     }
 
     #[tokio::test]
