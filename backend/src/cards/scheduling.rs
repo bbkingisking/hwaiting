@@ -237,7 +237,7 @@ mod tests {
 
     async fn next(pool: &SqlitePool, uid: i64) -> Value {
         serde_json::to_value(
-            cards::get_next_card(
+            cards::get_review_queue(
                 State(pool.clone()),
                 AuthUser(uid),
                 AppQuery(Default::default()),
@@ -333,14 +333,14 @@ mod tests {
         ).bind(uid).fetch_one(&pool).await.unwrap();
         let other_due = deadline(&pool, other).await;
         let future = next(&pool, uid).await;
-        assert!(future["card"].is_null());
+        assert!(future["cards"].as_array().unwrap().is_empty());
         assert_eq!(
             future["next_due_at"],
             stats(&pool, uid).await["next_due_at"]
         );
         assert_eq!(stats(&pool, uid).await["due_count"], 0);
         set_retention(&pool, uid, 0.99).await;
-        assert_eq!(next(&pool, uid).await["card"]["card_id"], 1);
+        assert_eq!(next(&pool, uid).await["cards"][0]["card_id"], 1);
         assert_eq!(stats(&pool, uid).await["due_count"], 1);
         let memory_after: (f64, f64, String, i64) = sqlx::query_as(
             "SELECT stability,difficulty,last_review,review_revision FROM cards_states WHERE user_id=?",
@@ -356,7 +356,12 @@ mod tests {
         );
         assert_eq!(other_due, deadline(&pool, other).await);
         set_retention(&pool, uid, 0.5).await;
-        assert!(next(&pool, uid).await["card"].is_null());
+        assert!(
+            next(&pool, uid).await["cards"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(stats(&pool, uid).await["due_count"], 0);
     }
 

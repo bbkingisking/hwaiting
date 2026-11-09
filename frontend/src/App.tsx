@@ -1,4 +1,5 @@
-import { canKeepSuccessorAfterReview } from '@/lib/review-events'
+import { reconcileQueue } from '@/lib/review-queue'
+import { scheduleReviewRefresh } from '@/lib/review-timing'
 import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { useState, useEffect, useEffectEvent, useRef } from 'react'
@@ -14,16 +15,16 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getNextCard, getCardState, checkAnswer, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
-import type { NextCardEnvelope, ReviewQueueChange, CardEdit } from '@/lib/api'
+import { getReviewQueue, getCardState, checkAnswer, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
+import type { ReviewQueueResponse, ReviewQueueChange, CardEdit } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
-// Tracks a background fetch for the next card.
+// Tracks one background queue refresh.
 type PrefetchSlot = {
   abort: AbortController
-  promise: Promise<NextCardEnvelope | null>
-  result: NextCardEnvelope | null
+  promise: Promise<ReviewQueueResponse | null>
+  result: ReviewQueueResponse | null
 }
 
 function AppContent() {
@@ -63,6 +64,18 @@ function AppContent() {
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
+  const buffer = useRef<CardPrompt[]>([])
+  const refreshAt = useRef(0)
+  const [queueDeadline, setQueueDeadline] = useState<string | null>(null)
+  const queueGeneration = useRef(0)
+
+  const installQueue = (result: ReviewQueueResponse) => {
+    const active = currentCard.current
+    buffer.current = reconcileQueue(result.cards, allowCurrentCandidate.current ? null : active)
+    refreshAt.current = Date.parse(result.refresh_at)
+    setQueueDeadline(result.refresh_at)
+  }
+
   const coldLoadRef = useRef<Promise<boolean> | null>(null)
   const cardRequestId = useRef(0)
   useEffect(() => {
@@ -135,9 +148,7 @@ function AppContent() {
     }
     setStatsKey(value => value + 1)
     const active = currentCard.current
-    if (event.type !== 'card-reviewed' || !canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, event.card_id)) {
-      cancelPrefetch()
-    }
+    cancelPrefetch()
     if (event.type === 'card-reviewed' && active?.card_id === event.card_id && event.review_revision > active.review_revision) {
       const accepted = acceptedReview.current
       if (!accepted || accepted.cardId !== active.card_id || accepted.revision < event.review_revision) {
@@ -206,8 +217,8 @@ function AppContent() {
     if (!isAuthenticated) return
     const task = createRefreshTask(async current => {
       const active = currentCard.current
-      if (!active || prefetchRef.current) return
-      const slot = startPrefetch(allowCurrentCandidate.current ? undefined : active.card_id)
+      if (!active || prefetchRef.current || (buffer.current.length >= 2 && Date.now() < refreshAt.current)) return
+      const slot = startPrefetch()
       const result = await slot.promise
       if (!current()) return
       if (!result && currentCard.current === active) {
@@ -219,19 +230,33 @@ function AppContent() {
     return () => { task.dispose(); refillTask.current = null }
   }, [isAuthenticated])
 
+  const refreshQueueAtDeadline = useEffectEvent(() => {
+    cancelPrefetch()
+    if (currentCard.current) refillTask.current?.request()
+    else validationTask.current?.request()
+  })
+  useEffect(() => {
+    if (!isAuthenticated || !card) return
+    return scheduleReviewRefresh(queueDeadline, refreshQueueAtDeadline)
+  }, [isAuthenticated, !!card, queueDeadline])
+
   // Cancel any in-flight prefetch and clear the cached prefetched card.
   const cancelPrefetch = () => {
+    ++queueGeneration.current
+    buffer.current = []
+    refreshAt.current = 0
+    setQueueDeadline(null)
     if (prefetchRef.current) {
       prefetchRef.current.abort.abort()
       prefetchRef.current = null
     }
   }
 
-  // Kick off a background fetch for the card after `currentCardId`.
-  // Fires immediately — no waitFor. The `exclude` parameter prevents
-  // the API from returning the current card.
-  const startPrefetch = (currentCardId?: number): PrefetchSlot => {
-    cancelPrefetch()
+  // Kick off a background queue refresh.
+  // Fetches a fresh bounded queue; reconciliation keeps the active card in place.
+  const startPrefetch = (): PrefetchSlot => {
+    prefetchRef.current?.abort.abort()
+    const generation = ++queueGeneration.current
 
     const controller = new AbortController()
     const slot: PrefetchSlot = {
@@ -242,17 +267,19 @@ function AppContent() {
 
     slot.promise = (async () => {
       try {
-        const envelope = await getNextCard({
-          excludeCardIds: currentCardId === undefined ? [] : [currentCardId],
-          signal: controller.signal,
-        })
-        if (prefetchRef.current === slot) {
+        const envelope = await getReviewQueue(controller.signal)
+        if (prefetchRef.current === slot && generation === queueGeneration.current) {
           slot.result = envelope
+          installQueue(envelope)
+          prefetchRef.current = null
         }
         return envelope
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
           console.debug('Prefetch failed:', err)
+        }
+        if (prefetchRef.current === slot) {
+          prefetchRef.current = null
         }
         return null
       }
@@ -276,19 +303,22 @@ function AppContent() {
     setLoading(true)
     setError(null)
     try {
-      const envelope = await getNextCard()
+      const envelope = await getReviewQueue()
       if (requestId !== cardRequestId.current) return true
-      if (envelope.card) {
+      const first = envelope.cards[0]
+      if (first) {
         setStaleReason(null)
-        currentCard.current = envelope.card
-        setCard(envelope.card)
+        currentCard.current = first
+        setCard(first)
         setNoCards(false)
-        startPrefetch(envelope.card.card_id)
+        allowCurrentCandidate.current = false
+        installQueue(envelope)
       } else {
         currentCard.current = null
         setCard(null)
         setNoCards(true)
         setNextDueAt(envelope.next_due_at ?? null)
+        refreshAt.current = Date.parse(envelope.refresh_at)
       }
       return true
     } catch (err) {
@@ -314,58 +344,39 @@ function AppContent() {
     setError(null)
     setNoCards(false)
 
-    const slot = prefetchRef.current
-
-    // Fast path: prefetch already resolved with a card.
-    if (slot?.result?.card) {
-      const nextCard = slot.result.card
-      prefetchRef.current = null
-      setStaleReason(null)
-      currentCard.current = nextCard
-      setCard(nextCard)
-      setNoCards(false)
-      setLoading(false)
-      startPrefetch(nextCard.card_id)
-      return
-    }
-
-    // Consume an in-flight refill rather than issue a duplicate request. If
-    // invalidated while awaiting it, use the replacement slot or read fresh.
     try {
-      let envelope: NextCardEnvelope | null = null
-      while (prefetchRef.current && requestId === cardRequestId.current) {
+      // Deadlines and invalidations require a fresh snapshot before promotion.
+      if (Date.now() >= refreshAt.current) buffer.current = []
+      if (!buffer.current.length) {
+        const generation = queueGeneration.current
         const pending = prefetchRef.current
-        const result = pending.result ?? await pending.promise
-        if (prefetchRef.current !== pending) continue
-        prefetchRef.current = null
-        if (result?.card) envelope = result
-        // Exclusion-based prefetch reserves one new-card allowance. An empty
-        // result therefore isn't proof the normal next-card request is empty.
-        break
+        if (pending) await pending.promise
+        if (requestId !== cardRequestId.current) return
+        if (!buffer.current.length) {
+          const envelope = await getReviewQueue()
+          if (requestId !== cardRequestId.current || generation !== queueGeneration.current) {
+            if (requestId === cardRequestId.current) await advanceToNextCard()
+            return
+          }
+          installQueue(envelope)
+          if (!buffer.current.length) {
+            currentCard.current = null
+            setCard(null)
+            setNoCards(true)
+            setNextDueAt(envelope.next_due_at ?? null)
+            return
+          }
+        }
       }
-      if (requestId !== cardRequestId.current) return
-      envelope ??= await getNextCard()
-      if (requestId !== cardRequestId.current) return
-      if (envelope.card) {
-        setStaleReason(null)
-        currentCard.current = envelope.card
-        setCard(envelope.card)
-        setNoCards(false)
-        startPrefetch(envelope.card.card_id)
-      } else {
-        currentCard.current = null
-        setCard(null)
-        setNoCards(true)
-        setNextDueAt(envelope.next_due_at ?? null)
-      }
+      const next = buffer.current.shift()!
+      setStaleReason(null)
+      currentCard.current = next
+      setCard(next)
+      setNoCards(false)
+      if (buffer.current.length < 2) refillTask.current?.request()
     } catch (err) {
       if (requestId !== cardRequestId.current) return
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError('Failed to load next card')
-      }
-      console.error('Error fetching next card:', err)
+      setError(err instanceof ApiError ? err.message : 'Failed to load next card')
       throw err
     } finally {
       if (requestId === cardRequestId.current) setLoading(false)
@@ -400,10 +411,17 @@ function AppContent() {
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, card.sentence_id, answer, card.review_revision, card.content_revision)
       if (submission !== submissionVersion.current) return null
-      if (!canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, cardId)) {
-        cancelPrefetch()
-        refillTask.current?.request()
-      }
+      ++queueGeneration.current
+      prefetchRef.current?.abort.abort()
+      prefetchRef.current = null
+      buffer.current = buffer.current.filter(candidate => candidate.card_id !== cardId)
+      void startPrefetch().promise.then(result => {
+        if (!result) {
+          // The refresh task owns backoff after this immediate post-review read.
+          refreshAt.current = 0
+          refillTask.current?.request()
+        }
+      })
       acceptedReview.current = { cardId, revision: card.review_revision + 1 }
       setLastCheckMs(performance.now() - startedAt)
       // Refresh only after the committed response: check_answer is

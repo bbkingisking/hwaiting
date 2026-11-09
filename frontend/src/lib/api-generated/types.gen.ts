@@ -154,7 +154,7 @@ export type CardInflectionsResponse = {
  * `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
  * review-flow-specific rather than a property of the card itself - it
  * depends on the requesting user's review history (see `hanja_hints_for`),
- * so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/next`.
+ * so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
  */
 export type CardPrompt = CardFront & {
     /**
@@ -453,22 +453,6 @@ export type LoginRequest = {
     username: string;
 };
 
-export type NextCardEnvelope = {
-    card?: null | NextCardResponse;
-    next_due_at?: string | null;
-};
-
-export type NextCardResponse = CardPrompt & {
-    content_revision: number;
-    difficulty?: number | null;
-    guess_count: number;
-    /**
-     * Return unchanged when submitting an answer.
-     */
-    review_revision: number;
-    wrong_guess_count: number;
-};
-
 export type OptimizeFsrsResponse = {
     parameters: Array<number>;
     /**
@@ -495,6 +479,29 @@ export type ReviewHistoryExport = {
     stability?: number | null;
     state?: string | null;
     wrong_answer?: null | WrongAnswerExport;
+};
+
+export type ReviewQueueCard = CardPrompt & {
+    content_revision: number;
+    difficulty?: number | null;
+    guess_count: number;
+    /**
+     * Return unchanged when submitting an answer.
+     */
+    review_revision: number;
+    wrong_guess_count: number;
+};
+
+/**
+ * A fresh ordered snapshot; fetching does not consume an allowance.
+ */
+export type ReviewQueueResponse = {
+    cards: Array<ReviewQueueCard>;
+    next_due_at?: string | null;
+    /**
+     * Refresh before promoting buffered cards after this deadline.
+     */
+    refresh_at: string;
 };
 
 export type ReviewResponse = {
@@ -1233,30 +1240,22 @@ export type GetHistoryResponses = {
 
 export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
 
-export type GetNextCardData = {
+export type GetReviewQueueData = {
     body?: never;
     path?: never;
     query?: {
         /**
-         * Comma-separated card ids to exclude from the result. The frontend's
-         * prefetch sends exactly one (the card currently on screen); the
-         * hwaiting-agent CLI sends its whole local set of already-claimed
-         * cards, so that concurrent agent processes don't get handed a card
-         * someone else already has. `serde_urlencoded` (what axum's `Query`
-         * extractor uses) has no support for repeated-key arrays, hence the
-         * comma-joined string instead of `exclude=1&exclude=2`. `explode =
-         * false` records that in the schema too, so generated clients send
-         * `exclude=1,2,3` (style: form, explode: false) instead of the
-         * OpenAPI-default repeated-key form this endpoint can't parse.
+         * Maximum number of cards. Omit to return the full currently eligible queue.
+         * The daily new-card allowance applies independently of this response limit.
          */
-        exclude?: Array<number>;
+        limit?: number;
     };
-    url: '/api/cards/next';
+    url: '/api/cards/queue';
 };
 
-export type GetNextCardErrors = {
+export type GetReviewQueueErrors = {
     /**
-     * Malformed query string
+     * Invalid batch size
      */
     400: ErrorResponse;
     /**
@@ -1265,16 +1264,16 @@ export type GetNextCardErrors = {
     401: ErrorResponse;
 };
 
-export type GetNextCardError = GetNextCardErrors[keyof GetNextCardErrors];
+export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
 
-export type GetNextCardResponses = {
+export type GetReviewQueueResponses = {
     /**
-     * Next due/new card, or null if none due
+     * Ordered review queue snapshot
      */
-    200: NextCardEnvelope;
+    200: ReviewQueueResponse;
 };
 
-export type GetNextCardResponse = GetNextCardResponses[keyof GetNextCardResponses];
+export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
 
 export type GetStatsData = {
     body?: never;

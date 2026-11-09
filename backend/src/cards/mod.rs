@@ -181,7 +181,7 @@ fn shares_hanja_character(a: &str, b: &str) -> bool {
 
 /// Hanja hints for `card_id`: hanja from other cards the user has already
 /// reviewed that share at least one character with `hanja`. Shared by
-/// `get_next_card` (which only needs the characters - see
+/// `get_review_queue` (which only needs the characters - see
 /// `CardPrompt::hanja_hint_words`) and `check_answer` (which needs the full
 /// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
 async fn hanja_hints_for(
@@ -198,6 +198,20 @@ async fn hanja_hints_for(
     }
 
     let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+    let mut connection = pool.acquire().await?;
+    hanja_hints_on_connection(&mut connection, eng_id, user_id, card_id, hanja).await
+}
+
+async fn hanja_hints_on_connection(
+    connection: &mut sqlx::SqliteConnection,
+    eng_id: i64,
+    user_id: i64,
+    card_id: i64,
+    hanja: &Option<String>,
+) -> Result<Vec<HanjaHint>, AppError> {
+    let Some(current_hanja) = hanja.as_ref().filter(|h| !h.is_empty()) else {
+        return Ok(vec![]);
+    };
     let other_hanja_rows = sqlx::query(
         r#"
         SELECT DISTINCT c.hanja, c.word, ct.trans_word
@@ -213,7 +227,7 @@ async fn hanja_hints_for(
     .bind(eng_id)
     .bind(user_id)
     .bind(card_id)
-    .fetch_all(pool)
+    .fetch_all(connection)
     .await?;
 
     Ok(other_hanja_rows

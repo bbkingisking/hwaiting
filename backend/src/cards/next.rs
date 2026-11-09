@@ -1,4 +1,4 @@
-//! `GET /api/cards/next` - selects the next due/new card and shapes it into
+//! `GET /api/cards/queue` - selects the next due/new card and shapes it into
 //! the pre-answer [`CardPrompt`], withholding everything [`super::CardReveal`]
 //! would give away.
 
@@ -10,8 +10,8 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::error::{AppError, AppQuery};
 
-use super::time::{logical_next_start, logical_today_start, sqlite_datetime};
-use super::{ReviewPrefs, hanja_hints_for, review_prefs};
+use super::ReviewPrefs;
+use super::time::{logical_day_start, sqlite_datetime};
 
 /// The card fields visible before an answer is checked, shared with the
 /// admin-editing shape - see `cards::Card`'s doc comment - and with
@@ -57,7 +57,7 @@ pub struct CardFront {
 /// `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
 /// review-flow-specific rather than a property of the card itself - it
 /// depends on the requesting user's review history (see `hanja_hints_for`),
-/// so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/next`.
+/// so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
 #[derive(Serialize, ToSchema)]
 pub struct CardPrompt {
     #[serde(flatten)]
@@ -90,7 +90,7 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct NextCardResponse {
+pub struct ReviewQueueCard {
     #[serde(flatten)]
     prompt: CardPrompt,
     /// Return unchanged when submitting an answer.
@@ -101,77 +101,77 @@ pub struct NextCardResponse {
     wrong_guess_count: i64,
 }
 
+/// A fresh ordered snapshot; fetching does not consume an allowance.
 #[derive(Serialize, ToSchema)]
-pub struct NextCardEnvelope {
-    pub card: Option<NextCardResponse>,
+pub struct ReviewQueueResponse {
+    pub cards: Vec<ReviewQueueCard>,
     pub next_due_at: Option<String>,
+    /// Refresh before promoting buffered cards after this deadline.
+    pub refresh_at: String,
 }
 
 #[derive(Deserialize, Default, IntoParams)]
 #[into_params(parameter_in = Query)]
-pub struct NextCardQuery {
-    /// Comma-separated card ids to exclude from the result. The frontend's
-    /// prefetch sends exactly one (the card currently on screen); the
-    /// hwaiting-agent CLI sends its whole local set of already-claimed
-    /// cards, so that concurrent agent processes don't get handed a card
-    /// someone else already has. `serde_urlencoded` (what axum's `Query`
-    /// extractor uses) has no support for repeated-key arrays, hence the
-    /// comma-joined string instead of `exclude=1&exclude=2`. `explode =
-    /// false` records that in the schema too, so generated clients send
-    /// `exclude=1,2,3` (style: form, explode: false) instead of the
-    /// OpenAPI-default repeated-key form this endpoint can't parse.
-    #[serde(default, deserialize_with = "deserialize_id_list")]
-    #[param(explode = false)]
-    exclude: Vec<i64>,
+pub struct ReviewQueueQuery {
+    /// Maximum number of cards. Omit to return the full currently eligible queue.
+    /// The daily new-card allowance applies independently of this response limit.
+    pub limit: Option<i64>,
 }
 
-fn deserialize_id_list<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let raw = String::deserialize(deserializer)?;
-    raw.split(',')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim().parse::<i64>().map_err(serde::de::Error::custom))
-        .collect()
-}
-
-// Get next card due for review
 #[utoipa::path(
-    get,
-    path = "/api/cards/next",
-    params(NextCardQuery),
+    get, path = "/api/cards/queue", params(ReviewQueueQuery),
     responses(
-        (status = 200, description = "Next due/new card, or null if none due", body = NextCardEnvelope),
-        (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
+        (status = 400, description = "Invalid batch size", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse)
     ),
-    security(("cookie_auth" = [])),
-    tag = "cards"
+    security(("cookie_auth" = [])), tag = "cards"
 )]
-pub async fn get_next_card(
+pub async fn get_review_queue(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
-    AppQuery(params): AppQuery<NextCardQuery>,
-) -> Result<Json<NextCardEnvelope>, AppError> {
-    let user_id = auth.0;
-    info!(
-        "Getting next card for user_id: {} (exclude: {:?})",
-        user_id, params.exclude
-    );
+    AppQuery(params): AppQuery<ReviewQueueQuery>,
+) -> Result<Json<ReviewQueueResponse>, AppError> {
+    if params.limit.is_some_and(|limit| limit <= 0) {
+        return Err(AppError::BadRequest("limit must be positive".into()));
+    }
+    Ok(Json(select_cards(&pool, auth.0, params.limit).await?))
+}
+
+async fn select_cards(
+    pool: &SqlitePool,
+    user_id: i64,
+    limit: Option<i64>,
+) -> Result<ReviewQueueResponse, AppError> {
+    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+    let mut tx = pool.begin().await?;
+    let now = chrono::Local::now();
+    let now_epoch = now.timestamp();
+
+    info!("Getting review queue for user_id: {}", user_id);
 
     let ReviewPrefs {
         day_boundary_hour,
         daily_new_card_limit,
         ..
-    } = review_prefs(&pool, user_id).await?;
+    } = sqlx::query_as::<_, ReviewPrefs>(
+        "SELECT day_boundary_hour, daily_new_card_limit FROM users_settings WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(ReviewPrefs {
+        day_boundary_hour: 4,
+        daily_new_card_limit: 20,
+    });
 
     // Start of "today" per day_boundary_hour - same helper get_stats uses.
-    let today_start_str = sqlite_datetime(logical_today_start(day_boundary_hour));
+    let today_start_str = sqlite_datetime(logical_day_start(&now, day_boundary_hour, 0));
 
     // Count how many NEW cards the user has reviewed today
     // A "new" card is one where it's the user's first review (no prior review_history)
     // Check if new cards are suppressed (limit = 0) or if daily limit is reached
+    let mut remaining = 0;
     let new_card_limit_reached = if daily_new_card_limit == 0 {
         true // Suppress all new cards
     } else {
@@ -193,56 +193,16 @@ pub async fn get_next_card(
         .bind(user_id)
         .bind(&today_start_str)
         .bind(&today_start_str)
-        .fetch_one(&pool)
+        .fetch_one(&mut *tx)
         .await?;
 
-        // For prefetch requests (exclude param is non-empty), use stricter limit to prevent race condition.
-        // When the user is on card N (new card #19/20), the prefetch for N+1 should not return
-        // a new card because by the time N+1 is displayed, card N will have been reviewed,
-        // pushing the count to 20/20 and making N+1 display as 21/20.
-        // For normal requests, use the actual limit.
-        let is_prefetch = !params.exclude.is_empty();
-        let threshold = if is_prefetch {
-            daily_new_card_limit - 1 // Block at limit-1 for prefetch
-        } else {
-            daily_new_card_limit // Block at limit for normal fetch
-        };
-
-        new_cards_today >= threshold
+        remaining = (daily_new_card_limit - new_cards_today).max(0);
+        remaining == 0
     };
-
-    // Get next due card (prioritize due cards by due date, then new cards)
-    // Exclude suppressed cards via users_card_flags
-    // Optionally skip a set of card_ids (client-side prefetch skips the
-    // card on screen; hwaiting-agent skips every card it knows is already
-    // claimed by a sibling process)
-    // When daily new card limit is 0 or reached (including limit-1 buffer), only show cards that have been reviewed before
-    let exclude_clause = if params.exclude.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "AND c.id NOT IN ({})",
-            params
-                .exclude
-                .iter()
-                .map(|_| "?")
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    };
-
-    let new_card_filter = if new_card_limit_reached {
-        // If limit is 0 or reached, only show cards that have been reviewed before (have review history)
-        "AND EXISTS (SELECT 1 FROM review_history WHERE card_id = c.id AND user_id = ?)"
-    } else {
-        ""
-    };
-
-    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     let query = format!(
         r#"
-        SELECT
+        WITH candidates AS (SELECT
             c.id, c.krdict_id, c.word, c.definition, c.hanja,
             pop.slug as pos, ot.slug as origin_type, g.slug as grade,
             ct.trans_word, ct.trans_dfn,
@@ -251,6 +211,8 @@ pub async fn get_next_card(
             sl.slug as speech_level, tn.slug as tense,
             tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern,
+            c.frequency_rank, cs.due_at,
+            EXISTS (SELECT 1 FROM review_history rh WHERE rh.card_id = c.id AND rh.user_id = ?) AS reviewed,
             cs.difficulty, cs.last_review, cs.stability,
             c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision
         FROM cards c
@@ -276,41 +238,55 @@ pub async fn get_next_card(
         LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
         LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
         WHERE (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        {}
-        {}
         AND (
             cs.last_review IS NULL
-            OR cs.due_at <= unixepoch('now')
+            OR cs.due_at <= {now_epoch}
         )
+        ),
+        eligible_new AS (
+            SELECT id FROM candidates WHERE reviewed = 0
+            ORDER BY frequency_rank ASC NULLS LAST, id LIMIT ?
+        )
+        SELECT * FROM candidates
+        WHERE reviewed = 1 OR id IN (SELECT id FROM eligible_new)
         ORDER BY
-            CASE WHEN cs.last_review IS NULL THEN 1 ELSE 0 END,
-            cs.due_at ASC,
-            c.frequency_rank ASC NULLS LAST,
-            RANDOM()
-        LIMIT 1
-        "#,
-        new_card_filter, exclude_clause
+            CASE WHEN last_review IS NULL THEN 1 ELSE 0 END,
+            due_at ASC, frequency_rank ASC NULLS LAST, id
+        LIMIT ?
+        "#
     );
 
-    let mut query_builder = sqlx::query(&query)
+    let query_builder = sqlx::query(&query)
+        .bind(user_id)
         .bind(eng_id)
         .bind(user_id)
         .bind(eng_id)
         .bind(user_id)
         .bind(user_id);
 
-    // Add extra bind for the new card filter if limit is reached
-    if new_card_limit_reached {
-        query_builder = query_builder.bind(user_id);
-    }
+    let rows = query_builder
+        .bind(remaining)
+        .bind(limit.unwrap_or(-1)) // SQLite: negative LIMIT means no response limit.
+        .fetch_all(&mut *tx)
+        .await?;
+    let future_due: Option<String> = sqlx::query_scalar(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
+         FROM cards_states cs
+         LEFT JOIN users_card_flags f ON f.card_id = cs.card_id AND f.user_id = cs.user_id
+         WHERE cs.user_id = ? AND cs.due_at > ? AND COALESCE(f.suppressed, 0) = 0",
+    )
+    .bind(user_id)
+    .bind(now_epoch)
+    .fetch_one(&mut *tx)
+    .await?;
+    let boundary = logical_day_start(&now, day_boundary_hour, 1)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let refresh_at = future_due
+        .map(|due| due.min(boundary.clone()))
+        .unwrap_or(boundary);
 
-    for id in &params.exclude {
-        query_builder = query_builder.bind(id);
-    }
-
-    let row = query_builder.fetch_optional(&pool).await?;
-
-    let Some(row) = row else {
+    if rows.is_empty() {
         // No card available. Two independent things can be blocking, and
         // whichever unblocks first is the honest answer:
         //
@@ -331,13 +307,14 @@ pub async fn get_next_card(
             FROM cards c
             INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
             LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-            WHERE cs.due_at > unixepoch('now')
+            WHERE cs.due_at > ?
             AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
             "#,
         )
         .bind(user_id)
         .bind(user_id)
-        .fetch_one(&pool)
+        .bind(now_epoch)
+        .fetch_one(&mut *tx)
         .await?;
 
         let new_card_reset = if new_card_limit_reached && daily_new_card_limit > 0 {
@@ -354,10 +331,10 @@ pub async fn get_next_card(
             )
             .bind(user_id)
             .bind(user_id)
-            .fetch_one(&pool)
+            .fetch_one(&mut *tx)
             .await?;
 
-            (new_cards_waiting > 0).then(|| logical_next_start(day_boundary_hour))
+            (new_cards_waiting > 0).then(|| logical_day_start(&now, day_boundary_hour, 1))
         } else {
             None
         };
@@ -373,67 +350,70 @@ pub async fn get_next_card(
             .min()
             .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
-        return Ok(Json(NextCardEnvelope {
-            card: None,
+        return Ok(ReviewQueueResponse {
+            cards: vec![],
             next_due_at,
-        }));
+            refresh_at,
+        });
     };
 
-    let card_id: i64 = row.get("id");
-    let krdict_id: Option<i64> = row.get("krdict_id");
-    let word: String = row.get("word");
-    let pos: Option<String> = row.get("pos");
-    let origin_type: Option<String> = row.get("origin_type");
-    let hanja: Option<String> = row.get("hanja");
-    let grade: Option<String> = row.get("grade");
-    let trans_word: String = row.get("trans_word");
-    let trans_dfn: Option<String> = row.get("trans_dfn");
-    let sentence: String = row.get("sentence");
-    let sentence_translation: String = row.get("sentence_translation");
-    let target: String = row.get("target");
-    let inflection_hint = crate::inflection_hints::InflectionHint::from_row(&row);
-    let grammar_pattern: Option<String> = row.get("grammar_pattern");
+    let mut cards = Vec::with_capacity(rows.len());
+    for row in rows {
+        let card_id: i64 = row.get("id");
+        let krdict_id: Option<i64> = row.get("krdict_id");
+        let word: String = row.get("word");
+        let pos: Option<String> = row.get("pos");
+        let origin_type: Option<String> = row.get("origin_type");
+        let hanja: Option<String> = row.get("hanja");
+        let grade: Option<String> = row.get("grade");
+        let trans_word: String = row.get("trans_word");
+        let trans_dfn: Option<String> = row.get("trans_dfn");
+        let sentence: String = row.get("sentence");
+        let sentence_translation: String = row.get("sentence_translation");
+        let target: String = row.get("target");
+        let inflection_hint = crate::inflection_hints::InflectionHint::from_row(&row);
+        let grammar_pattern: Option<String> = row.get("grammar_pattern");
 
-    debug!("Selected card_id: {} ({})", card_id, word);
+        debug!("Selected card_id: {} ({})", card_id, word);
 
-    // Get correct/wrong stats for this card
-    let stats_row = sqlx::query(
-        r#"
+        // Get correct/wrong stats for this card
+        let stats_row = sqlx::query(
+            r#"
         SELECT
             COUNT(*) as total,
             SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) as correct
         FROM review_history
         WHERE user_id = ? AND card_id = ?
         "#,
-    )
-    .bind(user_id)
-    .bind(card_id)
-    .fetch_one(&pool)
-    .await?;
+        )
+        .bind(user_id)
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
-    let guess_count: i64 = stats_row.get("total");
-    let correct_count: i64 = stats_row.get("correct");
-    let wrong_guess_count = guess_count - correct_count;
+        let guess_count: i64 = stats_row.get("total");
+        let correct_count: i64 = stats_row.get("correct");
+        let wrong_guess_count = guess_count - correct_count;
 
-    // Get difficulty from FSRS (range 1-10)
-    let difficulty: Option<f64> = if guess_count > 0 {
-        row.get("difficulty")
-    } else {
-        None
-    };
+        // Get difficulty from FSRS (range 1-10)
+        let difficulty: Option<f64> = if guess_count > 0 {
+            row.get("difficulty")
+        } else {
+            None
+        };
 
-    // Pre-answer, only the hanja characters themselves are shown (see
-    // CardPrompt::hanja_hint_words) - the reading/gloss on each hint is
-    // withheld the same as the card's own `target`, so `check_answer` below
-    // recomputes the full hints once the card is graded rather than us
-    // shipping them now.
-    let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
-    let hanja_hint_words: Vec<String> = hanja_hints.into_iter().map(|h| h.hanja).collect();
+        // Pre-answer, only the hanja characters themselves are shown (see
+        // CardPrompt::hanja_hint_words) - the reading/gloss on each hint is
+        // withheld the same as the card's own `target`, so `check_answer` below
+        // recomputes the full hints once the card is graded rather than us
+        // shipping them now.
+        let hanja_hints =
+            super::hanja_hints_on_connection(&mut tx, eng_id, user_id, card_id, &hanja).await?;
+        let hanja_hint_words: Vec<String> = hanja_hints.into_iter().map(|h| h.hanja).collect();
 
-    let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
+        let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
 
-    Ok(Json(NextCardEnvelope {
-        card: Some(NextCardResponse {
+        cards.push(ReviewQueueCard {
             prompt: CardPrompt {
                 front: CardFront {
                     card_id,
@@ -458,9 +438,13 @@ pub async fn get_next_card(
             difficulty,
             guess_count,
             wrong_guess_count,
-        }),
+        });
+    }
+    Ok(ReviewQueueResponse {
+        cards,
         next_due_at: None,
-    }))
+        refresh_at,
+    })
 }
 
 #[cfg(test)]
@@ -511,71 +495,150 @@ mod tests {
         assert_eq!(after, "안녕하세요");
     }
 
-    // --- deserialize_id_list --------------------------------------------------
-    //
-    // Called directly with a `StrDeserializer` wrapping the raw `exclude=`
-    // value - the same deserializer kind axum's `Query` extractor (via
-    // `serde_urlencoded`) hands a `#[serde(deserialize_with = ...)]` field,
-    // so this exercises the real code path without pulling in
-    // `serde_urlencoded` as a dev-dependency just to build a query string.
-
-    fn parse_list(raw: &str) -> Result<Vec<i64>, serde::de::value::Error> {
-        use serde::de::IntoDeserializer;
-        let deserializer: serde::de::value::StrDeserializer<'_, serde::de::value::Error> =
-            raw.into_deserializer();
-        deserialize_id_list(deserializer)
-    }
-
-    #[test]
-    fn exclude_single_id() {
-        assert_eq!(parse_list("42").unwrap(), vec![42]);
-    }
-
-    #[test]
-    fn exclude_comma_list() {
-        assert_eq!(parse_list("1,2,3").unwrap(), vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn exclude_tolerates_spaces_around_commas() {
-        assert_eq!(parse_list("1, 2 ,3").unwrap(), vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn exclude_empty_string_is_empty_list() {
-        assert_eq!(parse_list("").unwrap(), Vec::<i64>::new());
-    }
-
-    #[test]
-    fn exclude_trailing_comma_is_silently_ignored() {
-        // Empty segments (from a trailing comma, a leading one, or a
-        // doubled one) are filtered out before parsing, not rejected -
-        // `1,2,` and `1,,2` both silently become `[1, 2]`. Documents the
-        // lenient behavior rather than asserting it's the ideal one.
-        assert_eq!(parse_list("1,2,").unwrap(), vec![1, 2]);
-        assert_eq!(parse_list("1,,2").unwrap(), vec![1, 2]);
-    }
-
-    #[test]
-    fn exclude_non_numeric_is_rejected() {
-        assert!(parse_list("abc").is_err());
-    }
-
-    // --- get_next_card (handler-level, in-process SQLite) --------------------
-
     use crate::auth::AuthUser;
     use crate::cards::time::parse_flexible_datetime;
     use crate::test_support::{test_pool, test_user};
 
-    async fn next_card(pool: &SqlitePool, user_id: i64, exclude: Vec<i64>) -> NextCardEnvelope {
-        get_next_card(
+    async fn queue(pool: &SqlitePool, user_id: i64, limit: i64) -> ReviewQueueResponse {
+        get_review_queue(
             State(pool.clone()),
             AuthUser(user_id),
-            AppQuery(NextCardQuery { exclude }),
+            AppQuery(ReviewQueueQuery { limit: Some(limit) }),
         )
         .await
         .unwrap()
         .0
+    }
+
+    fn ids(queue: &ReviewQueueResponse) -> Vec<i64> {
+        queue.cards.iter().map(|c| c.prompt.front.card_id).collect()
+    }
+
+    #[tokio::test]
+    async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
+        let pool = test_pool().await;
+        let user = test_user(&pool).await;
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) SELECT ?, id, 'good', datetime('now', '-10 days'), 10, 1, 'review' FROM cards WHERE id <= 25")
+            .bind(user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) SELECT ?, id, 10, 1, datetime('now', '-10 days'), 'review', 0 FROM cards WHERE id <= 25")
+            .bind(user).execute(&pool).await.unwrap();
+        let all = get_review_queue(
+            State(pool.clone()),
+            AuthUser(user),
+            AppQuery(ReviewQueueQuery::default()),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(all.cards.len(), 28);
+        assert!(ids(&all)[..25].iter().all(|id| *id <= 25));
+        assert_eq!(ids(&queue(&pool, user, 5).await), ids(&all)[..5]);
+        assert_eq!(ids(&queue(&pool, user, 100).await), ids(&all));
+    }
+
+    #[tokio::test]
+    async fn batch_clients_share_the_same_allowance_bounded_set() {
+        let pool = test_pool().await;
+        let user = test_user(&pool).await;
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 1)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE cards SET frequency_rank = NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (a, b, c) = tokio::join!(
+            queue(&pool, user, 1),
+            queue(&pool, user, 5),
+            queue(&pool, user, 20)
+        );
+        assert_eq!(ids(&a), vec![1]);
+        assert_eq!(ids(&a), ids(&b));
+        assert_eq!(ids(&b), ids(&c));
+        assert!(a.next_due_at.is_none());
+        assert!(chrono::DateTime::parse_from_rfc3339(&a.refresh_at).is_ok());
+    }
+
+    #[tokio::test]
+    async fn out_of_order_first_reviews_do_not_expand_the_new_card_set() {
+        let pool = test_pool().await;
+        let user = test_user(&pool).await;
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE cards SET frequency_rank = NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ids(&queue(&pool, user, 20).await), vec![1, 2, 3]);
+        for (card, expected) in [(2, vec![1, 3]), (1, vec![3]), (3, vec![])] {
+            sqlx::query("INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) VALUES (?, ?, 'good', datetime('now'), 10, 1, 'learning')")
+                .bind(user).bind(card).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) VALUES (?, ?, 10, 1, datetime('now'), 'learning', unixepoch('now', '+10 days'))")
+                .bind(user).bind(card).execute(&pool).await.unwrap();
+            assert_eq!(ids(&queue(&pool, user, 20).await), expected);
+        }
+        assert!(queue(&pool, user, 5).await.next_due_at.is_some());
+        // A due repetition is still eligible after exhausting new cards.
+        sqlx::query("UPDATE cards_states SET due_at = unixepoch('now', '-1 minute') WHERE user_id = ? AND card_id = 2")
+            .bind(user).execute(&pool).await.unwrap();
+        assert_eq!(ids(&queue(&pool, user, 5).await), vec![2]);
+    }
+
+    #[tokio::test]
+    async fn batch_deadline_tracks_reviews_that_become_due_before_the_day_boundary() {
+        let pool = test_pool().await;
+        let user = test_user(&pool).await;
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) VALUES (?, 1, 10, 1, datetime('now'), 'learning', unixepoch('now', '+2 minutes'))")
+            .bind(user).execute(&pool).await.unwrap();
+        let response = queue(&pool, user, 5).await;
+        let due: String = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', due_at, 'unixepoch') FROM cards_states WHERE user_id = ? AND card_id = 1")
+            .bind(user).fetch_one(&pool).await.unwrap();
+        assert!(response.refresh_at <= due);
+        assert!(!ids(&response).contains(&1));
+        let again = queue(&pool, user, 5).await;
+        assert_eq!(
+            serde_json::to_value(&response.cards).unwrap(),
+            serde_json::to_value(&again.cards).unwrap()
+        );
+        let prompt = serde_json::to_value(&response.cards[0]).unwrap();
+        assert!(prompt.get("word").is_none());
+        assert!(prompt.get("target").is_none());
+        assert!(prompt.get("sentence_id").is_some());
+    }
+
+    #[tokio::test]
+    async fn batch_size_is_validated_and_zero_daily_limit_is_empty() {
+        let pool = test_pool().await;
+        let user = test_user(&pool).await;
+        for limit in [-1, 0] {
+            assert!(matches!(
+                get_review_queue(
+                    State(pool.clone()),
+                    AuthUser(user),
+                    AppQuery(ReviewQueueQuery { limit: Some(limit) })
+                )
+                .await,
+                Err(AppError::BadRequest(_))
+            ));
+        }
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let result = queue(&pool, user, 5).await;
+        assert!(result.cards.is_empty());
+        assert!(result.next_due_at.is_none());
     }
 
     /// Marks every seeded card except `keep` as already-reviewed and due far
@@ -611,8 +674,8 @@ mod tests {
         .await
         .unwrap();
 
-        let envelope = next_card(&pool, user_id, vec![]).await;
-        let card = envelope.card.expect("a card should be due");
+        let envelope = queue(&pool, user_id, 1).await;
+        let card = envelope.cards.first().expect("a card should be due");
         assert_eq!(card.prompt.front.card_id, 2);
     }
 
@@ -637,24 +700,12 @@ mod tests {
             .await
             .unwrap();
 
-        let envelope = next_card(&pool, user_id, vec![]).await;
+        let envelope = queue(&pool, user_id, 1).await;
         let card = envelope
-            .card
+            .cards
+            .first()
             .expect("some other card should still be available");
         assert_ne!(card.prompt.front.card_id, 2);
-    }
-
-    #[tokio::test]
-    async fn exclude_param_is_honored() {
-        let pool = test_pool().await;
-        let user_id = test_user(&pool).await;
-
-        // Every card is "new" (no cards_states rows) - excluding all but
-        // card 7 should deterministically return card 7.
-        let exclude: Vec<i64> = (1..=50).filter(|&id| id != 7).collect();
-        let envelope = next_card(&pool, user_id, exclude).await;
-        let card = envelope.card.expect("card 7 should still be selectable");
-        assert_eq!(card.prompt.front.card_id, 7);
     }
 
     #[tokio::test]
@@ -669,66 +720,11 @@ mod tests {
 
         // No card has any review_history, so with new cards suppressed and
         // none due, nothing is available.
-        let envelope = next_card(&pool, user_id, vec![]).await;
-        assert!(envelope.card.is_none());
+        let envelope = queue(&pool, user_id, 1).await;
+        assert!(envelope.cards.is_empty());
         assert!(
             envelope.next_due_at.is_none(),
             "a zero limit does not reset tomorrow"
-        );
-    }
-
-    #[tokio::test]
-    async fn prefetch_uses_a_stricter_limit_minus_one_threshold() {
-        let pool = test_pool().await;
-        let user_id = test_user(&pool).await;
-        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 5)")
-            .bind(user_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        // Cards 2-5 each have exactly one review, timestamped "now" (today) -
-        // 4 new cards reviewed today. A matching cards_states row (as
-        // check_answer would also write) pushes each card's next due date
-        // 10 days out, so none of them come back as "due" and confound the
-        // new-card-limit assertions below.
-        for card_id in 2..=5 {
-            sqlx::query(
-                "INSERT INTO review_history (user_id, card_id, rating, reviewed_at, stability, difficulty, state) \
-                 VALUES (?, ?, 'good', datetime('now'), 10, 1, 'learning')",
-            )
-            .bind(user_id)
-            .bind(card_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, due_at) \
-                 VALUES (?, ?, 10, 1, datetime('now'), 'learning', unixepoch('now', '+10 days'))",
-            )
-            .bind(user_id)
-            .bind(card_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        }
-
-        // Plain request: threshold is the full limit (5); 4 < 5, so a new
-        // card is still available.
-        let plain = next_card(&pool, user_id, vec![]).await;
-        assert!(
-            plain.card.is_some(),
-            "limit not yet reached for a plain request"
-        );
-
-        // Prefetch request (non-empty exclude): threshold is limit - 1 (4);
-        // 4 >= 4, so the prefetch must not hand out a new card even though
-        // the real limit hasn't been hit yet.
-        let prefetch = next_card(&pool, user_id, vec![999]).await;
-        assert!(
-            prefetch.card.is_none(),
-            "prefetch should respect the limit-1 buffer"
         );
     }
 
@@ -760,8 +756,8 @@ mod tests {
             .format("%Y-%m-%dT%H:%M:%SZ")
             .to_string();
 
-        let envelope = next_card(&pool, user_id, vec![]).await;
-        assert!(envelope.card.is_none(), "nothing should be due yet");
+        let envelope = queue(&pool, user_id, 1).await;
+        assert!(envelope.cards.is_empty(), "nothing should be due yet");
         assert_eq!(envelope.next_due_at, Some(expected));
     }
 
@@ -771,15 +767,26 @@ mod tests {
         let user_id = test_user(&pool).await;
         bury_every_other_card(&pool, user_id, 1).await;
         let fetch = || {
-            get_next_card(
+            get_review_queue(
                 State(pool.clone()),
                 AuthUser(user_id),
-                AppQuery(NextCardQuery::default()),
+                AppQuery(ReviewQueueQuery::default()),
             )
         };
-        let card = fetch().await.unwrap().0.card.unwrap();
+        let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
         assert_eq!(card.review_revision, 0);
-        assert_eq!(fetch().await.unwrap().0.card.unwrap().review_revision, 0);
+        assert_eq!(
+            fetch()
+                .await
+                .unwrap()
+                .0
+                .cards
+                .into_iter()
+                .next()
+                .unwrap()
+                .review_revision,
+            0
+        );
         let answer: String = sqlx::query_scalar("SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = 1")
             .fetch_one(&pool).await.unwrap();
         let _ = super::super::check::check_answer(
@@ -797,7 +804,7 @@ mod tests {
         .unwrap();
         sqlx::query("UPDATE cards_states SET last_review = '2000-01-01T00:00:00Z', due_at = 0 WHERE user_id = ? AND card_id = 1")
             .bind(user_id).execute(&pool).await.unwrap();
-        let card = fetch().await.unwrap().0.card.unwrap();
+        let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
         assert_eq!(card.review_revision, 1);
         let _ = super::super::check::check_answer(
             State(pool.clone()),
@@ -841,10 +848,10 @@ mod tests {
                 .await
                 .unwrap();
         let fetch = || {
-            get_next_card(
+            get_review_queue(
                 State(pool.clone()),
                 AuthUser(user_id),
-                AppQuery(NextCardQuery::default()),
+                AppQuery(ReviewQueueQuery::default()),
             )
         };
 
@@ -853,7 +860,7 @@ mod tests {
             (second_id, "답", 1),
             (first_id, first_answer.as_str(), 2),
         ] {
-            let card = fetch().await.unwrap().0.card.unwrap();
+            let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
             assert_eq!(card.prompt.front.card_id, 1);
             assert_eq!(card.prompt.front.sentence_id, expected_id);
             assert_eq!(card.review_revision, revision);

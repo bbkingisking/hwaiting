@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/auth/passkey/login/start", post(passkey::login_start))
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
-        .route("/cards/next", get(cards::get_next_card))
+        .route("/cards/queue", get(cards::get_review_queue))
         .route("/cards/field-values", get(cards::list_field_values))
         .route(
             "/cards/{card_id}/check",
