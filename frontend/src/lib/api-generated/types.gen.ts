@@ -263,6 +263,7 @@ export type DayHistory = {
 };
 
 export type EditCardResponse = {
+    card: Card;
     content_revision: number;
     success: boolean;
 };
@@ -1473,6 +1474,10 @@ export type SuppressCardErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Card not found
+     */
+    404: ErrorResponse;
 };
 
 export type SuppressCardError = SuppressCardErrors[keyof SuppressCardErrors];
@@ -1609,7 +1614,7 @@ export type ImportDataData = {
 
 export type ImportDataErrors = {
     /**
-     * Unsupported export version, out-of-range settings, or malformed request
+     * Invalid backup version, settings, FSRS model, review history, or malformed request
      */
     400: ErrorResponse;
     /**

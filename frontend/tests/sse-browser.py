@@ -93,6 +93,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 try:
     static = work / 'static'
     shutil.copytree(ROOT / 'frontend/dist', static)
@@ -174,27 +175,50 @@ try:
     assert request(f'/api/cards/{cid}/suppress','PUT')[0]==200
     wait.until(lambda d:'suppressed elsewhere' in d.find_element(By.TAG_NAME,'body').text)
     assert driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='keep on suppression'
-    # An edit made in this tab is already applied; reconnect must not mark it stale.
+    # An edit made in this tab replaces the review projection with a fresh
+    # server read; reconnect must not revive the old prompt or mark it stale.
     assert request('/api/auth/login','POST',{'username':env['HWAITING_ADMIN_USERNAME'],'password':env['HWAITING_ADMIN_PASSWORD']})[0]==200
     assert request('/api/user/settings','PATCH',{'auto_progress_on_correct':False})[0]==200
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     driver.refresh()
     wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
+    edited_card_id=driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('wrong')
     driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
     wait.until(lambda d:'Incorrect. You typed' in d.find_element(By.TAG_NAME,'body').text)
     driver.find_element(By.CSS_SELECTOR,'button[aria-label="Card options"]').click()
     wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Edit card')]" )).click()
-    label=wait.until(lambda d:d.find_element(By.XPATH,"//label[text()='Translation word (English)']"))
-    field=driver.find_element(By.ID,label.get_attribute('for'))
-    field.clear();field.send_keys('edited in this tab')
+    for label_text, value in [('Sentence (Korean)', '새 답입니다.'), ('Target (conjugated form in sentence)', '답')]:
+        label=wait.until(lambda d:d.find_element(By.XPATH,f"//label[text()='{label_text}']"))
+        field=driver.find_element(By.ID,label.get_attribute('for'))
+        field.clear();field.send_keys(value)
     driver.find_element(By.XPATH,"//button[text()='Save']").click()
     wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'[role="dialog"]'))
+    wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')!=edited_card_id)
     driver.execute_script("window.reads=[];window.sseStreams.forEach(s=>s.close());window.dispatchEvent(new Event('online'))")
     wait.until(lambda d:any('/state' in p for p in d.execute_script('return window.reads')))
     time.sleep(0.5)
     assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
-    assert 'Incorrect. You typed' in driver.find_element(By.TAG_NAME,'body').text
+    assert 'Incorrect. You typed' not in driver.find_element(By.TAG_NAME,'body').text
+    # Browse Cards edits use the same local invalidation path as review edits.
+    # The active, still-unanswered card should reload with server-derived
+    # fragments, rather than keep the sentence it had before this edit.
+    browse_card_id=driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')
+    driver.find_element(By.CSS_SELECTOR,'button[aria-label="Account menu"]').click()
+    wait.until(lambda d:d.find_element(By.XPATH,"//*[@role='menuitem' and contains(., 'Browse Cards')]" )).click()
+    driver.find_element(By.CSS_SELECTOR,'input[aria-label="Search cards by target or card id"]').send_keys(browse_card_id)
+    browse_result=wait.until(lambda d:d.find_element(By.XPATH,f"//*[@role='dialog' and .//h2[text()='Browse Cards']]//button[.//div[contains(., 'card #{browse_card_id}')]]"))
+    browse_result.click()
+    for label_text, value in [('Sentence (Korean)', '새 답입니다.'), ('Target (conjugated form in sentence)', '답')]:
+        label=wait.until(lambda d:d.find_element(By.XPATH,f"//*[@role='dialog' and .//h2[text()='Edit card']]//label[text()='{label_text}']"))
+        field=driver.find_element(By.ID,label.get_attribute('for'))
+        field.clear();field.send_keys(value)
+    driver.find_element(By.XPATH,"//*[@role='dialog' and .//h2[text()='Edit card']]//button[text()='Save']").click()
+    wait.until(lambda d:d.execute_script("return window.nextReplies.some(r=>r.card?.card_id===Number(arguments[0]) && r.card?.sentence_before==='새 ' && r.card?.sentence_after==='입니다.')", browse_card_id))
+    ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+    wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'[role="dialog"]'))
+    wait.until(lambda d:d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')==browse_card_id and '입니다.' in d.find_element(By.CSS_SELECTOR,'article[data-card-id]').text)
+    assert '새' in driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').text
     # An edit missed by the live stream must be caught by the grading
     # transaction. The old answer records nothing, and the browser reloads
     # the revised prompt instead of revealing/grading it.

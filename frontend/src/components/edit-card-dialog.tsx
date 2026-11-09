@@ -19,7 +19,6 @@ interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   card: AdminCard
-  onSaved?: (updates: Partial<AdminCard>, contentRevision: number) => void
 }
 
 interface FormState {
@@ -98,7 +97,7 @@ async function copyText(text: string) {
   }
 }
 
-export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDialogProps) {
+export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps) {
   const [form, setForm] = useState<FormState>(toFormState(card))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -146,8 +145,7 @@ export function EditCardDialog({ open, onOpenChange, card, onSaved }: EditCardDi
         is_humble: form.is_humble,
         grammar_pattern: nullIfEmpty(form.grammar_pattern),
       }
-      const result = await editCard(card.card_id, updates)
-      onSaved?.(updates, result.content_revision)
+      await editCard(card.card_id, updates)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')

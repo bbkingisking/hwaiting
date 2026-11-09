@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical } from 'lucide-react'
-import { suppressCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
+import { suppressCard, type AdminCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { InflectionsDialog } from '@/components/inflections-dialog'
@@ -35,11 +35,7 @@ interface FlashcardProps {
   // path - see startPrefetch in App.tsx. Rejects if fetching the next card fails.
   onAdvance: () => void | Promise<void>
   onSuppress?: () => void
-  onCardUpdated?: (updates: Partial<AdminCard>, contentRevision: number) => void
 }
-
-// CARD_BACK_FIELDS (lib/api.ts) is the subset of AdminCard's editable
-// fields that CardReveal actually has - see the onSaved wrapper below.
 
 // Pre-answer, only the hanja *characters* of each hint are known (see
 // CardPrompt::hanja_hint_words) - the reading/gloss give the answer away, so
@@ -213,7 +209,7 @@ function GrammarPatternPill({
   )
 }
 
-export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, onCardUpdated }: FlashcardProps) {
+export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }: FlashcardProps) {
   const promptKey = `${card.card_id}:${card.sentence_id}:${card.review_revision}:${card.content_revision}`
   const promptKeyRef = useRef(promptKey)
   promptKeyRef.current = promptKey
@@ -282,11 +278,8 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
     // Keyboard stays open across cards on mobile (see below), so the check
     // button can end up hidden behind it once the new card's content settles.
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
-    // Keyed on card_id and revision, not `card` itself: an admin edit saved mid-review
-    // (see onCardUpdated below) also produces a new `card` object for the
-    // *same* card, which must not look like a new card arriving and wipe
-    // out the answer/reveal being displayed. A refreshed revision of the same
-    // card does start a new attempt after a stale submission.
+    // A fresh prompt revision starts a new attempt after a content edit or
+    // stale submission. The input stays mounted across that transition.
   }, [card.card_id, card.sentence_id, card.review_revision, card.content_revision])
 
   useEffect(() => {
@@ -633,16 +626,6 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress, o
           open={editOpen}
           onOpenChange={setEditOpen}
           card={toAdminCard(card, reveal)}
-          onSaved={(updates, contentRevision) => {
-            // `card` (App.tsx state) only holds CardPrompt's fields; patch
-            // the CardReveal-shaped rest directly into our own local state
-            // rather than routing it through a prop round-trip.
-            const revealUpdates = Object.fromEntries(
-              Object.entries(updates).filter(([key, v]) => CARD_BACK_FIELDS.has(key) && v !== undefined)
-            ) as Partial<CardReveal>
-            setReveal((prev) => (prev ? { ...prev, ...revealUpdates } : prev))
-            onCardUpdated?.(updates, contentRevision)
-          }}
         />
       )}
 

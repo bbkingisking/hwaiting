@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Loader2 } from 'lucide-react'
-import { searchCardsByTarget, type AdminCard } from '@/lib/api'
+import { searchCardsByTarget, subscribeCardEdits, type AdminCard } from '@/lib/api'
 import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface BrowseCardsDialogProps {
@@ -29,19 +29,16 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
     setEditOpen(true)
   }
 
-  const handleSaved = (updates: Partial<AdminCard>) => {
-    if (!selectedCard) return
-    const applied = Object.fromEntries(
-      Object.entries(updates).filter(([, value]) => value !== undefined)
-    )
-    const merged = { ...selectedCard, ...applied }
-    setSelectedCard(merged)
-    setCards(prev => prev.map(c => (c.sentence_id === merged.sentence_id ? merged : c)))
-    // A card-wide edit affects every sentence row, and sentence/target edits
-    // can also change which rows match the search. Refresh the server's
-    // canonical results once the save has committed.
-    const searched = query.trim()
-    if (searched) {
+  useEffect(() => {
+    if (!open) return
+    return subscribeCardEdits(({ card }) => {
+      setSelectedCard(prev => prev?.sentence_id === card.sentence_id ? card : prev)
+      // Card-wide fields affect every sentence and a changed target may no
+      // longer match this search. Replace the edited row immediately, then
+      // read the server's full canonical result set.
+      setCards(prev => prev.map(row => row.sentence_id === card.sentence_id ? card : row))
+      const searched = currentQuery.current.trim()
+      if (!searched) return
       void searchCardsByTarget(searched).then(result => {
         if (currentQuery.current.trim() === searched) setCards(result.cards)
       }).catch(err => {
@@ -49,8 +46,8 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
           setError(err instanceof Error ? err.message : 'Could not refresh cards')
         }
       })
-    }
-  }
+    })
+  }, [open, setCards, setError])
 
   return (
     <>
@@ -120,7 +117,6 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
           open={editOpen}
           onOpenChange={setEditOpen}
           card={selectedCard}
-          onSaved={handleSaved}
         />
       )}
     </>
