@@ -1,4 +1,5 @@
 use axum::{Json, extract::State};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
@@ -71,6 +72,88 @@ pub struct ImportStats {
     pub card_states_derived: usize,
     pub reviews_imported: usize,
     pub suppressed_cards_imported: usize,
+}
+
+/// Validate backup-owned values before opening the replacement transaction.
+/// Nullable metadata from older exports remains valid history, but any
+/// supplied memory state must be a usable FSRS state. The final review for
+/// each restored card is checked separately after merging with existing data.
+fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
+    if data.version != "1.0" {
+        return Err(AppError::BadRequest(format!(
+            "Unsupported export version: {}",
+            data.version
+        )));
+    }
+    crate::user::validate_settings_values(
+        Some(data.settings.core.day_boundary_hour),
+        Some(data.settings.core.auto_progress_delay),
+        Some(data.settings.core.desired_retention),
+        Some(data.settings.core.daily_new_card_limit),
+    )?;
+    // Construct the actual model; parsing the JSON alone does not establish
+    // that its parameter count and values can schedule a card.
+    crate::cards::scheduling::Scheduler::new(
+        data.settings.fsrs_parameters.as_deref(),
+        data.settings.core.desired_retention,
+    )?;
+
+    let exported_at = crate::cards::parse_flexible_datetime(&data.exported_at)
+        .map_err(|e| AppError::BadRequest(format!("Invalid export timestamp: {e}")))?;
+    if !(1..=9999).contains(&exported_at.year()) {
+        return Err(AppError::BadRequest(
+            "Export timestamp is out of range".into(),
+        ));
+    }
+
+    for (index, review) in data.review_history.iter().enumerate() {
+        let field = |message: &str| AppError::BadRequest(format!("Review {index}: {message}"));
+        if !matches!(review.rating.as_str(), "again" | "hard" | "good" | "easy") {
+            return Err(field("invalid rating"));
+        }
+        let reviewed_at = crate::cards::parse_flexible_datetime(&review.reviewed_at)
+            .map_err(|_| field("invalid reviewed_at timestamp"))?;
+        if !(1..=9999).contains(&reviewed_at.year()) {
+            return Err(field("reviewed_at is out of range"));
+        }
+        if let Some(days) = review.scheduled_days
+            && (!days.is_finite() || days < 0.0)
+        {
+            return Err(field("scheduled_days must be finite and nonnegative"));
+        }
+        if let Some(days) = review.elapsed_days
+            && (!days.is_finite() || days < 0.0)
+        {
+            return Err(field("elapsed_days must be finite and nonnegative"));
+        }
+        if let Some(state) = review.state.as_deref()
+            && !matches!(state, "learning" | "review" | "relearning")
+        {
+            return Err(field("invalid state"));
+        }
+        match (review.stability, review.difficulty) {
+            (None, None) => {}
+            (Some(stability), Some(difficulty)) => {
+                if !stability.is_finite() || stability <= 0.0 || stability > f32::MAX as f64 {
+                    return Err(field(
+                        "stability must be positive and representable by FSRS",
+                    ));
+                }
+                if !difficulty.is_finite() || !(1.0..=10.0).contains(&difficulty) {
+                    return Err(field("difficulty must be between 1 and 10"));
+                }
+                if review.state.is_none() {
+                    return Err(field("state is required when memory state is present"));
+                }
+            }
+            _ => {
+                return Err(field(
+                    "stability and difficulty must both be present or absent",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 // Export user data
@@ -167,7 +250,7 @@ pub async fn export_data(
     request_body = ImportDataRequest,
     responses(
         (status = 200, description = "Data imported (cards_states derived from imported review_history)", body = ImportDataResponse),
-        (status = 400, description = "Unsupported export version, out-of-range settings, or malformed request", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid backup version, settings, FSRS model, review history, or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -186,28 +269,7 @@ pub async fn import_data(
 
     let data = payload.data;
 
-    // Validate version
-    if data.version != "1.0" {
-        return Err(AppError::BadRequest(format!(
-            "Unsupported export version: {}",
-            data.version
-        )));
-    }
-
-    // Reject invalid settings before an overwrite can replace any existing data.
-    crate::user::validate_settings_values(
-        Some(data.settings.core.day_boundary_hour),
-        Some(data.settings.core.auto_progress_delay),
-        Some(data.settings.core.desired_retention),
-        Some(data.settings.core.daily_new_card_limit),
-    )?;
-
-    // Reject unusable model parameters before replacing any data. The same
-    // model is used below to reconstruct current deadlines from memory state.
-    crate::cards::scheduling::Scheduler::new(
-        data.settings.fsrs_parameters.as_deref(),
-        data.settings.core.desired_retention,
-    )?;
+    validate_import_data(&data)?;
 
     // Begin transaction
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -355,34 +417,76 @@ pub async fn import_data(
         stats.reviews_imported += 1;
     }
 
-    // Derive cards_states from the last review_history entry per card
-    let derived_result = sqlx::query(
-        r#"
-        INSERT INTO cards_states (card_id, user_id, stability, difficulty, last_review, state, review_revision)
-        SELECT rh.card_id, ?, rh.stability, rh.difficulty, rh.reviewed_at, rh.state, 1
-        FROM review_history rh
-        INNER JOIN (
-            SELECT card_id, MAX(reviewed_at) AS max_reviewed
-            FROM review_history
-            WHERE user_id = ?
-            GROUP BY card_id
-        ) latest ON rh.card_id = latest.card_id AND rh.reviewed_at = latest.max_reviewed
-        WHERE rh.user_id = ? AND rh.stability IS NOT NULL
-        ON CONFLICT(card_id, user_id) DO UPDATE SET
-            stability = excluded.stability,
-            difficulty = excluded.difficulty,
-            last_review = excluded.last_review,
-            state = excluded.state,
-            review_revision = cards_states.review_revision + 1
-        "#
+    // Compare parsed instants, not timestamp text or SQLite's julianday
+    // (which loses submillisecond precision). The row id breaks exact ties.
+    let history_rows = sqlx::query(
+        "SELECT id, card_id, stability, difficulty, reviewed_at, state
+         FROM review_history WHERE user_id = ?",
     )
     .bind(user_id)
-    .bind(user_id)
-    .bind(user_id)
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-
-    stats.card_states_derived = derived_result.rows_affected() as usize;
+    let mut latest_by_card = std::collections::HashMap::new();
+    for row in history_rows {
+        let card_id: i64 = row.get("card_id");
+        let id: i64 = row.get("id");
+        let reviewed_at: String = row.get("reviewed_at");
+        let instant = crate::cards::parse_flexible_datetime(&reviewed_at).map_err(|_| {
+            AppError::BadRequest(format!("Review for card {card_id} has invalid timestamp"))
+        })?;
+        let key = (instant, id);
+        if latest_by_card
+            .get(&card_id)
+            .is_some_and(|(current, _)| *current >= key)
+        {
+            continue;
+        }
+        latest_by_card.insert(card_id, (key, row));
+    }
+    for (card_id, (_, row)) in latest_by_card {
+        let stability: Option<f64> = row.get("stability");
+        let difficulty: Option<f64> = row.get("difficulty");
+        let state: Option<String> = row.get("state");
+        let reviewed_at: String = row.get("reviewed_at");
+        let (Some(stability), Some(difficulty), Some(state)) = (stability, difficulty, state)
+        else {
+            return Err(AppError::BadRequest(format!(
+                "Latest review for card {card_id} has unusable memory state"
+            )));
+        };
+        if !matches!(state.as_str(), "learning" | "review" | "relearning")
+            || !stability.is_finite()
+            || stability <= 0.0
+            || stability > f32::MAX as f64
+            || !difficulty.is_finite()
+            || !(1.0..=10.0).contains(&difficulty)
+        {
+            return Err(AppError::BadRequest(format!(
+                "Latest review for card {card_id} has unusable memory state"
+            )));
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO cards_states (card_id, user_id, stability, difficulty, last_review, state, review_revision)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(card_id, user_id) DO UPDATE SET
+                stability = excluded.stability,
+                difficulty = excluded.difficulty,
+                last_review = excluded.last_review,
+                state = excluded.state,
+                review_revision = cards_states.review_revision + 1
+            "#,
+        )
+        .bind(card_id)
+        .bind(user_id)
+        .bind(stability)
+        .bind(difficulty)
+        .bind(reviewed_at)
+        .bind(state)
+        .execute(&mut *tx)
+        .await?;
+        stats.card_states_derived += 1;
+    }
 
     // Import suppressed cards
     for card_id in data.suppressed_cards {
@@ -629,6 +733,167 @@ mod tests {
                 assert_eq!(state, (3.0, 2.0, "2026-01-04".into(), "review".into(), 7));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn invalid_backup_cannot_replace_existing_history_or_state() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        setup_source_user(&pool, user_id).await;
+        sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 1, 3, 2, '2026-01-04', 'review', 7)")
+            .bind(user_id).execute(&pool).await.unwrap();
+
+        let before = serde_json::to_value(
+            export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+        let state_before: (f64, f64, String, String, i64) = sqlx::query_as(
+            "SELECT stability, difficulty, last_review, state, review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        for (name, path, invalid) in [
+            (
+                "FSRS shape",
+                "fsrs_parameters",
+                serde_json::json!("[1,2,3]"),
+            ),
+            (
+                "export timestamp",
+                "exported_at",
+                serde_json::json!("not a date"),
+            ),
+            (
+                "review timestamp",
+                "reviewed_at",
+                serde_json::json!("not a date"),
+            ),
+            ("rating", "rating", serde_json::json!("perfect")),
+            ("scheduled days", "scheduled_days", serde_json::json!(-1)),
+            ("elapsed days", "elapsed_days", serde_json::json!(-1)),
+            ("zero stability", "stability", serde_json::json!(0)),
+            (
+                "unrepresentable stability",
+                "stability",
+                serde_json::json!(1e40),
+            ),
+            ("difficulty", "difficulty", serde_json::json!(11)),
+            ("missing difficulty", "difficulty", serde_json::Value::Null),
+            ("invalid state", "state", serde_json::json!("new")),
+        ] {
+            let mut invalid_data = before.clone();
+            match path {
+                "fsrs_parameters" => invalid_data["settings"][path] = invalid,
+                "exported_at" => invalid_data[path] = invalid,
+                _ => invalid_data["review_history"][0][path] = invalid,
+            }
+            let result = import_data(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(ImportDataRequest {
+                    data: serde_json::from_value(invalid_data).unwrap(),
+                    overwrite: true,
+                }),
+            )
+            .await;
+            assert!(matches!(result, Err(AppError::BadRequest(_))), "{name}");
+            let mut after = serde_json::to_value(
+                export_data(State(pool.clone()), AuthUser(user_id))
+                    .await
+                    .unwrap()
+                    .0,
+            )
+            .unwrap();
+            after["exported_at"] = before["exported_at"].clone();
+            assert_eq!(after, before, "{name} must preserve existing data");
+            let state_after: (f64, f64, String, String, i64) = sqlx::query_as(
+                "SELECT stability, difficulty, last_review, state, review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+            )
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(state_after, state_before, "{name} must preserve card state");
+        }
+
+        // A historical row may lack memory state, but the final review of a
+        // restored card must provide it. This is checked inside the transaction.
+        let mut invalid_data = before.clone();
+        invalid_data["review_history"][1]["stability"] = serde_json::Value::Null;
+        invalid_data["review_history"][1]["difficulty"] = serde_json::Value::Null;
+        invalid_data["review_history"][1]["state"] = serde_json::Value::Null;
+        let result = import_data(
+            State(pool.clone()),
+            AuthUser(user_id),
+            AppJson(ImportDataRequest {
+                data: serde_json::from_value(invalid_data).unwrap(),
+                overwrite: true,
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+        let mut after = serde_json::to_value(
+            export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+        after["exported_at"] = before["exported_at"].clone();
+        assert_eq!(after, before);
+        let state_after: (f64, f64, String, String, i64) = sqlx::query_as(
+            "SELECT stability, difficulty, last_review, state, review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(state_after, state_before);
+    }
+
+    #[tokio::test]
+    async fn import_uses_latest_instant_with_mixed_timestamp_formats() {
+        let pool = test_pool().await;
+        let source_id = test_user(&pool).await;
+        setup_source_user(&pool, source_id).await;
+        let mut data = export_data(State(pool.clone()), AuthUser(source_id))
+            .await
+            .unwrap()
+            .0;
+        // The later instant sorts before the older one as text because the
+        // older timestamp has a 'T' where the later one has a space.
+        data.review_history[0].reviewed_at = "2026-01-03T00:00:00Z".into();
+        data.review_history[0].stability = Some(1.0);
+        data.review_history[2].reviewed_at = "2026-01-04 00:00:00".into();
+        data.review_history[2].stability = Some(4.0);
+        let dest_id = test_user(&pool).await;
+        let result = import_data(
+            State(pool.clone()),
+            AuthUser(dest_id),
+            AppJson(ImportDataRequest {
+                data,
+                overwrite: false,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(result.stats.card_states_derived, 2);
+        let (stability, last_review): (f64, String) = sqlx::query_as(
+            "SELECT stability, last_review FROM cards_states WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(dest_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stability, 4.0);
+        assert_eq!(last_review, "2026-01-04 00:00:00");
     }
 
     #[tokio::test]
