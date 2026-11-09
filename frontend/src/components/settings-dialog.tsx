@@ -33,7 +33,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { settings, updateSettings } = useSettings()
+  const { settings, updateSettings, saveStatus, saveError, retrySettings, discardSettings } = useSettings()
   // Rescheduling touches the whole reviewed deck. Preview a drag locally and
   // commit once on release (or keyboard commit), rather than on every pixel.
   const [retentionDraft, setRetentionDraft] = useState(settings.desiredRetention * 100)
@@ -204,6 +204,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             Customize your flashcard experience
           </DialogDescription>
         </DialogHeader>
+        {saveStatus === 'saving' && (
+          <p role="status" className="text-sm text-muted-foreground">Saving settings…</p>
+        )}
+        {saveStatus === 'failed' && (
+          <div role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
+            <p>Settings have not been saved: {saveError}</p>
+            <div className="mt-2 flex gap-3">
+              <button type="button" className="underline" onClick={retrySettings}>Retry</button>
+              <button type="button" className="underline" onClick={discardSettings}>Discard changes</button>
+            </div>
+          </div>
+        )}
         <Accordion className="overflow-y-auto pr-1">
           {/* General */}
           <AccordionItem value="general">

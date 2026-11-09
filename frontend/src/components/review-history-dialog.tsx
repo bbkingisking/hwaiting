@@ -144,7 +144,7 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
 }
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
-  const { settings, updateSettings } = useSettings()
+  const { settings, updateSettings, saveStatus, saveError, retrySettings } = useSettings()
   const { pos: posLookup, originType: originTypeLookup } = useFieldValues()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
@@ -450,6 +450,13 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
         )}
 
         <div className="flex flex-col gap-2.5 border-t pt-4 mt-1">
+          {saveStatus === 'saving' && <p role="status" className="text-xs text-muted-foreground">Saving settings…</p>}
+          {saveStatus === 'failed' && (
+            <div role="alert" className="text-xs text-destructive">
+              Settings have not been saved: {saveError}{' '}
+              <button type="button" className="underline" onClick={retrySettings}>Retry</button>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <Label htmlFor="toggle-area" className="text-sm text-muted-foreground cursor-pointer">Colorized area fill</Label>
             <Switch id="toggle-area" checked={colorizedArea} onCheckedChange={v => updateSettings({ historyColorizedArea: v })} />
