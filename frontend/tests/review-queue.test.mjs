@@ -84,14 +84,15 @@ test('queue settings invalidate availability, including zero limits and midnight
   for (const settings of [
     { daily_new_card_limit: 20 }, { daily_new_card_limit: 0 },
     { day_boundary_hour: 4 }, { day_boundary_hour: 0 },
+    { study_timezone: 'Asia/Seoul' }, { initial_study_timezone: 'Europe/London' },
   ]) {
     await api.updateUserSettings(settings)
   }
-  assert.deepEqual(changes, Array(4).fill('availability'))
+  assert.deepEqual(changes, Array(6).fill('availability'))
 
   respond = () => Response.json({ error: 'Save failed' }, { status: 500 })
   await assert.rejects(api.updateUserSettings({ daily_new_card_limit: 30 }))
-  assert.equal(changes.length, 4)
+  assert.equal(changes.length, 6)
 })
 
 test('display settings and reads do not cause queue refreshes', async () => {
@@ -164,4 +165,28 @@ test('batch reconciliation replaces stale data and preserves legitimate repetiti
   assert.deepEqual(reconcileQueue([repetition], card), [repetition])
   assert.deepEqual(reconcileQueue([], card), [])
   assert.deepEqual(reconcileQueue([card], null), [card])
+})
+
+
+test('saved study timezone is not changed by the browser timezone', async () => {
+  respond = () => Response.json({ study_timezone: 'Asia/Seoul' })
+  assert.equal((await api.getUserSettings()).study_timezone, 'Asia/Seoul')
+  assert.equal(requests.length, 1)
+  assert.deepEqual(changes, [])
+})
+
+test('first settings load proposes the browser timezone and uses the saved winner', async () => {
+  let reads = 0
+  respond = (_url, options) => {
+    if (options.method === 'PATCH') {
+      assert.deepEqual(JSON.parse(options.body), {
+        initial_study_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      })
+      return Response.json({ success: true })
+    }
+    return Response.json({ study_timezone: reads++ === 0 ? null : 'Asia/Seoul' })
+  }
+  assert.equal((await api.getUserSettings()).study_timezone, 'Asia/Seoul')
+  assert.equal(requests.length, 3)
+  assert.deepEqual(changes, ['availability'])
 })

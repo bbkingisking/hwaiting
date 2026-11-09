@@ -3,7 +3,7 @@
 //! flow and the stats surfaces must agree on what "today" and "accuracy"
 //! mean, so both go through these instead of computing their own.
 
-use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 
 // Accuracy stats must agree everywhere they are shown (status bar, review
 // history chart, summary, breakdowns). These fragments define which
@@ -17,8 +17,8 @@ pub(super) const CORRECT_REVIEW_SQL: &str = "rating IN ('good', 'easy')";
 /// naive local timestamp. Split out from [`logical_today_start`] so the
 /// boundary arithmetic itself - the part every past bug in this area
 /// actually broke - can be tested without needing to fake the system
-/// timezone: this half takes `now_local` as a plain value instead of calling
-/// `Local::now()` itself.
+/// timezone: this half takes `now_local` as a plain value instead of reading
+/// the clock itself.
 fn logical_day_start_naive(now_local: NaiveDateTime, day_boundary_hour: i64) -> NaiveDateTime {
     if now_local.hour() >= day_boundary_hour as u32 {
         now_local
@@ -62,10 +62,13 @@ fn resolve_local<Tz: TimeZone>(zone: &Tz, naive: NaiveDateTime) -> chrono::DateT
     }
 }
 
-/// Start of the user's current logical day: `day_boundary_hour` o'clock local
-/// time, today if that moment has passed, otherwise yesterday.
-pub(super) fn logical_today_start(day_boundary_hour: i64) -> chrono::DateTime<Utc> {
-    logical_day_start(&Local::now(), day_boundary_hour, 0)
+/// Start of the user's current logical day in their saved study timezone:
+/// today's boundary if that moment has passed, otherwise yesterday's.
+pub(super) fn logical_today_start(
+    day_boundary_hour: i64,
+    zone: &chrono_tz::Tz,
+) -> chrono::DateTime<Utc> {
+    logical_day_start(&Utc::now().with_timezone(zone), day_boundary_hour, 0)
 }
 
 /// Logical date for a local wall-clock timestamp. Shared by current-day

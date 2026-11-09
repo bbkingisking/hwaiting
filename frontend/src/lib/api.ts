@@ -255,7 +255,14 @@ type UpdateSettingsResponse = Schemas.UpdateSettingsResponse
 
 export async function getUserSettings(): Promise<UserSettings> {
   const url = `${apiBase()}/api/user/settings`
-  return fetchWithAuth(url)
+  let settings: UserSettings = await fetchWithAuth(url)
+  if (settings.study_timezone == null) {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    await updateUserSettings({ initial_study_timezone: timezone })
+    // A different device may have initialized it first. Always use the saved value.
+    settings = await fetchWithAuth(url)
+  }
+  return settings
 }
 
 export async function updateUserSettings(settings: UpdateSettingsRequest, signal?: AbortSignal): Promise<UpdateSettingsResponse> {
@@ -265,7 +272,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest, signal
     body: JSON.stringify(settings),
     signal,
   })
-  if (settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
+  if (settings.study_timezone != null || settings.initial_study_timezone != null || settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
     notifyReviewQueueChanged('availability')
   }
   return result

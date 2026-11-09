@@ -598,8 +598,13 @@ export type UpdateSettingsRequest = {
     history_colored_dots?: boolean | null;
     history_colorized_area?: boolean | null;
     history_threshold_lines?: boolean | null;
+    /**
+     * Browser default, applied only if no timezone has been saved yet.
+     */
+    initial_study_timezone?: string | null;
     red_threshold?: number | null;
     show_hanja_hints?: boolean | null;
+    study_timezone?: string | null;
     yellow_threshold?: number | null;
 };
 
@@ -660,6 +665,10 @@ export type UserSettingsCore = {
      * Controls Hanja hint visibility on review cards.
      */
     show_hanja_hints: boolean;
+    /**
+     * Saved IANA study timezone; null until a new account initializes it.
+     */
+    study_timezone?: string | null;
     yellow_threshold: number;
 };
 

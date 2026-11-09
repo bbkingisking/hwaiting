@@ -50,6 +50,7 @@ pub(crate) const MASTERED_STATE: &str = "review";
 #[derive(sqlx::FromRow)]
 pub(crate) struct ReviewPrefs {
     pub day_boundary_hour: i64,
+    pub study_timezone: Option<String>,
     pub daily_new_card_limit: i64,
 }
 
@@ -63,13 +64,14 @@ pub(crate) struct ReviewPrefs {
 /// effect of a `GET`.
 pub(crate) async fn review_prefs(pool: &SqlitePool, user_id: i64) -> Result<ReviewPrefs, AppError> {
     let prefs = sqlx::query_as::<_, ReviewPrefs>(
-        "SELECT day_boundary_hour, daily_new_card_limit FROM users_settings WHERE user_id = ?",
+        "SELECT day_boundary_hour, daily_new_card_limit, study_timezone FROM users_settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
 
     Ok(prefs.unwrap_or(ReviewPrefs {
+        study_timezone: None,
         day_boundary_hour: 4,
         daily_new_card_limit: 20,
     }))

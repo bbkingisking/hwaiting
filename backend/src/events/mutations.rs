@@ -72,7 +72,9 @@ pub async fn update_settings(
     payload: AppJson<user::UpdateSettingsRequest>,
 ) -> Result<Json<user::UpdateSettingsResponse>, AppError> {
     let user_id = auth.0;
-    let queue_affected = payload.0.day_boundary_hour.is_some()
+    let queue_affected = payload.0.study_timezone.is_some()
+        || payload.0.initial_study_timezone.is_some()
+        || payload.0.day_boundary_hour.is_some()
         || payload.0.daily_new_card_limit.is_some()
         || payload.0.desired_retention.is_some();
     let response = user::update_settings(State(state.pool), auth, payload).await?;

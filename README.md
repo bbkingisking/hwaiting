@@ -73,6 +73,22 @@ maximum-interval cap. The existing grading/optimization convention measures elap
 time in completed 24-hour periods, as the Rust API takes integer elapsed days;
 the configurable day boundary controls daily limits/statistics, not these intervals.
 
+Each account has a saved IANA study timezone (for example `Europe/London`) and a
+"Day ends at" hour. The browser proposes its timezone on the first settings load;
+that choice stays fixed across devices and travel until explicitly changed in
+Settings. Daily limits, reset predictions, review history, and streaks all use
+this timezone, including its historical daylight saving rules. Changing it or
+the boundary hour regroups existing history; review timestamps remain UTC.
+API-only accounts use UTC until a timezone is saved.
+
+On upgrade, existing accounts inherit the IANA timezone specified by `TZ`, or UTC
+when `TZ` is unset, including accounts without a settings row. No host timezone
+files are required. If the old deployment used a non-UTC timezone, set `TZ` to
+that IANA name for the upgrade to preserve day boundaries. An explicitly invalid
+`TZ` prevents migration with a descriptive error. Subsequent deployment timezone
+changes have no effect. Backups include the study timezone; older backups that
+omit it preserve the destination account's saved timezone.
+
 Each reviewed card stores its current deadline in `cards_states.due_at` (Unix
 seconds). Queue selection, due counts, and review countdowns all use it. Changing
 retention, optimizing/resetting parameters, or importing data recalculates current

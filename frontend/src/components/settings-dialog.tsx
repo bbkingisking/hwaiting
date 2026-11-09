@@ -1,5 +1,5 @@
 import { Trash2, Download, Upload } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -28,6 +28,12 @@ import { cn } from '@/lib/utils'
 import { Percentage } from '@/components/percentage'
 import { changedSettings } from '@/lib/settings-draft'
 import type { Settings } from '@/lib/types'
+import { timezoneOptions } from '@/lib/timezones'
+
+// Keep the saved timezone available even when the browser uses a different alias.
+const supportedTimezones = (Intl as typeof Intl & {
+  supportedValuesOf?: (key: 'timeZone') => string[]
+}).supportedValuesOf?.('timeZone') ?? []
 
 interface SettingsDialogProps {
   open: boolean
@@ -36,6 +42,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings, saveSettings, saveStatus, saveError, refreshSettings, clearSaveError } = useSettings()
+  const zones = useMemo(() => timezoneOptions(['UTC', settings.studyTimezone, ...supportedTimezones]), [settings.studyTimezone, open])
   const [base, setBase] = useState(settings)
   const [draft, setDraft] = useState(settings)
   const { isAuthenticated, passkeysEnabled } = useAuth()
@@ -484,6 +491,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               )}
 
               <div className="flex flex-col gap-2">
+                <Label htmlFor="study-timezone">Study timezone</Label>
+                <select
+                  id="study-timezone"
+                  value={draft.studyTimezone}
+                  onChange={event => changeDraft({ studyTimezone: event.target.value })}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {zones.map(({ zone, label }) => (
+                    <option key={zone} value={zone}>{label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Daily limits and review history use this timezone. It stays fixed when you travel. Offsets shown reflect current daylight saving time.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <Label id="day-boundary-label">Day ends at</Label>
                   <span className="text-sm text-muted-foreground">
@@ -499,7 +523,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   onValueChange={(value) => changeDraft({ dayBoundaryHour: value as number })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Reviews before this hour count as the previous day
+                  Reviews before this hour in your study timezone count as the previous day
                 </p>
               </div>
 
