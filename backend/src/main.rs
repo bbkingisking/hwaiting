@@ -30,6 +30,7 @@ mod inflection_hints;
 mod openapi;
 mod passkey;
 #[cfg(test)]
+#[path = "tests/support.rs"]
 mod test_support;
 mod user;
 
