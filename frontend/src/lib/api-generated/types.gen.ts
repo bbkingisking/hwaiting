@@ -465,6 +465,7 @@ export type OptimizeFsrsResponse = {
 export type PasskeySummary = {
     created_at: string;
     id: number;
+    label?: string | null;
     last_used_at?: string | null;
 };
 
@@ -587,6 +588,13 @@ export type UpdateCardRequest = {
     trans_dfn?: string | null;
     trans_word?: string | null;
     word?: string | null;
+};
+
+export type UpdatePasskeyRequest = {
+    /**
+     * An empty or whitespace-only label clears the name.
+     */
+    label: string;
 };
 
 export type UpdateSettingsRequest = {
@@ -1819,6 +1827,54 @@ export type DeletePasskeyResponses = {
 };
 
 export type DeletePasskeyResponse = DeletePasskeyResponses[keyof DeletePasskeyResponses];
+
+export type UpdatePasskeyData = {
+    body: UpdatePasskeyRequest;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path: {
+        /**
+         * Passkey ID
+         */
+        passkey_id: number;
+    };
+    query?: never;
+    url: '/api/user/passkeys/{passkey_id}';
+};
+
+export type UpdatePasskeyErrors = {
+    /**
+     * Invalid label
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * No such passkey on the caller's account
+     */
+    404: ErrorResponse;
+};
+
+export type UpdatePasskeyError = UpdatePasskeyErrors[keyof UpdatePasskeyErrors];
+
+export type UpdatePasskeyResponses = {
+    /**
+     * Passkey label updated
+     */
+    200: PasskeySummary;
+};
+
+export type UpdatePasskeyResponse = UpdatePasskeyResponses[keyof UpdatePasskeyResponses];
 
 export type GetSettingsData = {
     body?: never;

@@ -446,6 +446,7 @@ pub struct FinishRequest<T> {
 #[derive(Serialize, ToSchema)]
 pub struct PasskeySummary {
     pub id: i64,
+    pub label: Option<String>,
     pub created_at: String,
     pub last_used_at: Option<String>,
 }
@@ -609,7 +610,7 @@ async fn finish_registration(
     // instead of ever storing this one.
     let row = sqlx::query(
         "INSERT INTO passkeys (user_id, public_key) VALUES (?, ?) \
-         RETURNING id, created_at, last_used_at",
+         RETURNING id, label, created_at, last_used_at",
     )
     .bind(user_id)
     .bind(public_key_blob)
@@ -617,6 +618,7 @@ async fn finish_registration(
     .await?;
     let passkey = PasskeySummary {
         id: row.get("id"),
+        label: row.get("label"),
         created_at: row.get("created_at"),
         last_used_at: row.get("last_used_at"),
     };
@@ -882,7 +884,7 @@ pub async fn list_passkeys(
     auth: AuthUser,
 ) -> Result<Json<ListPasskeysResponse>, AppError> {
     let rows = sqlx::query(
-        "SELECT id, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC",
+        "SELECT id, label, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC",
     )
     .bind(auth.0)
     .fetch_all(&state.pool)
@@ -892,12 +894,66 @@ pub async fn list_passkeys(
         .into_iter()
         .map(|row| PasskeySummary {
             id: row.get("id"),
+            label: row.get("label"),
             created_at: row.get("created_at"),
             last_used_at: row.get("last_used_at"),
         })
         .collect();
 
     Ok(Json(ListPasskeysResponse { passkeys }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdatePasskeyRequest {
+    /// An empty or whitespace-only label clears the name.
+    #[schema(max_length = 100)]
+    pub label: String,
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/user/passkeys/{passkey_id}",
+    params(("passkey_id" = i64, Path, description = "Passkey ID")),
+    request_body = UpdatePasskeyRequest,
+    responses(
+        (status = 200, description = "Passkey label updated", body = PasskeySummary),
+        (status = 400, description = "Invalid label", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "No such passkey on the caller's account", body = crate::error::ErrorResponse),
+    ),
+    security(("cookie_auth" = [])),
+    tag = "user"
+)]
+pub async fn update_passkey(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    AppPath(passkey_id): AppPath<i64>,
+    AppJson(req): AppJson<UpdatePasskeyRequest>,
+) -> Result<Json<PasskeySummary>, AppError> {
+    let label = req.label.trim();
+    if label.chars().count() > 100 || label.chars().any(char::is_control) {
+        return Err(AppError::BadRequest(
+            "Passkey labels must be at most 100 characters and contain no control characters"
+                .to_string(),
+        ));
+    }
+    let label = (!label.is_empty()).then_some(label);
+    let row = sqlx::query(
+        "UPDATE passkeys SET label = ? WHERE id = ? AND user_id = ? \
+         RETURNING id, label, created_at, last_used_at",
+    )
+    .bind(label)
+    .bind(passkey_id)
+    .bind(auth.0)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(Json(PasskeySummary {
+        id: row.get("id"),
+        label: row.get("label"),
+        created_at: row.get("created_at"),
+        last_used_at: row.get("last_used_at"),
+    }))
 }
 
 #[utoipa::path(
@@ -1024,6 +1080,91 @@ pub async fn delete_passkey(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn labels_are_owner_scoped_validated_and_can_be_cleared() {
+        let pool = crate::test_support::test_pool().await;
+        let owner = crate::test_support::test_user(&pool).await;
+        let other = crate::test_support::test_user(&pool).await;
+        let state = AppState {
+            events: crate::events::EventHub::default(),
+            pool: pool.clone(),
+            webauthn: None,
+            ceremonies: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO passkeys (user_id, public_key) VALUES (?, X'01') RETURNING id",
+        )
+        .bind(owner)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let update = |user, id, label: &str| {
+            update_passkey(
+                State(state.clone()),
+                AuthUser(user),
+                AppPath(id),
+                AppJson(UpdatePasskeyRequest {
+                    label: label.to_string(),
+                }),
+            )
+        };
+        let initial = list_passkeys(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert!(initial.passkeys[0].label.is_none());
+        assert!(matches!(
+            update(other, id, "Someone else's key").await,
+            Err(AppError::NotFound)
+        ));
+        assert!(matches!(
+            update(owner, id + 1, "Missing").await,
+            Err(AppError::NotFound)
+        ));
+
+        let renamed = update(owner, id, "  내 노트북  ").await.unwrap().0;
+        assert_eq!(renamed.label.as_deref(), Some("내 노트북"));
+        assert_eq!(renamed.created_at, initial.passkeys[0].created_at);
+        assert_eq!(renamed.last_used_at, initial.passkeys[0].last_used_at);
+        let listed = list_passkeys(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(listed.passkeys[0].label, renamed.label);
+        assert!(
+            list_passkeys(State(state.clone()), AuthUser(other))
+                .await
+                .unwrap()
+                .0
+                .passkeys
+                .is_empty()
+        );
+
+        for invalid in [
+            "a".repeat(101),
+            "line\nbreak".to_string(),
+            "null\0byte".to_string(),
+        ] {
+            assert!(matches!(
+                update(owner, id, &invalid).await,
+                Err(AppError::BadRequest(_))
+            ));
+        }
+        let unchanged = list_passkeys(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(unchanged.passkeys[0].label, renamed.label);
+        assert!(update(owner, id, &"한".repeat(100)).await.is_ok());
+        assert!(update(owner, id, "   ").await.unwrap().0.label.is_none());
+        let key: Vec<u8> = sqlx::query_scalar("SELECT public_key FROM passkeys WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(key, vec![1]);
+    }
 
     #[test]
     fn public_key_storage_contains_only_the_algorithm_and_key() {

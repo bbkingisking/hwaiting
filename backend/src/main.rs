@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/user/passkeys/{passkey_id}",
-            delete(passkey::delete_passkey),
+            delete(passkey::delete_passkey).patch(passkey::update_passkey),
         )
         .route("/admin/users", get(admin::list_users))
         .route("/admin/cards/search", get(admin::search_cards))
