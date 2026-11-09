@@ -108,12 +108,12 @@ try:
     driver.add_cookie({'name':'hwaiting-auth','value':next(c.value for c in jar if c.name=='hwaiting-auth'),'path':'/'})
     # Observe browser requests and streams without changing production code.
     instrument="""
-    window.sseStreams=[]; window.reads=[]; window.settingsWrites=[]; window.nextReplies=[]; window.blockNext=false;
+    window.sseStreams=[]; window.reads=[]; window.settingsWrites=[]; window.nextReplies=[]; window.blockNext=false;window.failSettingsOnce=false;
     const RealSource=window.EventSource;
     window.EventSource=class extends RealSource { constructor(...args) {super(...args);window.sseStreams.push(this)} };
     const realFetch=window.fetch;
     window.fetch=async (...args)=>{window.reads.push(String(args[0]));
-    if(String(args[0]).endsWith('/user/settings') && args[1]?.method==='PATCH') window.settingsWrites.push(JSON.parse(args[1].body));
+    if(String(args[0]).endsWith('/user/settings') && args[1]?.method==='PATCH') {window.settingsWrites.push(JSON.parse(args[1].body));if(window.failSettingsOnce){window.failSettingsOnce=false;throw new Error('simulated settings failure')}}
     const result=await realFetch(...args);
     if(String(args[0]).includes('/cards/next')) {if(window.blockNext) await new Promise(r=>window.releaseNext=r);window.nextReplies.push(await result.clone().json())}
     if(String(args[0]).endsWith('/check')) {if(window.holdCheck) await new Promise(r=>window.releaseCheck=r);else await new Promise(r=>setTimeout(r,700));}return result};
@@ -314,7 +314,18 @@ try:
     with sqlite3.connect(work/'test.db') as db:
         after_due=db.execute('SELECT due_at FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]
     assert after_due > before_due
-    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, stale content rejection, retention drag and rescheduling')
+    wait.until(lambda d:'Saving settings' not in d.find_element(By.TAG_NAME,'body').text)
+    old_limit=request('/api/user/settings')[2]['daily_new_card_limit']
+    driver.execute_script('window.failSettingsOnce=true')
+    suppress_label=driver.find_element(By.CSS_SELECTOR,'label[for="suppress-new-cards"]')
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'})",suppress_label)
+    suppress_label.click()
+    wait.until(lambda d:'Settings have not been saved' in d.find_element(By.TAG_NAME,'body').text)
+    assert request('/api/user/settings')[2]['daily_new_card_limit']==old_limit
+    driver.find_element(By.XPATH,"//button[text()='Retry']").click()
+    wait.until(lambda d:request('/api/user/settings')[2]['daily_new_card_limit']!=old_limit)
+    wait.until(lambda d:'Settings have not been saved' not in d.find_element(By.TAG_NAME,'body').text)
+    print('PASS: background refill, automatic remote advancement, warm successor promotion, in-flight refill reuse, late response isolation, own echoes, reconnect, empty queue, suppression, own edits, stale content rejection, retention rescheduling, and settings retry')
 finally:
     if 'original' in globals(): index.write_text(original)
     if driver: driver.quit()

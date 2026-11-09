@@ -5,10 +5,15 @@ import type { Settings } from '@/lib/types'
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
 import { getUserSettings, subscribeReviewQueueChanges, updateUserSettings } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
+import { SettingsWriter, type PersistedSettingsChange, type SettingsSnapshot } from '@/lib/settings-writer'
 
 interface SettingsContextType {
   settings: Settings
+  saveStatus: SettingsSnapshot['status']
+  saveError: string | null
   updateSettings: (updates: Partial<Settings>) => void
+  retrySettings: () => void
+  discardSettings: () => void
 }
 
 const defaultSettings: Settings = {
@@ -38,18 +43,51 @@ function readDebugStatusBar(): boolean {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(() => ({ ...defaultSettings, debugStatusBar: readDebugStatusBar() }))
-  const settingsRef = useRef(settings)
+  const [snapshot, setSnapshot] = useState<SettingsSnapshot>(() => {
+    const initial = { ...defaultSettings, debugStatusBar: readDebugStatusBar() }
+    return { draft: initial, confirmed: initial, status: 'saved', error: null }
+  })
+  const refreshTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
+  const writerRef = useRef<SettingsWriter | null>(null)
   const { isAuthenticated } = useAuth()
+
+  const createWriter = (initial: Settings) => new SettingsWriter(
+    initial,
+    async (changes: PersistedSettingsChange) => {
+      const result = await updateUserSettings({
+        show_hanja_hints: changes.showHanjaHints,
+        red_threshold: changes.redThreshold,
+        yellow_threshold: changes.yellowThreshold,
+        day_boundary_hour: changes.dayBoundaryHour,
+        auto_progress_on_correct: changes.autoProgressOnCorrect,
+        auto_progress_delay: changes.autoProgressDelay,
+        desired_retention: changes.desiredRetention,
+        daily_new_card_limit: changes.dailyNewCardLimit,
+        history_colorized_area: changes.historyColorizedArea,
+        history_colored_dots: changes.historyColoredDots,
+        history_threshold_lines: changes.historyThresholdLines,
+      })
+      if (!result.success) throw new Error('Could not save settings')
+    },
+    setSnapshot,
+    () => refreshTask.current?.request(),
+  )
+  if (!writerRef.current) writerRef.current = createWriter(snapshot.draft)
 
   // Fetch settings from backend when authenticated
   useEffect(() => {
     if (!isAuthenticated) {
+      writerRef.current?.dispose()
+      const initial = { ...defaultSettings, debugStatusBar: readDebugStatusBar() }
+      writerRef.current = createWriter(initial)
+      setSnapshot(writerRef.current.snapshot())
       return
     }
 
     const fetchSettings = async (current: () => boolean) => {
       try {
+        const writer = writerRef.current!
+        const version = writer.getVersion()
         const userSettings = await getUserSettings()
         const fetchedSettings: Settings = {
           showHanjaHints: userSettings.show_hanja_hints,
@@ -65,11 +103,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           historyThresholdLines: userSettings.history_threshold_lines,
           hasFsrsParameters: userSettings.has_fsrs_parameters,
           // Not part of the backend response - see readDebugStatusBar.
-          debugStatusBar: readDebugStatusBar(),
+          debugStatusBar: writer.snapshot().draft.debugStatusBar,
         }
         if (!current()) return
-        settingsRef.current = fetchedSettings
-        setSettings(fetchedSettings)
+        if (!writer.hydrate(fetchedSettings, version) && !writer.hasPending()) {
+          throw new Error('Settings changed during refresh')
+        }
       } catch (err) {
         console.error('Failed to fetch settings:', err)
         throw err
@@ -77,23 +116,29 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
 
     const task = createRefreshTask(fetchSettings)
+    refreshTask.current = task
     task.request()
     const local = subscribeReviewQueueChanges(change => { if (change === 'import') task.request() })
     const live = subscribeLiveEvents(event => { if (event.type === 'settings-changed' || event.type === 'state-reset' || event.type === 'resync-required') task.request() })
-    return () => { local(); live(); task.dispose() }
+    return () => { local(); live(); task.dispose(); refreshTask.current = null }
   }, [isAuthenticated])
 
-  const updateSettings = async (updates: Partial<Settings>) => {
+  const updateSettings = (updates: Partial<Settings>) => {
+    const writer = writerRef.current!
     // debugStatusBar is device-local - persist it directly and don't send it
     // below, since UpdateSettingsRequest has no field for it.
     if (updates.debugStatusBar !== undefined) {
       localStorage.setItem(STORAGE_KEYS.DEBUG_STATUS_BAR, String(updates.debugStatusBar))
+      writer.setLocal({ debugStatusBar: updates.debugStatusBar })
+    }
+    if (updates.hasFsrsParameters !== undefined) {
+      writer.setLocal({ hasFsrsParameters: updates.hasFsrsParameters })
     }
 
-    // Normalize once so the optimistic state and API payload agree. The ref
-    // includes earlier updates even when React batches their renders.
-    const normalizedUpdates = { ...updates }
-    const updated = { ...settingsRef.current, ...normalizedUpdates }
+    // Keep a visible draft while writes serialize. Normalize against the
+    // latest draft, including earlier changes React has not rendered yet.
+    const { debugStatusBar: _debug, hasFsrsParameters: _fsrs, ...normalizedUpdates } = updates
+    const updated = { ...writer.snapshot().draft, ...normalizedUpdates }
     if (updates.redThreshold !== undefined && updated.redThreshold >= updated.yellowThreshold) {
       updated.redThreshold = Math.max(0, updated.yellowThreshold - 5)
       normalizedUpdates.redThreshold = updated.redThreshold
@@ -103,34 +148,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       normalizedUpdates.yellowThreshold = updated.yellowThreshold
     }
 
-    settingsRef.current = updated
-    setSettings(updated)
-
-    // Sync to backend if authenticated
     if (isAuthenticated) {
-      try {
-        await updateUserSettings({
-          show_hanja_hints: normalizedUpdates.showHanjaHints,
-          red_threshold: normalizedUpdates.redThreshold,
-          yellow_threshold: normalizedUpdates.yellowThreshold,
-          day_boundary_hour: normalizedUpdates.dayBoundaryHour,
-          auto_progress_on_correct: normalizedUpdates.autoProgressOnCorrect,
-          auto_progress_delay: normalizedUpdates.autoProgressDelay,
-          desired_retention: normalizedUpdates.desiredRetention,
-          daily_new_card_limit: normalizedUpdates.dailyNewCardLimit,
-          history_colorized_area: normalizedUpdates.historyColorizedArea,
-          history_colored_dots: normalizedUpdates.historyColoredDots,
-          history_threshold_lines: normalizedUpdates.historyThresholdLines,
-        })
-      } catch (err) {
-        console.error('Failed to update settings:', err)
-        // Could revert optimistic update here if needed
-      }
+      writer.update(normalizedUpdates)
     }
   }
 
   return (
-    <SettingsContext.Provider value={{ settings, updateSettings }}>
+    <SettingsContext.Provider value={{
+      settings: snapshot.draft,
+      saveStatus: snapshot.status,
+      saveError: snapshot.error,
+      updateSettings,
+      retrySettings: () => writerRef.current?.retry(),
+      discardSettings: () => writerRef.current?.discard(),
+    }}>
       {children}
     </SettingsContext.Provider>
   )
