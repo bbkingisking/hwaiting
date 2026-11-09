@@ -168,7 +168,7 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit card</DialogTitle>
+          <DialogTitle>Edit card #{card.card_id}, sentence #{card.sentence_id}</DialogTitle>
           {krdictLink && (
             <a
               href={krdictLink}

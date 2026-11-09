@@ -639,7 +639,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <Button
                         size="icon"
                         variant="ghost"
-                        aria-label="Remove this passkey"
+                        aria-label={`Remove passkey #${passkey.id}`}
                         onClick={() => handleDeletePasskey(passkey.id)}
                       >
                         <Trash2 className="h-4 w-4" />

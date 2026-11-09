@@ -388,6 +388,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
       // in the markup reliably differs between two consecutive cards, and
       // this subtree is not remounted (see App.tsx).
       data-card-id={card.card_id}
+      data-sentence-id={card.sentence_id}
       data-answered={answered || isAutoProgressing}
       aria-label={`Review card: ${card.trans_word}`}
       className="ct-card relative w-full max-w-xl"

@@ -91,7 +91,7 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
             />
 
             {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+              <div role="alert" className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
                 {error}
               </div>
             )}
@@ -103,32 +103,36 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
               </div>
             ) : cards.length === 0 ? (
               hasSearched && (
-                <div className="text-sm text-muted-foreground text-center py-8">
+                <div role="status" className="text-sm text-muted-foreground text-center py-8">
                   No cards found
                 </div>
               )
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <ul aria-label="Matching cards for conjugation" className="space-y-2 max-h-96 overflow-y-auto">
                 {cards.map(card => (
-                  <button
-                    key={card.card_id}
-                    type="button"
-                    onClick={() => handleCardClick(card)}
-                    disabled={inflectionsLoading}
-                    className="w-full text-left p-3 border rounded-md hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                  >
-                    <div className="space-y-1">
-                      <div className="font-medium">{card.target}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {card.word} · {card.trans_word} · #{card.card_id}
-                      </div>
-                      <div className="text-xs text-muted-foreground/70">
-                        {card.sentence}
-                      </div>
-                    </div>
-                  </button>
+                  <li key={card.sentence_id}>
+                    <button
+                      type="button"
+                      data-card-id={card.card_id}
+                      data-sentence-id={card.sentence_id}
+                      onClick={() => handleCardClick(card)}
+                      disabled={inflectionsLoading}
+                      className="w-full text-left p-3 border rounded-md hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    >
+                      <span className="sr-only">View conjugation table for </span>
+                      <span className="block space-y-1">
+                        <span className="block font-medium">{card.target}</span>
+                        <span className="block text-sm text-muted-foreground">
+                          {card.word} · {card.trans_word} · card #{card.card_id} · sentence #{card.sentence_id}
+                        </span>
+                        <span className="block text-xs text-muted-foreground/70">
+                          {card.sentence}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         </DialogContent>
