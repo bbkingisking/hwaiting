@@ -6,6 +6,7 @@ export interface Settings {
   redThreshold: number
   yellowThreshold: number
   dayBoundaryHour: number
+  studyTimezone: string
   autoProgressOnCorrect: boolean
   autoProgressDelay: number
   desiredRetention: number

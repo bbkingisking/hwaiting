@@ -91,6 +91,7 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
         Some(data.settings.core.desired_retention),
         Some(data.settings.core.daily_new_card_limit),
     )?;
+    crate::user::parse_study_timezone(data.settings.core.study_timezone.as_deref())?;
     // Construct the actual model; parsing the JSON alone does not establish
     // that its parameter count and values can schedule a card.
     crate::cards::scheduling::Scheduler::new(
@@ -518,15 +519,16 @@ pub async fn import_data(
     sqlx::query(
         r#"
         INSERT INTO users_settings (user_id, show_hanja_hints, red_threshold, yellow_threshold,
-                                   day_boundary_hour, auto_progress_on_correct, auto_progress_delay,
+                                   day_boundary_hour, study_timezone, auto_progress_on_correct, auto_progress_delay,
                                    desired_retention, daily_new_card_limit,
                                    history_colorized_area, history_colored_dots, history_threshold_lines)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             show_hanja_hints = excluded.show_hanja_hints,
             red_threshold = excluded.red_threshold,
             yellow_threshold = excluded.yellow_threshold,
             day_boundary_hour = excluded.day_boundary_hour,
+            study_timezone = COALESCE(excluded.study_timezone, users_settings.study_timezone),
             auto_progress_on_correct = excluded.auto_progress_on_correct,
             auto_progress_delay = excluded.auto_progress_delay,
             desired_retention = excluded.desired_retention,
@@ -541,6 +543,7 @@ pub async fn import_data(
     .bind(data.settings.core.red_threshold)
     .bind(data.settings.core.yellow_threshold)
     .bind(data.settings.core.day_boundary_hour)
+    .bind(&data.settings.core.study_timezone)
     .bind(data.settings.core.auto_progress_on_correct)
     .bind(data.settings.core.auto_progress_delay)
     .bind(data.settings.core.desired_retention)
@@ -589,7 +592,7 @@ async fn get_user_settings(
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
-        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour,
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
                history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
@@ -683,6 +686,7 @@ mod tests {
         )
         .unwrap();
         for (field, value) in [
+            ("study_timezone", serde_json::json!("Mars/Olympus")),
             ("day_boundary_hour", serde_json::json!(-1)),
             ("day_boundary_hour", serde_json::json!(24)),
             ("auto_progress_delay", serde_json::json!(-1)),
@@ -999,7 +1003,7 @@ mod tests {
         let source_id = test_user(&pool).await;
         setup_source_user(&pool, source_id).await;
 
-        sqlx::query("UPDATE users_settings SET show_hanja_hints = 0 WHERE user_id = ?")
+        sqlx::query("UPDATE users_settings SET show_hanja_hints = 0, study_timezone = 'Asia/Seoul' WHERE user_id = ?")
             .bind(source_id)
             .execute(&pool)
             .await
@@ -1040,6 +1044,10 @@ mod tests {
             .settings;
         assert_eq!(dest_settings.core.daily_new_card_limit, 7);
         assert_eq!(dest_settings.core.day_boundary_hour, 2);
+        assert_eq!(
+            dest_settings.core.study_timezone.as_deref(),
+            Some("Asia/Seoul")
+        );
         assert!(!dest_settings.core.show_hanja_hints);
         assert_eq!(
             dest_settings.fsrs_parameters.as_deref(),
@@ -1068,6 +1076,50 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(suppressed, vec![3]);
+    }
+
+    #[tokio::test]
+    async fn old_backup_preserves_saved_study_timezone() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        setup_source_user(&pool, user_id).await;
+        sqlx::query("UPDATE users_settings SET study_timezone = 'Europe/London' WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut old = serde_json::to_value(
+            export_data(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+        old["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("study_timezone");
+        for overwrite in [false, true] {
+            let _ = import_data(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(ImportDataRequest {
+                    data: serde_json::from_value(old.clone()).unwrap(),
+                    overwrite,
+                }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                get_user_settings(&pool, user_id)
+                    .await
+                    .unwrap()
+                    .core
+                    .study_timezone
+                    .as_deref(),
+                Some("Europe/London")
+            );
+        }
     }
 
     #[tokio::test]
@@ -1199,6 +1251,7 @@ mod tests {
                     red_threshold: 50,
                     yellow_threshold: 70,
                     day_boundary_hour: 4,
+                    study_timezone: Some("Asia/Seoul".into()),
                     auto_progress_on_correct: false,
                     auto_progress_delay: 1500,
                     desired_retention: 0.9,

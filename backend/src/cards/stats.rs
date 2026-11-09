@@ -4,7 +4,7 @@
 //! scheduling; they all read what [`super::check::check_answer`] already wrote.
 
 use axum::{Json, extract::State};
-use chrono::{Local, TimeZone};
+use chrono::{TimeZone, Utc};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::collections::{BTreeMap, BTreeSet};
@@ -139,12 +139,16 @@ pub async fn get_stats(
     // daily_new_card_limit: 0 = suppress all new cards.
     let ReviewPrefs {
         day_boundary_hour,
+        study_timezone,
         daily_new_card_limit,
         ..
     } = review_prefs(&pool, user_id).await?;
 
     // Start of the user's current logical day, as UTC for database comparison
-    let today_start = sqlite_datetime(logical_today_start(day_boundary_hour));
+    let today_start = sqlite_datetime(logical_today_start(
+        day_boundary_hour,
+        &crate::user::parse_study_timezone(study_timezone.as_deref())?,
+    ));
 
     // Count new cards (cards not in cards_states, excluding suppressed)
     // If daily_new_card_limit is 0, new count is 0 (suppressed)
@@ -276,8 +280,15 @@ async fn query_timeseries(
     pool: &SqlitePool,
     user_id: i64,
     day_boundary_hour: i64,
+    zone: &chrono_tz::Tz,
 ) -> Result<Vec<DayHistory>, AppError> {
-    query_timeseries_at(pool, user_id, day_boundary_hour, &Local::now()).await
+    query_timeseries_at(
+        pool,
+        user_id,
+        day_boundary_hour,
+        &Utc::now().with_timezone(zone),
+    )
+    .await
 }
 
 async fn query_timeseries_at<Tz: TimeZone>(
@@ -348,6 +359,7 @@ async fn query_summary(
     pool: &SqlitePool,
     user_id: i64,
     day_boundary_hour: i64,
+    zone: &chrono_tz::Tz,
 ) -> Result<HistorySummary, AppError> {
     // Query 1: Aggregate review stats. Accuracy only counts post-first-exposure
     // reviews (same rule as the status bar); the volume stats count everything.
@@ -440,13 +452,16 @@ async fn query_summary(
     .fetch_one(pool)
     .await?;
 
-    let dates = query_review_dates(pool, user_id, day_boundary_hour, &Local).await?;
+    let dates = query_review_dates(pool, user_id, day_boundary_hour, zone).await?;
 
     // Compute today in the user's boundary-adjusted timezone - the same
     // definition `logical_today_start` uses for the rest of the app, so a
     // review logged at 3am with a 4am boundary counts toward yesterday's
     // streak day here too.
-    let today_boundary = logical_today_date(Local::now().naive_local(), day_boundary_hour);
+    let today_boundary = logical_today_date(
+        Utc::now().with_timezone(zone).naive_local(),
+        day_boundary_hour,
+    );
 
     let (current_streak, longest_streak) = compute_streaks(&dates, today_boundary);
 
@@ -582,12 +597,15 @@ pub async fn get_history(
     // both need the same day_boundary_hour, and re-fetching it a second time
     // for the same request bought nothing.
     let ReviewPrefs {
-        day_boundary_hour, ..
+        day_boundary_hour,
+        study_timezone,
+        ..
     } = review_prefs(&pool, user_id).await?;
 
+    let zone = crate::user::parse_study_timezone(study_timezone.as_deref())?;
     let (timeseries, summary, breakdown) = tokio::try_join!(
-        query_timeseries(&pool, user_id, day_boundary_hour),
-        query_summary(&pool, user_id, day_boundary_hour),
+        query_timeseries(&pool, user_id, day_boundary_hour, &zone),
+        query_summary(&pool, user_id, day_boundary_hour, &zone),
         query_breakdown(&pool, user_id),
     )?;
 
@@ -767,12 +785,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stats_use_each_users_saved_timezone() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        // Boundaries opposite each other ensure today's counts differ at any UTC hour.
+        let zones = [chrono_tz::Asia::Seoul, chrono_tz::America::Sao_Paulo];
+        let starts = zones.map(|zone| logical_day_start(&now.with_timezone(&zone), 4, 0));
+        let review_at = sqlite_datetime(starts[0].min(starts[1]) + chrono::Duration::hours(6));
+        for (zone, start) in zones.into_iter().zip(starts) {
+            let user_id = test_user(&pool).await;
+            sqlx::query("INSERT INTO users_settings (user_id, study_timezone) VALUES (?, ?)")
+                .bind(user_id)
+                .bind(zone.name())
+                .execute(&pool)
+                .await
+                .unwrap();
+            insert_review(&pool, user_id, 1, "good", "review", &review_at).await;
+            let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
+            assert_eq!(
+                stats.reviews_today,
+                i64::from(review_at >= sqlite_datetime(start))
+            );
+            let history = get_history(State(pool.clone()), crate::auth::AuthUser(user_id))
+                .await
+                .unwrap()
+                .0;
+            assert_eq!(history.timeseries.len(), 1);
+            assert_eq!(
+                history.timeseries[0].date,
+                review_day(&review_at, 4, &zone).unwrap().to_string()
+            );
+            assert_eq!(history.summary.current_streak, stats.reviews_today);
+            assert_eq!(history.summary.longest_streak, 1);
+        }
+    }
+
+    #[tokio::test]
     async fn reviews_before_the_day_boundary_dont_count_as_today() {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
 
         // Same boundary the handler will compute (no users_settings row -> default hour 4).
-        let boundary = logical_today_start(4);
+        let boundary = logical_today_start(4, &chrono_tz::UTC);
         let before = sqlite_datetime(boundary - chrono::Duration::hours(1));
         let after = sqlite_datetime(boundary + chrono::Duration::hours(1));
 
@@ -792,7 +849,7 @@ mod tests {
     async fn a_learning_first_review_is_excluded_from_todays_accuracy() {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
-        let boundary = logical_today_start(4);
+        let boundary = logical_today_start(4, &chrono_tz::UTC);
         let today = sqlite_datetime(boundary + chrono::Duration::hours(1));
 
         // A card's first-ever review is always logged as "learning" -
@@ -823,7 +880,8 @@ mod tests {
     async fn stats_and_history_serialize_unrounded_accuracy() {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
-        let today = sqlite_datetime(logical_today_start(4) + chrono::Duration::hours(1));
+        let today =
+            sqlite_datetime(logical_today_start(4, &chrono_tz::UTC) + chrono::Duration::hours(1));
         for index in 0..9 {
             let rating = if index < 8 { "good" } else { "again" };
             insert_review(&pool, user_id, 1, rating, "review", &today).await;

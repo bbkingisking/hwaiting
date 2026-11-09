@@ -24,6 +24,13 @@ where
     Ok(())
 }
 
+/// UTC is the stable fallback for API-only accounts awaiting initialization.
+pub(crate) fn parse_study_timezone(name: Option<&str>) -> Result<chrono_tz::Tz, AppError> {
+    name.unwrap_or("UTC")
+        .parse()
+        .map_err(|_| AppError::BadRequest("study_timezone must be a valid IANA timezone".into()))
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct UserProfile {
     /// `None` for an account created via passkey, which has no username.
@@ -55,6 +62,9 @@ pub struct UserSettingsCore {
     pub red_threshold: i64,
     pub yellow_threshold: i64,
     pub day_boundary_hour: i64,
+    /// Saved IANA study timezone; null until a new account initializes it.
+    #[serde(default)]
+    pub study_timezone: Option<String>,
     pub auto_progress_on_correct: bool,
     pub auto_progress_delay: i64,
     pub desired_retention: f64,
@@ -121,6 +131,9 @@ pub struct UpdateSettingsRequest {
     pub red_threshold: Option<i64>,
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
+    pub study_timezone: Option<String>,
+    /// Browser default, applied only if no timezone has been saved yet.
+    pub initial_study_timezone: Option<String>,
     pub auto_progress_on_correct: Option<bool>,
     pub auto_progress_delay: Option<i64>,
     pub desired_retention: Option<f64>,
@@ -184,7 +197,7 @@ pub async fn get_settings(
 
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
-        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
         WHERE user_id = ?
         "#
@@ -232,6 +245,8 @@ pub async fn update_settings(
         red_threshold,
         yellow_threshold,
         day_boundary_hour,
+        study_timezone,
+        initial_study_timezone,
         auto_progress_on_correct,
         auto_progress_delay,
         desired_retention,
@@ -247,6 +262,13 @@ pub async fn update_settings(
         desired_retention,
         daily_new_card_limit,
     )?;
+
+    for name in [study_timezone.as_deref(), initial_study_timezone.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        parse_study_timezone(Some(name))?;
+    }
 
     // One transaction for the lazy row creation and the update itself, and
     // one dynamically-built UPDATE for every provided field - same pattern
@@ -270,6 +292,11 @@ pub async fn update_settings(
     }
     if day_boundary_hour.is_some() {
         sets.push("day_boundary_hour = ?")
+    }
+    if study_timezone.is_some() {
+        sets.push("study_timezone = ?")
+    } else if initial_study_timezone.is_some() {
+        sets.push("study_timezone = COALESCE(study_timezone, ?)")
     }
     if auto_progress_on_correct.is_some() {
         sets.push("auto_progress_on_correct = ?")
@@ -311,6 +338,9 @@ pub async fn update_settings(
         if let Some(v) = day_boundary_hour {
             q = q.bind(v)
         }
+        if let Some(v) = study_timezone.or(initial_study_timezone) {
+            q = q.bind(v)
+        }
         if let Some(v) = auto_progress_on_correct {
             q = q.bind(v)
         }
@@ -349,6 +379,67 @@ pub async fn update_settings(
 mod tests {
     use super::*;
     use crate::test_support::{test_pool, test_user};
+
+    #[tokio::test]
+    async fn study_timezone_initializes_once_and_can_be_changed_explicitly() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        assert_eq!(
+            get_settings(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .core
+                .study_timezone,
+            None
+        );
+        for (patch, expected) in [
+            (
+                serde_json::json!({"initial_study_timezone": "Asia/Seoul"}),
+                "Asia/Seoul",
+            ),
+            (
+                serde_json::json!({"initial_study_timezone": "America/New_York"}),
+                "Asia/Seoul",
+            ),
+            (serde_json::json!({"day_boundary_hour": 2}), "Asia/Seoul"),
+            (
+                serde_json::json!({"study_timezone": "Europe/London"}),
+                "Europe/London",
+            ),
+            (
+                serde_json::json!({"initial_study_timezone": "Asia/Tokyo"}),
+                "Europe/London",
+            ),
+        ] {
+            let _ = update_settings(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppJson(serde_json::from_value(patch).unwrap()),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                get_settings(State(pool.clone()), AuthUser(user_id))
+                    .await
+                    .unwrap()
+                    .core
+                    .study_timezone
+                    .as_deref(),
+                Some(expected)
+            );
+        }
+        for field in ["study_timezone", "initial_study_timezone"] {
+            for value in ["", "Mars/Olympus", "+09:00"] {
+                let result = update_settings(
+                    State(pool.clone()),
+                    AuthUser(user_id),
+                    AppJson(serde_json::from_value(serde_json::json!({field: value})).unwrap()),
+                )
+                .await;
+                assert!(matches!(result, Err(AppError::BadRequest(_))));
+            }
+        }
+    }
 
     #[tokio::test]
     async fn hanja_hint_preference_defaults_on_and_partial_updates_preserve_it() {

@@ -145,25 +145,29 @@ async fn select_cards(
 ) -> Result<ReviewQueueResponse, AppError> {
     let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
     let mut tx = pool.begin().await?;
-    let now = chrono::Local::now();
-    let now_epoch = now.timestamp();
 
     info!("Getting review queue for user_id: {}", user_id);
 
     let ReviewPrefs {
         day_boundary_hour,
+        study_timezone,
         daily_new_card_limit,
         ..
     } = sqlx::query_as::<_, ReviewPrefs>(
-        "SELECT day_boundary_hour, daily_new_card_limit FROM users_settings WHERE user_id = ?",
+        "SELECT day_boundary_hour, daily_new_card_limit, study_timezone FROM users_settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?
     .unwrap_or(ReviewPrefs {
+        study_timezone: None,
         day_boundary_hour: 4,
         daily_new_card_limit: 20,
     });
+
+    let zone = crate::user::parse_study_timezone(study_timezone.as_deref())?;
+    let now = chrono::Utc::now().with_timezone(&zone);
+    let now_epoch = now.timestamp();
 
     // Start of "today" per day_boundary_hour - same helper get_stats uses.
     let today_start_str = sqlite_datetime(logical_day_start(&now, day_boundary_hour, 0));
@@ -512,6 +516,34 @@ mod tests {
 
     fn ids(queue: &ReviewQueueResponse) -> Vec<i64> {
         queue.cards.iter().map(|c| c.prompt.front.card_id).collect()
+    }
+
+    #[tokio::test]
+    async fn saved_timezone_controls_new_card_allowance_and_reset() {
+        let pool = test_pool().await;
+        let now = chrono::Utc::now();
+        let zones = [chrono_tz::Asia::Seoul, chrono_tz::America::Sao_Paulo];
+        let starts = zones.map(|zone| logical_day_start(&now.with_timezone(&zone), 4, 0));
+        let reviewed_at = starts[0].min(starts[1]) + chrono::Duration::hours(6);
+        for (zone, start) in zones.into_iter().zip(starts) {
+            let user = test_user(&pool).await;
+            sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit, study_timezone) VALUES (?, 1, ?)")
+                .bind(user).bind(zone.name()).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO review_history (user_id, card_id, rating, state, reviewed_at) VALUES (?, 1, 'good', 'learning', ?)")
+                .bind(user).bind(sqlite_datetime(reviewed_at)).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, state, last_review, due_at) VALUES (?, 1, 10, 1, 'review', ?, ?)")
+                .bind(user).bind(sqlite_datetime(reviewed_at)).bind((now + chrono::Duration::days(10)).timestamp())
+                .execute(&pool).await.unwrap();
+            let response = queue(&pool, user, 5).await;
+            let limited = reviewed_at >= start;
+            assert_eq!(response.cards.is_empty(), limited);
+            if limited {
+                assert_eq!(
+                    parse_flexible_datetime(response.next_due_at.as_deref().unwrap()).unwrap(),
+                    logical_day_start(&now.with_timezone(&zone), 4, 1)
+                );
+            }
+        }
     }
 
     #[tokio::test]
