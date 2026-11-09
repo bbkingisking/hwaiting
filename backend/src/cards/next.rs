@@ -30,6 +30,8 @@ use super::{ReviewPrefs, hanja_hints_for, review_prefs};
 #[derive(Serialize, ToSchema)]
 pub struct CardFront {
     pub card_id: i64,
+    /// The particular prompt selected for this review of the card.
+    pub sentence_id: i64,
     /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
     pub krdict_id: Option<i64>,
     pub pos: Option<String>,
@@ -253,7 +255,16 @@ pub async fn get_next_card(
             c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision
         FROM cards c
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
-        INNER JOIN sentences s ON c.id = s.card_id
+        INNER JOIN sentences s ON s.id = (
+            SELECT s2.id FROM sentences s2
+            INNER JOIN targets t2 ON t2.sentence_id = s2.id
+            WHERE s2.card_id = c.id
+            ORDER BY COALESCE((
+                SELECT MAX(rh.id) FROM review_history rh
+                WHERE rh.user_id = ? AND rh.sentence_id = s2.id
+            ), 0), s2.id
+            LIMIT 1
+        )
         INNER JOIN targets tg ON tg.sentence_id = s.id
         LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
@@ -283,6 +294,7 @@ pub async fn get_next_card(
 
     let mut query_builder = sqlx::query(&query)
         .bind(eng_id)
+        .bind(user_id)
         .bind(eng_id)
         .bind(user_id)
         .bind(user_id);
@@ -425,6 +437,7 @@ pub async fn get_next_card(
             prompt: CardPrompt {
                 front: CardFront {
                     card_id,
+                    sentence_id: row.get("sentence_id"),
                     krdict_id,
                     pos,
                     origin_type,
@@ -775,6 +788,7 @@ mod tests {
             AuthUser(user_id),
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer: answer.clone(),
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -791,11 +805,85 @@ mod tests {
             AuthUser(user_id),
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer,
+                sentence_id: card.prompt.front.sentence_id,
                 review_revision: card.review_revision,
                 content_revision: card.content_revision,
             }),
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn multiple_sentences_rotate_with_one_card_schedule() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        bury_every_other_card(&pool, user_id, 1).await;
+        let second_id =
+            sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
+                .execute(&pool)
+                .await
+                .unwrap()
+                .last_insert_rowid();
+        sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
+            .bind(second_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let first_id: i64 = sqlx::query_scalar("SELECT MIN(id) FROM sentences WHERE card_id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let first_answer: String =
+            sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
+                .bind(first_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let fetch = || {
+            get_next_card(
+                State(pool.clone()),
+                AuthUser(user_id),
+                AppQuery(NextCardQuery::default()),
+            )
+        };
+
+        for (expected_id, answer, revision) in [
+            (first_id, first_answer.as_str(), 0),
+            (second_id, "답", 1),
+            (first_id, first_answer.as_str(), 2),
+        ] {
+            let card = fetch().await.unwrap().0.card.unwrap();
+            assert_eq!(card.prompt.front.card_id, 1);
+            assert_eq!(card.prompt.front.sentence_id, expected_id);
+            assert_eq!(card.review_revision, revision);
+            let result = super::super::check::check_answer(
+                State(pool.clone()),
+                crate::error::AppPath(1),
+                AuthUser(user_id),
+                crate::error::AppJson(super::super::check::CheckRequest {
+                    answer: answer.into(),
+                    sentence_id: expected_id,
+                    review_revision: revision,
+                    content_revision: 0,
+                }),
+            )
+            .await
+            .unwrap();
+            assert!(result.0.correct);
+            sqlx::query("UPDATE cards_states SET due_at = 0 WHERE user_id = ? AND card_id = 1")
+                .bind(user_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let recorded: Vec<i64> = sqlx::query_scalar(
+            "SELECT sentence_id FROM review_history WHERE user_id = ? AND card_id = 1 ORDER BY id",
+        )
+        .bind(user_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(recorded, vec![first_id, second_id, first_id]);
     }
 }

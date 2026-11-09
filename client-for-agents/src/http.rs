@@ -235,11 +235,12 @@ pub fn review() -> Result<Value, AppError> {
 pub fn answer(
     card_id: &str,
     guess: &str,
+    sentence_id: i64,
     review_revision: i64,
     content_revision: i64,
 ) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let body = json!({ "answer": guess, "review_revision": review_revision, "content_revision": content_revision });
+    let body = json!({ "answer": guess, "sentence_id": sentence_id, "review_revision": review_revision, "content_revision": content_revision });
     let mut result = parse(&post_json(
         &format!("/api/cards/{card_id}/check"),
         &client,

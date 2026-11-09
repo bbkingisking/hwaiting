@@ -134,7 +134,7 @@ try:
     # Card far down the queue: replenish the new-card successor, preserving active work.
     other=40 if cid!=40 else 41
     revision=request(f'/api/cards/{other}/state')[2]['review_revision']
-    assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','review_revision':revision,'content_revision':0})[0]==200
+    assert request(f'/api/cards/{other}/check','POST',{'answer':'wrong','sentence_id':other,'review_revision':revision,'content_revision':0})[0]==200
     wait.until(lambda d: any('/cards/stats' in p for p in d.execute_script('return window.reads')))
     wait.until(lambda d: any('/cards/next' in p for p in d.execute_script('return window.reads')))
     assert int(driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))==cid
@@ -155,7 +155,7 @@ try:
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep through reconnect')
     driver.execute_script('window.sseStreams.forEach(s=>s.close())')
     revision=request(f'/api/cards/{newcid}/state')[2]['review_revision']
-    assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','review_revision':revision,'content_revision':0})[0]==200
+    assert request(f'/api/cards/{newcid}/check','POST',{'answer':'wrong','sentence_id':newcid,'review_revision':revision,'content_revision':0})[0]==200
     driver.execute_script("window.dispatchEvent(new Event('online'))")
     wait.until(lambda d: d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and int(d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))!=newcid)
     assert 'changed while you were away' not in driver.find_element(By.TAG_NAME,'body').text
@@ -209,7 +209,7 @@ try:
     wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='40')
     driver.execute_script('window.sseStreams.forEach(s=>s.close())')
     assert request('/api/auth/login','POST',{'username':env['HWAITING_ADMIN_USERNAME'],'password':env['HWAITING_ADMIN_PASSWORD']})[0]==200
-    assert request('/api/admin/cards/40','PATCH',{'sentence':'새 답입니다.','target':'답'})[0]==200
+    assert request('/api/admin/cards/40','PATCH',{'sentence_id':40,'sentence':'새 답입니다.','target':'답'})[0]==200
     driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('old answer')
     driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
     wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===40 && r.card?.content_revision===1)'))
@@ -232,11 +232,11 @@ try:
     wait.until(lambda d:d.execute_script('return window.nextReplies.some(r=>r.card?.card_id===2)'))
     time.sleep(0.2)
     driver.execute_script('window.reads=[]')
-    assert request('/api/cards/5/check','POST',{'answer':'wrong','review_revision':0,'content_revision':0})[0]==200
+    assert request('/api/cards/5/check','POST',{'answer':'wrong','sentence_id':5,'review_revision':0,'content_revision':0})[0]==200
     wait.until(lambda d:any('/cards/stats' in p for p in d.execute_script('return window.reads')))
     assert not any('/cards/next' in p for p in driver.execute_script('return window.reads'))
     driver.execute_script('window.reads=[];window.blockNext=true')
-    assert request('/api/cards/1/check','POST',{'answer':'wrong','review_revision':0,'content_revision':request('/api/cards/1/state')[2]['content_revision']})[0]==200
+    assert request('/api/cards/1/check','POST',{'answer':'wrong','sentence_id':1,'review_revision':0,'content_revision':request('/api/cards/1/state')[2]['content_revision']})[0]==200
     wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and d.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id')=='2')
     wait.until(lambda d:d.execute_script('return !!window.releaseNext'))
     assert len([p for p in driver.execute_script('return window.reads') if '/cards/next' in p])==1
@@ -262,7 +262,7 @@ try:
     driver.find_element(By.CSS_SELECTOR,'button[type="submit"]').click()
     wait.until(lambda d:d.execute_script('return !!window.releaseCheck'))
     assert request('/api/cards/4/state')[2]['review_revision']==1
-    assert request('/api/cards/4/check','POST',{'answer':'wrong','review_revision':1,'content_revision':0})[0]==200
+    assert request('/api/cards/4/check','POST',{'answer':'wrong','sentence_id':4,'review_revision':1,'content_revision':0})[0]==200
     wait.until(lambda d:not d.find_elements(By.CSS_SELECTOR,'article[data-card-id]') and 'No cards' in d.find_element(By.TAG_NAME,'body').text)
     driver.execute_script('window.releaseCheck()')
     time.sleep(0.5)

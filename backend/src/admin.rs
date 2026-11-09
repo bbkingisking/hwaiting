@@ -188,6 +188,7 @@ pub async fn search_cards(
         cards.push(Card {
             front: CardFront {
                 card_id: row.get("id"),
+                sentence_id,
                 krdict_id: row.get("krdict_id"),
                 pos: row.get("pos"),
                 origin_type: row.get("origin_type"),
@@ -274,6 +275,8 @@ pub async fn get_card_inflections(
 /// throughout (see the double-option pattern above).
 #[derive(Deserialize, ToSchema, Default)]
 pub struct UpdateCardRequest {
+    /// The sentence variant being edited; it must belong to the card in the path.
+    pub sentence_id: i64,
     pub word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     pub definition: Option<Option<String>>,
@@ -334,6 +337,7 @@ pub async fn edit_card(
     info!("Admin editing card {}", card_id);
 
     let UpdateCardRequest {
+        sentence_id,
         word,
         definition,
         pos,
@@ -368,7 +372,18 @@ pub async fn edit_card(
         return Err(AppError::NotFound);
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    // The editor names the exact variant it displayed. Never silently edit
+    // the first sentence when a card has more than one.
+    let owns_sentence: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sentences WHERE id = ? AND card_id = ?)")
+            .bind(sentence_id)
+            .bind(card_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if !owns_sentence {
+        return Err(AppError::NotFound);
+    }
 
     // Resolve enum slugs -> lookup table ids (None: field absent; Some(None): clear it;
     // Some(Some(id)): set it). The frontend sends slugs but the columns store FKs.
@@ -471,15 +486,8 @@ pub async fn edit_card(
         }
     }
 
-    // Resolve this card's sentence once - shared by the sentence-text
-    // update, the target/hint update, and the alternatives update below.
-    let sentence_id: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ? ORDER BY id LIMIT 1")
-            .bind(card_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-    if let Some(sid) = sentence_id {
+    {
+        let sid = sentence_id;
         // Validate that target still appears in the sentence once both
         // sides of this edit are applied - this handler grew as a freeform
         // partial update and used not to re-check it. Without this, a typo
@@ -653,7 +661,7 @@ mod tests {
 
     #[test]
     fn key_absent_is_none() {
-        let req: UpdateCardRequest = serde_json::from_str(r#"{}"#).unwrap();
+        let req: UpdateCardRequest = serde_json::from_str(r#"{"sentence_id":1}"#).unwrap();
         assert!(req.hanja.is_none());
     }
 
@@ -662,13 +670,15 @@ mod tests {
         // This is the case the hanja-edit-not-persisting bug got wrong:
         // an explicit `null` (clear the column) used to be indistinguishable
         // from the key being absent (leave the column alone).
-        let req: UpdateCardRequest = serde_json::from_str(r#"{"hanja": null}"#).unwrap();
+        let req: UpdateCardRequest =
+            serde_json::from_str(r#"{"sentence_id":1,"hanja": null}"#).unwrap();
         assert_eq!(req.hanja, Some(None));
     }
 
     #[test]
     fn key_with_value_is_some_some() {
-        let req: UpdateCardRequest = serde_json::from_str(r#"{"hanja": "漢字"}"#).unwrap();
+        let req: UpdateCardRequest =
+            serde_json::from_str(r#"{"sentence_id":1,"hanja": "漢字"}"#).unwrap();
         assert_eq!(req.hanja, Some(Some("漢字".to_string())));
     }
 
@@ -702,6 +712,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AppJson(UpdateCardRequest {
+                sentence_id: 1,
                 target: Some("절대로존재하지않는단어".to_string()),
                 ..Default::default()
             }),
@@ -722,6 +733,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AppJson(UpdateCardRequest {
+                sentence_id: 1,
                 sentence: Some("이 문장에는 정답이 전혀 없습니다".to_string()),
                 ..Default::default()
             }),
@@ -744,6 +756,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AppJson(UpdateCardRequest {
+                sentence_id: 1,
                 sentence: Some(new_sentence.clone()),
                 ..Default::default()
             }),
@@ -771,6 +784,7 @@ mod tests {
             State(pool.clone()),
             AppPath(card_id),
             AppJson(UpdateCardRequest {
+                sentence_id: 1,
                 alternatives: Some(vec![
                     "  alt1  ".to_string(),
                     "".to_string(),
@@ -804,12 +818,66 @@ mod tests {
             State(pool.clone()),
             AppPath(999999),
             AppJson(UpdateCardRequest {
+                sentence_id: 1,
                 word: Some("x".to_string()),
                 ..Default::default()
             }),
         )
         .await;
 
+        assert!(matches!(result, Err(AppError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn editing_a_second_sentence_does_not_change_the_first() {
+        let pool = test_pool().await;
+        let admin_id = test_admin_user(&pool).await;
+        let first: (i64, String) =
+            sqlx::query_as("SELECT id, text FROM sentences WHERE card_id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let second =
+            sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
+                .execute(&pool)
+                .await
+                .unwrap()
+                .last_insert_rowid();
+        sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
+            .bind(second)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let _ = edit_card(
+            AdminUser(admin_id),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(UpdateCardRequest {
+                sentence_id: second,
+                sentence: Some("새 답도 있습니다.".into()),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+        let rows: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id, text FROM sentences WHERE card_id = 1 ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(rows, vec![first, (second, "새 답도 있습니다.".into())]);
+
+        let result = edit_card(
+            AdminUser(admin_id),
+            State(pool.clone()),
+            AppPath(2),
+            AppJson(UpdateCardRequest {
+                sentence_id: second,
+                word: Some("wrong card".into()),
+                ..Default::default()
+            }),
+        )
+        .await;
         assert!(matches!(result, Err(AppError::NotFound)));
     }
 }

@@ -34,6 +34,8 @@ pub struct UserSettingsExport {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ReviewHistoryExport {
     pub card_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentence_id: Option<i64>,
     pub rating: String,
     pub scheduled_days: Option<f64>,
     pub elapsed_days: Option<f64>,
@@ -95,13 +97,13 @@ pub async fn export_data(
     // Get review history
     let review_history_rows = sqlx::query(
         r#"
-        SELECT rh.card_id, rh.rating, rh.scheduled_days, rh.elapsed_days,
+        SELECT rh.card_id, rh.sentence_id, rh.rating, rh.scheduled_days, rh.elapsed_days,
                rh.reviewed_at, rh.stability, rh.difficulty, rh.state,
                wa.target_sentence_id, wa.answer
         FROM review_history rh
         LEFT JOIN wrong_answers wa ON wa.review_id = rh.id
         WHERE rh.user_id = ?
-        ORDER BY rh.reviewed_at ASC
+        ORDER BY rh.reviewed_at ASC, rh.id ASC
         "#,
     )
     .bind(user_id)
@@ -112,6 +114,7 @@ pub async fn export_data(
         .iter()
         .map(|row| ReviewHistoryExport {
             card_id: row.get("card_id"),
+            sentence_id: row.get("sentence_id"),
             rating: row.get("rating"),
             scheduled_days: row.get("scheduled_days"),
             elapsed_days: row.get("elapsed_days"),
@@ -274,6 +277,14 @@ pub async fn import_data(
     .into_iter()
     .map(|row| (row.get("target_sentence_id"), row.get("card_id")))
     .collect();
+    let sole_sentence_by_card: std::collections::HashMap<i64, i64> = sqlx::query(
+        "SELECT card_id, MIN(id) AS sentence_id FROM sentences GROUP BY card_id HAVING COUNT(*) = 1",
+    )
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|row| (row.get("card_id"), row.get("sentence_id")))
+    .collect();
 
     // Import review history (must come before cards_states derivation)
     for review in data.review_history {
@@ -285,13 +296,29 @@ pub async fn import_data(
             continue;
         }
 
+        // Older exports have no sentence_id. A wrong answer identifies its
+        // target sentence; otherwise infer only when the card has one.
+        let proposed_sentence = review
+            .sentence_id
+            .or_else(|| review.wrong_answer.as_ref().map(|w| w.target_sentence_id))
+            .or_else(|| sole_sentence_by_card.get(&review.card_id).copied());
+        let sentence_id =
+            proposed_sentence.filter(|id| valid_target_cards.get(id) == Some(&review.card_id));
+        if proposed_sentence.is_some() && sentence_id.is_none() {
+            warn!(
+                "Skipping invalid sentence_id on imported review for card_id: {}",
+                review.card_id
+            );
+        }
+
         let review_id = sqlx::query(
             r#"
-            INSERT INTO review_history (card_id, user_id, rating, scheduled_days, elapsed_days, reviewed_at, stability, difficulty, state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO review_history (card_id, sentence_id, user_id, rating, scheduled_days, elapsed_days, reviewed_at, stability, difficulty, state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(review.card_id)
+        .bind(sentence_id)
         .bind(user_id)
         .bind(review.rating)
         .bind(review.scheduled_days)
@@ -305,7 +332,9 @@ pub async fn import_data(
         .last_insert_rowid();
 
         if let Some(wrong_answer) = review.wrong_answer {
-            if valid_target_cards.get(&wrong_answer.target_sentence_id) == Some(&review.card_id) {
+            if valid_target_cards.get(&wrong_answer.target_sentence_id) == Some(&review.card_id)
+                && sentence_id == Some(wrong_answer.target_sentence_id)
+            {
                 sqlx::query(
                     "INSERT INTO wrong_answers (review_id, target_sentence_id, answer)
                      VALUES (?, ?, ?)",
@@ -851,6 +880,7 @@ mod tests {
             },
             review_history: vec![
                 ReviewHistoryExport {
+                    sentence_id: None,
                     card_id: 1, // real
                     rating: "good".to_string(),
                     scheduled_days: None,
@@ -862,6 +892,7 @@ mod tests {
                     wrong_answer: None,
                 },
                 ReviewHistoryExport {
+                    sentence_id: None,
                     card_id: 999999, // doesn't exist
                     rating: "good".to_string(),
                     scheduled_days: None,
@@ -891,6 +922,14 @@ mod tests {
         assert_eq!(result.stats.reviews_imported, 1);
         assert_eq!(result.stats.suppressed_cards_imported, 1);
         assert_eq!(result.stats.card_states_derived, 1);
+        let imported_sentence: Option<i64> = sqlx::query_scalar(
+            "SELECT sentence_id FROM review_history WHERE user_id = ? AND card_id = 1",
+        )
+        .bind(dest_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(imported_sentence, Some(1));
     }
 
     #[tokio::test]
@@ -941,6 +980,7 @@ mod tests {
             AuthUser(dest_id),
             AppJson(crate::cards::CheckRequest {
                 answer: "test".into(),
+                sentence_id: 10,
                 review_revision: 7,
                 content_revision: 0,
             }),

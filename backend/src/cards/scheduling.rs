@@ -266,6 +266,7 @@ mod tests {
             AuthUser(uid),
             AppJson(cards::CheckRequest {
                 answer: answer.into(),
+                sentence_id: 1,
                 review_revision: revision,
                 content_revision: 0,
             }),

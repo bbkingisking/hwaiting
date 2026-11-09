@@ -19,6 +19,8 @@ use super::{HanjaHint, hanja_hints_for};
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
     pub answer: String,
+    /// The sentence prompt returned by next-card for this attempt.
+    pub sentence_id: i64,
     /// Revision returned with the due card; stale revisions cannot record a review.
     pub review_revision: i64,
     /// Content revision returned with the due card; grading must use that version.
@@ -109,8 +111,8 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
-        (status = 400, description = "Invalid request, including missing revisions", body = crate::error::ErrorResponse),
-        (status = 409, description = "Review state or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
+        (status = 400, description = "Invalid request, including missing sentence identity or revisions", body = crate::error::ErrorResponse),
+        (status = 409, description = "Review state, selected sentence, or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
@@ -129,6 +131,43 @@ pub async fn check_answer(
     // update that content and its revision in one transaction, so this read,
     // the revision comparison, and the recorded review share one snapshot.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+    let card_state_row = sqlx::query(
+        "SELECT stability, difficulty, last_review, review_revision
+         FROM cards_states WHERE user_id = ? AND card_id = ?",
+    )
+    .bind(user_id)
+    .bind(card_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let revision = card_state_row
+        .as_ref()
+        .map(|row| row.get::<i64, _>("review_revision"))
+        .unwrap_or(0);
+    if payload.review_revision != revision {
+        return Err(AppError::StaleReview);
+    }
+
+    // The backend chooses the prompt. Re-evaluate the same deterministic
+    // per-user rotation as next-card before trusting the submitted ID.
+    let selected_sentence_id: Option<i64> = sqlx::query_scalar(
+        "SELECT s.id FROM sentences s
+         JOIN targets t ON t.sentence_id = s.id
+         WHERE s.card_id = ?
+         ORDER BY COALESCE((
+             SELECT MAX(rh.id) FROM review_history rh
+             WHERE rh.user_id = ? AND rh.sentence_id = s.id
+         ), 0), s.id
+         LIMIT 1",
+    )
+    .bind(card_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let selected_sentence_id = selected_sentence_id.ok_or(AppError::NotFound)?;
+    if payload.sentence_id != selected_sentence_id {
+        return Err(AppError::StalePrompt);
+    }
 
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
@@ -149,10 +188,11 @@ pub async fn check_answer(
         FROM cards c
         INNER JOIN sentences s ON c.id = s.card_id
         INNER JOIN targets tg ON tg.sentence_id = s.id
-        WHERE c.id = ?
+        WHERE c.id = ? AND s.id = ?
         "#,
     )
     .bind(card_id)
+    .bind(payload.sentence_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -202,23 +242,6 @@ pub async fn check_answer(
     // by an in-flight answer using the previous policy.
     let scheduler = Scheduler::load(&mut tx, user_id).await?;
     let now = Utc::now().with_nanosecond(0).unwrap();
-    let card_state_row = sqlx::query(
-        "SELECT stability, difficulty, last_review, review_revision
-         FROM cards_states WHERE user_id = ? AND card_id = ?",
-    )
-    .bind(user_id)
-    .bind(card_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let revision = card_state_row
-        .as_ref()
-        .map(|row| row.get::<i64, _>("review_revision"))
-        .unwrap_or(0);
-    if payload.review_revision != revision {
-        tx.rollback().await?;
-        return Err(AppError::StaleReview);
-    }
-
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
         let stability: Option<f64> = row.get("stability");
@@ -307,12 +330,13 @@ pub async fn check_answer(
     // Insert into review_history with full FSRS metadata
     let review_id = sqlx::query(
         r#"
-        INSERT INTO review_history (user_id, card_id, rating, scheduled_days, elapsed_days, stability, difficulty, state, reviewed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO review_history (user_id, card_id, sentence_id, rating, scheduled_days, elapsed_days, stability, difficulty, state, reviewed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(user_id)
     .bind(card_id)
+    .bind(sentence_id)
     .bind(rating_str)
     .bind(scheduled_days as f64)
     .bind(elapsed_days as f64)
@@ -431,6 +455,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: target,
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -479,6 +504,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "definitely wrong".to_string(),
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -509,6 +535,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: target,
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -524,6 +551,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "definitely wrong".to_string(),
+                sentence_id: 1,
                 review_revision: 1,
                 content_revision: 0,
             }),
@@ -577,6 +605,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: target,
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -613,6 +642,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer,
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -626,6 +656,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "wrong".into(),
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -648,9 +679,10 @@ mod tests {
         let pool = test_pool().await;
         let user_id = test_user(&pool).await;
         let old_answer = target_for(&pool, 1).await;
-        let edit: crate::admin::UpdateCardRequest =
-            serde_json::from_value(serde_json::json!({"sentence": "새 답입니다.", "target": "답"}))
-                .unwrap();
+        let edit: crate::admin::UpdateCardRequest = serde_json::from_value(
+            serde_json::json!({"sentence_id": 1, "sentence": "새 답입니다.", "target": "답"}),
+        )
+        .unwrap();
         let edited = crate::admin::edit_card(
             crate::auth::AdminUser(user_id),
             State(pool.clone()),
@@ -667,6 +699,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: old_answer,
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: 0,
             }),
@@ -696,6 +729,7 @@ mod tests {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "답".into(),
+                sentence_id: 1,
                 review_revision: 0,
                 content_revision: edited.0.content_revision,
             }),
@@ -704,6 +738,50 @@ mod tests {
         .unwrap();
         assert!(fresh.0.correct);
         assert_eq!(fresh.0.reveal.back.target, "답");
+    }
+
+    #[tokio::test]
+    async fn grading_rejects_a_sentence_the_backend_did_not_select() {
+        let pool = test_pool().await;
+        let user_id = test_user(&pool).await;
+        let unselected_sentence =
+            sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
+                .execute(&pool)
+                .await
+                .unwrap()
+                .last_insert_rowid();
+        sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
+            .bind(unselected_sentence)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let other_sentence: i64 =
+            sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = 2 ORDER BY id LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        for sentence_id in [unselected_sentence, other_sentence] {
+            let result = check_answer(
+                State(pool.clone()),
+                AppPath(1),
+                AuthUser(user_id),
+                AppJson(CheckRequest {
+                    answer: "anything".into(),
+                    sentence_id,
+                    review_revision: 0,
+                    content_revision: 0,
+                }),
+            )
+            .await;
+            assert!(matches!(result, Err(AppError::StalePrompt)));
+        }
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[tokio::test]
@@ -720,6 +798,7 @@ mod tests {
                     AuthUser(user_id),
                     AppJson(CheckRequest {
                         answer: answer.clone(),
+                        sentence_id: 1,
                         review_revision: revision,
                         content_revision: 0,
                     }),
@@ -761,6 +840,14 @@ mod tests {
             .unwrap();
         let parsed = AppJson::<CheckRequest>::from_request(request, &()).await;
         assert!(matches!(parsed, Err(AppError::BadRequest(_))));
+        let request = Request::builder()
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"answer":"test","review_revision":0,"content_revision":0}"#,
+            ))
+            .unwrap();
+        let parsed = AppJson::<CheckRequest>::from_request(request, &()).await;
+        assert!(matches!(parsed, Err(AppError::BadRequest(_))));
         let response = AppError::StaleReview.into_response();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
@@ -771,5 +858,10 @@ mod tests {
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["code"], "stale_content");
+        let response = AppError::StalePrompt.into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "stale_prompt");
     }
 }

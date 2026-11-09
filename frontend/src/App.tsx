@@ -66,7 +66,7 @@ function AppContent() {
     acceptedReview.current = null
     acceptedContent.current = null
     allowCurrentCandidate.current = false
-  }, [card?.card_id, card?.review_revision, card?.content_revision])
+  }, [card?.card_id, card?.sentence_id, card?.review_revision, card?.content_revision])
 
   const { isAuthenticated } = useAuth()
   const { cardThemeId } = useCardTheme()
@@ -375,7 +375,7 @@ function AppContent() {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
-      const { correct, ...reveal } = await checkAnswer(cardId, answer, card.review_revision, card.content_revision)
+      const { correct, ...reveal } = await checkAnswer(cardId, card.sentence_id, answer, card.review_revision, card.content_revision)
       if (submission !== submissionVersion.current) return null
       if (!canKeepSuccessorAfterReview(prefetchRef.current?.result?.card, cardId)) {
         cancelPrefetch()
@@ -399,10 +399,12 @@ function AppContent() {
         setStatsKey(value => value + 1)
         return null
       }
-      if (err instanceof ApiError && err.status === 409 && err.code === 'stale_content') {
-        // The answer belongs to an older prompt. Fetch the edited version;
+      if (err instanceof ApiError && err.status === 409 && (err.code === 'stale_content' || err.code === 'stale_prompt')) {
+        // The answer belongs to an older prompt. Fetch the current version;
         // no review was recorded, so there is no reveal or stats refresh.
-        setStaleReason('This card was edited. Continue to load a fresh card.')
+        setStaleReason(err.code === 'stale_prompt'
+          ? 'The selected sentence changed. Continue to load a fresh card.'
+          : 'This card was edited. Continue to load a fresh card.')
         await loadCardCold()
         return null
       }
