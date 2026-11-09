@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { useSettings } from '@/components/settings-provider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,7 +17,6 @@ import { Settings, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User } fro
 
 export function AppHeader() {
   const { isAuthenticated, isAdmin, logout } = useAuth()
-  const { saveStatus } = useSettings()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
@@ -44,11 +42,6 @@ export function AppHeader() {
   return (
     <>
       <header className="fixed top-4 right-4 z-50 flex items-center gap-3">
-        {saveStatus === 'failed' && (
-          <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-md bg-destructive px-2 py-1 text-xs text-destructive-foreground">
-            Settings not saved
-          </button>
-        )}
         <DropdownMenu>
           <DropdownMenuTrigger aria-label="Account menu" className="p-2 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-accent hover:text-accent-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <User className="h-4 w-4" />

@@ -144,7 +144,7 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
 }
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
-  const { settings, updateSettings, saveStatus, saveError, retrySettings } = useSettings()
+  const { settings, saveSettings, saveStatus, saveError, clearSaveError } = useSettings()
   const { pos: posLookup, originType: originTypeLookup } = useFieldValues()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
@@ -154,9 +154,41 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
   const [error, setError] = useState<string | null>(null)
   const [isCopied, setIsCopied] = useState(false)
 
-  const colorizedArea     = settings?.historyColorizedArea  ?? false
-  const colorizedDots     = settings?.historyColoredDots    ?? false
-  const showThresholdLines = settings?.historyThresholdLines ?? false
+  const [historyBase, setHistoryBase] = useState(() => ({
+    historyColorizedArea: settings.historyColorizedArea,
+    historyColoredDots: settings.historyColoredDots,
+    historyThresholdLines: settings.historyThresholdLines,
+  }))
+  const [historyDraft, setHistoryDraft] = useState(historyBase)
+  const colorizedArea = historyDraft.historyColorizedArea
+  const colorizedDots = historyDraft.historyColoredDots
+  const showThresholdLines = historyDraft.historyThresholdLines
+  const historyDirty = Object.keys(historyDraft).some(key =>
+    historyDraft[key as keyof typeof historyDraft] !== historyBase[key as keyof typeof historyBase]
+  )
+
+  useEffect(() => {
+    if (!open) return
+    const next = {
+      historyColorizedArea: settings.historyColorizedArea,
+      historyColoredDots: settings.historyColoredDots,
+      historyThresholdLines: settings.historyThresholdLines,
+    }
+    setHistoryBase(next)
+    setHistoryDraft(next)
+    clearSaveError()
+  }, [open])
+
+  const saveHistoryPreferences = async () => {
+    if (!historyDirty || saveStatus === 'saving') return
+    try {
+      const changes = Object.fromEntries(
+        Object.entries(historyDraft).filter(([key, value]) => value !== historyBase[key as keyof typeof historyBase])
+      )
+      await saveSettings(changes)
+      setHistoryBase(historyDraft)
+    } catch { /* The provider exposes the error below. */ }
+  }
 
   // Derive gradient stop positions from the user's threshold settings.
   // The SVG gradient runs top (y=0 = 100% accuracy) to bottom (y=1 = 0% accuracy),
@@ -246,7 +278,11 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
   const hasData = chartData.length > 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={next => {
+      if (saveStatus === 'saving') return
+      if (!next) clearSaveError()
+      onOpenChange(next)
+    }}>
       <DialogContent className="sm:max-w-130">
         <DialogHeader>
           <DialogTitle>Review History</DialogTitle>
@@ -451,24 +487,22 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
 
         <div className="flex flex-col gap-2.5 border-t pt-4 mt-1">
           {saveStatus === 'saving' && <p role="status" className="text-xs text-muted-foreground">Saving settings…</p>}
-          {saveStatus === 'failed' && (
-            <div role="alert" className="text-xs text-destructive">
-              Settings have not been saved: {saveError}{' '}
-              <button type="button" className="underline" onClick={retrySettings}>Retry</button>
-            </div>
-          )}
+          {saveStatus === 'failed' && <p role="alert" className="text-xs text-destructive">Settings have not been saved: {saveError}</p>}
           <div className="flex items-center justify-between">
             <Label htmlFor="toggle-area" className="text-sm text-muted-foreground cursor-pointer">Colorized area fill</Label>
-            <Switch id="toggle-area" checked={colorizedArea} onCheckedChange={v => updateSettings({ historyColorizedArea: v })} />
+            <Switch id="toggle-area" checked={colorizedArea} disabled={saveStatus === 'saving'} onCheckedChange={v => setHistoryDraft(previous => ({ ...previous, historyColorizedArea: v }))} />
           </div>
           <div className="flex items-center justify-between">
             <Label htmlFor="toggle-dots" className="text-sm text-muted-foreground cursor-pointer">Accuracy-colored dots</Label>
-            <Switch id="toggle-dots" checked={colorizedDots} onCheckedChange={v => updateSettings({ historyColoredDots: v })} />
+            <Switch id="toggle-dots" checked={colorizedDots} disabled={saveStatus === 'saving'} onCheckedChange={v => setHistoryDraft(previous => ({ ...previous, historyColoredDots: v }))} />
           </div>
           <div className="flex items-center justify-between">
             <Label htmlFor="toggle-lines" className="text-sm text-muted-foreground cursor-pointer">Threshold lines</Label>
-            <Switch id="toggle-lines" checked={showThresholdLines} onCheckedChange={v => updateSettings({ historyThresholdLines: v })} />
+            <Switch id="toggle-lines" checked={showThresholdLines} disabled={saveStatus === 'saving'} onCheckedChange={v => setHistoryDraft(previous => ({ ...previous, historyThresholdLines: v }))} />
           </div>
+          <button type="button" disabled={!historyDirty || saveStatus === 'saving'} onClick={saveHistoryPreferences} className="self-end rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50">
+            {saveStatus === 'saving' ? 'Saving…' : 'Save display preferences'}
+          </button>
         </div>
       </DialogContent>
     </Dialog>
