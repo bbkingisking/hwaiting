@@ -94,7 +94,10 @@ use webauthn_rp::{
     response::{
         AuthenticatorAttachment,
         auth::AuthenticatorData as AssertionAuthenticatorData,
-        register::{CompressedPubKey, DynamicState, StaticState},
+        register::{
+            AuthenticatorExtensionOutputStaticState, CompressedPubKey, CredentialProtectionPolicy,
+            DynamicState, StaticState, UncompressedPubKey,
+        },
     },
 };
 
@@ -126,6 +129,67 @@ const USER_LABEL: &str = "hwaiting";
 /// documented "concrete storage type" (see its top-level example) - not a
 /// guess.
 type StoredPubKey = CompressedPubKey<[u8; 32], [u8; 32], [u8; 48], Vec<u8>>;
+
+/// Public-key-only format: one algorithm byte (0 Ed25519, 1 P-256,
+/// 2 P-384, 3 RSA), followed by key material. EC keys use SEC1 compressed
+/// points (02/03 prefix plus x); RSA uses a big-endian u32 exponent then
+/// a big-endian u16 modulus length and the modulus. No extension state.
+fn encode_public_key(key: &UncompressedPubKey<'_>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    match key {
+        UncompressedPubKey::Ed25519(key) => {
+            bytes.push(0);
+            bytes.extend_from_slice(key.inner());
+        }
+        UncompressedPubKey::P256(key) => {
+            bytes.extend_from_slice(&[1, 2 | (key.y()[31] & 1)]);
+            bytes.extend_from_slice(key.x());
+        }
+        UncompressedPubKey::P384(key) => {
+            bytes.extend_from_slice(&[2, 2 | (key.y()[47] & 1)]);
+            bytes.extend_from_slice(key.x());
+        }
+        UncompressedPubKey::Rsa(key) => {
+            bytes.push(3);
+            bytes.extend_from_slice(&key.e().to_be_bytes());
+            let len =
+                u16::try_from(key.n().len()).expect("library limits RSA moduli to 2048 bytes");
+            bytes.extend_from_slice(&len.to_be_bytes());
+            bytes.extend_from_slice(key.n());
+        }
+    }
+    bytes
+}
+
+fn decode_public_key(bytes: &[u8]) -> Result<StoredPubKey, AppError> {
+    let invalid = || AppError::Internal("invalid stored passkey public key".to_string());
+    match bytes.first() {
+        Some(0) if bytes.len() == 33 => {
+            let key: [u8; 32] = bytes[1..].try_into().map_err(|_| invalid())?;
+            Ok(StoredPubKey::Ed25519(key.into()))
+        }
+        Some(1) if bytes.len() == 34 && matches!(bytes[1], 2 | 3) => {
+            let x: [u8; 32] = bytes[2..].try_into().map_err(|_| invalid())?;
+            Ok(StoredPubKey::P256((x, bytes[1] == 3).into()))
+        }
+        Some(2) if bytes.len() == 50 && matches!(bytes[1], 2 | 3) => {
+            let x: [u8; 48] = bytes[2..].try_into().map_err(|_| invalid())?;
+            Ok(StoredPubKey::P384((x, bytes[1] == 3).into()))
+        }
+        Some(3) if bytes.len() >= 7 => {
+            let exponent = u32::from_be_bytes(bytes[1..5].try_into().map_err(|_| invalid())?);
+            let len = usize::from(u16::from_be_bytes([bytes[5], bytes[6]]));
+            if bytes.len() != 7 + len {
+                return Err(invalid());
+            }
+            let key = (bytes[7..].to_vec(), exponent)
+                .try_into()
+                .map_err(|_| invalid())?;
+            Ok(StoredPubKey::Rsa(key))
+        }
+        _ => Err(invalid()),
+    }
+}
 
 /// A candidate credential reconstructed from one `passkeys` row for a
 /// single login attempt, `'a`-tied to the assertion it's being checked
@@ -521,15 +585,7 @@ async fn finish_registration(
         .verify(&config.rp_id, credential, &options)
         .map_err(|e| AppError::Webauthn(format!("{e:?}")))?;
 
-    // `webauthn_rp`'s own storage format: `StaticState::encode` compresses
-    // EC public keys as it serializes (see `StoredPubKey`'s doc comment),
-    // so this is already the compact on-disk representation, not a
-    // temporary one that needs further massaging. Infallible - `Encode`'s
-    // `Err` type for `StaticState<UncompressedPubKey>` is `Infallible`.
-    let public_key_blob = registered
-        .static_state()
-        .encode()
-        .expect("StaticState::<UncompressedPubKey>::encode is Infallible");
+    let public_key_blob = encode_public_key(&registered.static_state().credential_public_key);
 
     // One transaction for account creation (or reuse) and the passkey row
     // itself, so a failure partway through never leaves one without the
@@ -752,10 +808,15 @@ pub async fn login_finish(
     let mut matched: Option<(i64, i64, bool)> = None;
     for row in &rows {
         let public_key: Vec<u8> = row.get("public_key");
-        let static_state =
-            StaticState::<StoredPubKey>::decode(public_key.as_slice()).map_err(|e| {
-                AppError::Internal(format!("failed to decode stored passkey public key: {e:?}"))
-            })?;
+        let static_state = StaticState {
+            credential_public_key: decode_public_key(&public_key)?,
+            // These are application policy, not recovered registration outputs:
+            // user verification is always required and PRF is never requested.
+            extensions: AuthenticatorExtensionOutputStaticState {
+                cred_protect: CredentialProtectionPolicy::UserVerificationRequired,
+                hmac_secret: None,
+            },
+        };
         // No per-login state is tracked for any of these (see the module
         // docs): `user_verified: true` and `sign_count: 0` are the values
         // that make the crate's corresponding checks no-ops given this
@@ -964,6 +1025,108 @@ pub async fn delete_passkey(
 mod tests {
     use super::*;
 
+    #[test]
+    fn public_key_storage_contains_only_the_algorithm_and_key() {
+        use webauthn_rp::response::register::Ed25519PubKey;
+
+        // RFC 8032, section 7.1, test 1 public key.
+        let bytes = [
+            0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7, 0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64,
+            0x07, 0x3a, 0x0e, 0xe1, 0x72, 0xf3, 0xda, 0xa6, 0x23, 0x25, 0xaf, 0x02, 0x1a, 0x68,
+            0xf7, 0x07, 0x51, 0x1a,
+        ];
+        let key = UncompressedPubKey::Ed25519(Ed25519PubKey::try_from(bytes.as_slice()).unwrap());
+        let encoded = encode_public_key(&key);
+        assert_eq!(encoded.len(), 33);
+        assert_eq!(encoded[0], 0);
+        assert_eq!(&encoded[1..], &bytes);
+        let StoredPubKey::Ed25519(decoded) = decode_public_key(&encoded).unwrap() else {
+            panic!("wrong public key algorithm");
+        };
+        assert_eq!(decoded.into_inner(), bytes);
+
+        for len in 0..encoded.len() {
+            assert!(decode_public_key(&encoded[..len]).is_err());
+        }
+        let mut unknown_algorithm = encoded.clone();
+        unknown_algorithm[0] = 255;
+        assert!(decode_public_key(&unknown_algorithm).is_err());
+
+        let old_format = StaticState {
+            credential_public_key: key,
+            extensions: AuthenticatorExtensionOutputStaticState {
+                cred_protect: CredentialProtectionPolicy::UserVerificationRequired,
+                hmac_secret: None,
+            },
+        }
+        .encode()
+        .unwrap();
+        assert!(decode_public_key(&old_format).is_err());
+    }
+
+    #[test]
+    fn ec_and_rsa_storage_preserves_key_material_and_rejects_malformed_data() {
+        use webauthn_rp::response::register::{
+            RsaPubKey, UncompressedP256PubKey, UncompressedP384PubKey,
+        };
+
+        // Serialization fixtures only; curve/signature validation belongs to
+        // the WebAuthn verifier. Exercise both possible EC y parities.
+        for parity in [0, 1] {
+            let x256 = [0x42; 32];
+            let y256 = [parity; 32];
+            let x384 = [0x43; 48];
+            let y384 = [parity; 48];
+            let keys = [
+                UncompressedPubKey::P256(
+                    UncompressedP256PubKey::try_from((x256.as_slice(), y256.as_slice())).unwrap(),
+                ),
+                UncompressedPubKey::P384(
+                    UncompressedP384PubKey::try_from((x384.as_slice(), y384.as_slice())).unwrap(),
+                ),
+            ];
+            for key in keys {
+                let mut encoded = encode_public_key(&key);
+                match decode_public_key(&encoded).unwrap() {
+                    StoredPubKey::P256(key) => {
+                        assert_eq!(key.x(), &x256);
+                        assert_eq!(key.y_is_odd(), parity == 1);
+                        assert_eq!(encoded.len(), 34);
+                    }
+                    StoredPubKey::P384(key) => {
+                        assert_eq!(key.x(), &x384);
+                        assert_eq!(key.y_is_odd(), parity == 1);
+                        assert_eq!(encoded.len(), 50);
+                    }
+                    _ => panic!("wrong key algorithm"),
+                }
+                for len in 0..encoded.len() {
+                    assert!(decode_public_key(&encoded[..len]).is_err());
+                }
+                encoded[1] = 4;
+                assert!(decode_public_key(&encoded).is_err());
+                encoded[1] = 2;
+                encoded.push(0);
+                assert!(decode_public_key(&encoded).is_err());
+            }
+        }
+
+        let modulus = [0xff; 256];
+        let key =
+            UncompressedPubKey::Rsa(RsaPubKey::try_from((modulus.as_slice(), 65537)).unwrap());
+        let mut encoded = encode_public_key(&key);
+        let StoredPubKey::Rsa(decoded) = decode_public_key(&encoded).unwrap() else {
+            panic!("wrong key algorithm");
+        };
+        assert_eq!(decoded.n(), &modulus);
+        assert_eq!(decoded.e(), 65537);
+        for len in 0..encoded.len() {
+            assert!(decode_public_key(&encoded[..len]).is_err());
+        }
+        encoded.push(0);
+        assert!(decode_public_key(&encoded).is_err());
+    }
+
     #[tokio::test]
     async fn registration_ceremonies_are_bound_to_their_endpoint_and_account() {
         let pool = crate::test_support::test_pool().await;
@@ -1014,6 +1177,11 @@ mod tests {
         ));
 
         let public = register_start(State(state.clone())).await.unwrap().0;
+        assert_eq!(
+            public.options["authenticatorSelection"]["userVerification"],
+            "required"
+        );
+        assert!(public.options["extensions"]["prf"].is_null());
         assert!(matches!(
             take_registration_for(
                 &state,
