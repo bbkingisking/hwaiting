@@ -75,7 +75,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tracing::{info, warn};
+use tracing::info;
 use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -132,14 +132,17 @@ type StoredPubKey = CompressedPubKey<[u8; 32], [u8; 32], [u8; 48], Vec<u8>>;
 /// against (see `login_finish`).
 type LoginCredential<'a> = AuthenticatedCredential<'a, 'a, 16, StoredPubKey>;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegistrationPurpose {
+    NewAccount,
+    AddToAccount(i64),
+}
+
 enum Ceremony {
-    /// `for_user: None` is a public `/api/auth/passkey/register/*`
-    /// ceremony - finishing it creates a new account. `Some(user_id)` is an
-    /// authenticated `/api/user/passkeys/register/*` ceremony adding a
-    /// passkey to an already-signed-in account; `finish` re-checks the
-    /// caller's JWT still names that same user before writing anything.
+    /// Public signup and adding a passkey to an existing account are
+    /// distinct purposes, checked against the finish endpoint and caller.
     Registration {
-        for_user: Option<i64>,
+        purpose: RegistrationPurpose,
         state: RegistrationServerState<16>,
         expires: Instant,
     },
@@ -417,7 +420,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
 
 /// Builds the creation options both registration ceremonies (public
 /// sign-up, and an authenticated user adding a second device) share; they
-/// differ only in what `for_user` gets recorded as. The user handle is
+/// differ only in the purpose recorded with the challenge. The user handle is
 /// thrown away once this returns - it's never read back after the
 /// authenticator embeds it in the credential.
 ///
@@ -427,7 +430,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
 /// without needing to hand-build a custom set of options for it.
 fn start_registration(
     state: &AppState,
-    for_user: Option<i64>,
+    purpose: RegistrationPurpose,
 ) -> Result<(Uuid, serde_json::Value), AppError> {
     let config = state.webauthn()?;
     let user_handle = UserHandle16::new();
@@ -458,35 +461,55 @@ fn start_registration(
         .map_err(|e| AppError::Internal(format!("failed to serialize creation options: {e}")))?;
 
     let ceremony_id = state.store_ceremony(Ceremony::Registration {
-        for_user,
+        purpose,
         state: reg_state,
         expires: Instant::now() + CEREMONY_TTL,
     });
     Ok((ceremony_id, options))
 }
 
-/// Verifies a registration response and persists the resulting credential.
-/// Returns the id of the user it now belongs to (freshly created, for a
-/// public sign-up ceremony) plus `for_user` unchanged, so callers can
-/// decide between "issue a JWT" and "attach to the already-authenticated
-/// caller".
-async fn finish_registration(
+/// Consume a registration challenge only for the endpoint and account that
+/// started it. This runs before WebAuthn verification or any database write.
+/// A public finish presented with an account-bound ceremony is treated as an
+/// unknown ceremony; an authenticated caller using another account's (or a
+/// public) ceremony is forbidden.
+fn take_registration_for(
     state: &AppState,
     ceremony_id: Uuid,
-    credential: &Registration,
-) -> Result<(i64, Option<i64>), AppError> {
+    expected: RegistrationPurpose,
+) -> Result<RegistrationServerState<16>, AppError> {
     let ceremony = state.take_ceremony(ceremony_id)?;
     if ceremony.expired() {
         return Err(AppError::CeremonyExpired);
     }
     let Ceremony::Registration {
-        for_user,
+        purpose,
         state: reg_state,
         ..
     } = ceremony
     else {
         return Err(AppError::CeremonyNotFound);
     };
+    if purpose != expected {
+        return Err(match expected {
+            RegistrationPurpose::AddToAccount(_) => AppError::Forbidden,
+            RegistrationPurpose::NewAccount => AppError::CeremonyNotFound,
+        });
+    }
+    Ok(reg_state)
+}
+
+/// Verifies a registration response and persists the resulting credential.
+/// `expected` names the endpoint and authenticated caller; the ceremony must
+/// match before verification or writing.
+/// Returns the account id and the exact passkey row that was inserted.
+async fn finish_registration(
+    state: &AppState,
+    ceremony_id: Uuid,
+    credential: &Registration,
+    expected: RegistrationPurpose,
+) -> Result<(i64, PasskeySummary), AppError> {
+    let reg_state = take_registration_for(state, ceremony_id, expected)?;
 
     let config = state.webauthn()?;
     let allowed_origins = config.allowed_origins();
@@ -513,9 +536,9 @@ async fn finish_registration(
     // other.
     let mut tx = state.pool.begin().await?;
 
-    let user_id = match for_user {
-        Some(uid) => uid,
-        None => {
+    let user_id = match expected {
+        RegistrationPurpose::AddToAccount(uid) => uid,
+        RegistrationPurpose::NewAccount => {
             let result = sqlx::query("INSERT INTO users DEFAULT VALUES")
                 .execute(&mut *tx)
                 .await?;
@@ -528,15 +551,23 @@ async fn finish_registration(
     // `20260909000000_drop_passkey_credential_id.sql`. Only the public key
     // survives; `login_finish` forges a credential id per login attempt
     // instead of ever storing this one.
-    sqlx::query("INSERT INTO passkeys (user_id, public_key) VALUES (?, ?)")
-        .bind(user_id)
-        .bind(public_key_blob)
-        .execute(&mut *tx)
-        .await?;
+    let row = sqlx::query(
+        "INSERT INTO passkeys (user_id, public_key) VALUES (?, ?) \
+         RETURNING id, created_at, last_used_at",
+    )
+    .bind(user_id)
+    .bind(public_key_blob)
+    .fetch_one(&mut *tx)
+    .await?;
+    let passkey = PasskeySummary {
+        id: row.get("id"),
+        created_at: row.get("created_at"),
+        last_used_at: row.get("last_used_at"),
+    };
 
     tx.commit().await?;
 
-    Ok((user_id, for_user))
+    Ok((user_id, passkey))
 }
 
 // ---------------------------------------------------------------- public: sign-up
@@ -554,7 +585,7 @@ async fn finish_registration(
 pub async fn register_start(
     State(state): State<AppState>,
 ) -> Result<Json<StartResponse>, AppError> {
-    let (ceremony_id, options) = start_registration(&state, None)?;
+    let (ceremony_id, options) = start_registration(&state, RegistrationPurpose::NewAccount)?;
     info!("passkey register/start: ceremony={ceremony_id}");
     Ok(Json(StartResponse {
         ceremony_id,
@@ -578,8 +609,13 @@ pub async fn register_finish(
         FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
     >,
 ) -> Result<(StatusCode, axum::response::Response), AppError> {
-    let (user_id, _for_user) =
-        finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
+    let (user_id, _) = finish_registration(
+        &state,
+        req.ceremony_id,
+        &req.credential.0,
+        RegistrationPurpose::NewAccount,
+    )
+    .await?;
     info!("passkey register/finish: created user_id={user_id}");
 
     Ok((
@@ -818,7 +854,8 @@ pub async fn add_passkey_start(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<StartResponse>, AppError> {
-    let (ceremony_id, options) = start_registration(&state, Some(auth.0))?;
+    let (ceremony_id, options) =
+        start_registration(&state, RegistrationPurpose::AddToAccount(auth.0))?;
     info!(
         "passkey add/start: user_id={} ceremony={ceremony_id}",
         auth.0
@@ -849,33 +886,19 @@ pub async fn add_passkey_finish(
         FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
     >,
 ) -> Result<(StatusCode, Json<PasskeySummary>), AppError> {
-    let (user_id, for_user) =
-        finish_registration(&state, req.ceremony_id, &req.credential.0).await?;
-    if for_user != Some(auth.0) {
-        warn!(
-            "passkey add/finish: ceremony for user_id={for_user:?} finished by user_id={}",
-            auth.0
-        );
-        return Err(AppError::Forbidden);
-    }
-
-    let row = sqlx::query("SELECT id, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id DESC LIMIT 1")
-        .bind(user_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let (user_id, passkey) = finish_registration(
+        &state,
+        req.ceremony_id,
+        &req.credential.0,
+        RegistrationPurpose::AddToAccount(auth.0),
+    )
+    .await?;
 
     info!(
         "passkey add/finish: user_id={user_id} added passkey id={}",
-        row.get::<i64, _>("id")
+        passkey.id
     );
-    Ok((
-        StatusCode::CREATED,
-        Json(PasskeySummary {
-            id: row.get("id"),
-            created_at: row.get("created_at"),
-            last_used_at: row.get("last_used_at"),
-        }),
-    ))
+    Ok((StatusCode::CREATED, Json(passkey)))
 }
 
 #[utoipa::path(
@@ -940,6 +963,97 @@ pub async fn delete_passkey(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn registration_ceremonies_are_bound_to_their_endpoint_and_account() {
+        let pool = crate::test_support::test_pool().await;
+        let owner = crate::test_support::test_user(&pool).await;
+        let other = crate::test_support::test_user(&pool).await;
+        let state = AppState {
+            events: crate::events::EventHub::default(),
+            pool: pool.clone(),
+            webauthn: Some(Arc::new(WebauthnConfig {
+                rp_id: RpId::Domain(AsciiDomain::try_from("localhost".to_string()).unwrap()),
+                origins: vec!["http://localhost".to_string()],
+            })),
+            ceremonies: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let before_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let add = add_passkey_start(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert!(matches!(
+            take_registration_for(
+                &state,
+                add.ceremony_id,
+                RegistrationPurpose::AddToAccount(other)
+            ),
+            Err(AppError::Forbidden)
+        ));
+        assert!(matches!(
+            take_registration_for(
+                &state,
+                add.ceremony_id,
+                RegistrationPurpose::AddToAccount(owner)
+            ),
+            Err(AppError::CeremonyNotFound)
+        ));
+
+        let add = add_passkey_start(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert!(matches!(
+            take_registration_for(&state, add.ceremony_id, RegistrationPurpose::NewAccount),
+            Err(AppError::CeremonyNotFound)
+        ));
+
+        let public = register_start(State(state.clone())).await.unwrap().0;
+        assert!(matches!(
+            take_registration_for(
+                &state,
+                public.ceremony_id,
+                RegistrationPurpose::AddToAccount(owner)
+            ),
+            Err(AppError::Forbidden)
+        ));
+
+        let add = add_passkey_start(State(state.clone()), AuthUser(owner))
+            .await
+            .unwrap()
+            .0;
+        assert!(
+            take_registration_for(
+                &state,
+                add.ceremony_id,
+                RegistrationPurpose::AddToAccount(owner)
+            )
+            .is_ok()
+        );
+        let public = register_start(State(state.clone())).await.unwrap().0;
+        assert!(
+            take_registration_for(&state, public.ceremony_id, RegistrationPurpose::NewAccount)
+                .is_ok()
+        );
+
+        // These are real, generated WebAuthn challenges. A forbidden finish
+        // is rejected at this gate, before credential verification or SQL.
+        let after_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let passkeys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after_users, before_users);
+        assert_eq!(passkeys, 0);
+    }
 
     #[tokio::test]
     async fn concurrent_deletions_preserve_a_passwordless_sign_in_method() {
