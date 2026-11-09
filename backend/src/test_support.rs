@@ -15,9 +15,6 @@
 //! cosmetic - stray files under the OS temp dir, not a correctness issue).
 
 use sqlx::SqlitePool;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use std::str::FromStr;
-use std::time::Duration;
 
 /// A fresh database with every migration applied and the 50 sample cards
 /// seeded (ids 1-50), exactly what `db::init` does at real startup minus
@@ -30,20 +27,9 @@ pub(crate) async fn test_pool() -> SqlitePool {
         uuid::Uuid::new_v4()
     ));
 
-    let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-        .unwrap()
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .foreign_keys(false)
-        .busy_timeout(Duration::from_secs(5));
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(options)
+    let pool = crate::db::connect_migrated(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
-
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     sqlx::raw_sql(include_str!("../seed/sample_cards.sql"))
         .execute(&pool)
         .await
@@ -80,7 +66,7 @@ mod tests {
 
     /// Just building the harness is the test: migrations apply cleanly from
     /// empty, and all 50 sample cards land. The migration-ordering /
-    /// foreign-key-during-DROP-TABLE breakage documented in `db::init` and
+    /// foreign-key-during-DROP-TABLE breakage handled in `db::connect_migrated` and
     /// the "sample cards were wrong/incomplete" fix commits both would have
     /// been caught here.
     #[tokio::test]

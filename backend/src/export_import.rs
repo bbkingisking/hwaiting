@@ -278,8 +278,8 @@ pub async fn import_data(
     if payload.overwrite {
         info!("Overwrite enabled - clearing existing data");
 
-        // SQLite foreign-key enforcement is disabled for this pool, so clear
-        // dependent mistake rows explicitly before deleting their reviews.
+        // wrong_answers.review_id has no ON DELETE CASCADE, so clear these
+        // dependent rows before deleting their reviews.
         sqlx::query(
             "DELETE FROM wrong_answers WHERE review_id IN
              (SELECT id FROM review_history WHERE user_id = ?)",
