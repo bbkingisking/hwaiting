@@ -82,10 +82,11 @@ export async function getCapabilities(): Promise<Capabilities> {
 
 export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 
+// The browser buffers one successor and refreshes after each answer.
 export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
   while (true) {
     const revision = reviewQueueRevision
-    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue`, { signal })
+    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2`, { signal })
     if (revision === reviewQueueRevision) return result
   }
 }

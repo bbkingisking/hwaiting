@@ -217,7 +217,7 @@ function AppContent() {
     if (!isAuthenticated) return
     const task = createRefreshTask(async current => {
       const active = currentCard.current
-      if (!active || prefetchRef.current || (buffer.current.length >= 2 && Date.now() < refreshAt.current)) return
+      if (!active || prefetchRef.current || (buffer.current.length >= 1 && Date.now() < refreshAt.current)) return
       const slot = startPrefetch()
       const result = await slot.promise
       if (!current()) return
@@ -373,7 +373,7 @@ function AppContent() {
       currentCard.current = next
       setCard(next)
       setNoCards(false)
-      if (buffer.current.length < 2) refillTask.current?.request()
+      if (buffer.current.length < 1) refillTask.current?.request()
     } catch (err) {
       if (requestId !== cardRequestId.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load next card')
