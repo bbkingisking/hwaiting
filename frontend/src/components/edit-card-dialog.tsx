@@ -62,7 +62,7 @@ function nullIfEmpty(val: string): string | null {
 // The "front"/"back" of a physical flashcard, reconstructed from AdminCard
 // rather than fetched: CardPrompt (the front - what a reviewer sees before
 // answering) and CardReveal (the back - what grading discloses) are only
-// ever produced mid-review, by GET /api/cards/next and POST
+// ever produced mid-review, by GET /api/cards/queue and POST
 // /api/cards/{id}/check respectively (see toAdminCard in flashcard.tsx,
 // which merges the two the other direction). EditCardDialog can be opened
 // on any searched card with no review in flight (browse-cards-dialog.tsx),

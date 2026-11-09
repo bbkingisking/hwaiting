@@ -91,10 +91,6 @@ pub(super) fn logical_day_start<Tz: TimeZone>(
     resolve_local(&now.timezone(), naive)
 }
 
-pub(super) fn logical_next_start(day_boundary_hour: i64) -> chrono::DateTime<Utc> {
-    logical_day_start(&Local::now(), day_boundary_hour, 1)
-}
-
 /// Assign a stored UTC instant using the timezone rules at that instant,
 /// rather than applying today's offset to historical reviews.
 pub(super) fn review_day<Tz: TimeZone>(

@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(card_count, 50);
 
         // Every seeded card has a translation, a sentence and a target -
-        // the minimum shape check_answer/get_next_card require to consider
+        // the minimum shape check_answer/get_review_queue require to consider
         // a card reviewable at all.
         let reviewable_count: i64 = sqlx::query_scalar(
             r#"

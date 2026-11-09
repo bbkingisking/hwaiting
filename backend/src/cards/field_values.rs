@@ -134,8 +134,7 @@ pub struct FieldValuesQuery {
     fields: Vec<FieldName>,
 }
 
-/// Same comma-joined-string convention as `NextCardQuery::exclude` (see
-/// `cards::next`), for the same reason: `serde_urlencoded` has no support
+/// Uses a comma-joined string because `serde_urlencoded` has no support
 /// for repeated-key arrays. Delegates each comma-split piece to
 /// `FieldName`'s own derived `Deserialize` (via `IntoDeserializer`) rather
 /// than hand-matching slugs a second time, so the accepted `?fields=` values

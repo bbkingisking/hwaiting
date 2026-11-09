@@ -23,7 +23,7 @@ pub async fn init() -> anyhow::Result<SqlitePool> {
 /// replace referenced tables. Keep that exception on a dedicated migration
 /// pool; every connection returned to the application enforces relationships.
 pub(crate) async fn connect_migrated(database_url: &str) -> anyhow::Result<SqlitePool> {
-    // WAL lets readers (GET /cards/next's "pick a due card" query, in
+    // WAL lets readers (GET /cards/queue's "pick a due card" query, in
     // particular - it's the slowest read in the app) run concurrently with a
     // writer instead of blocking it. Without this, the pool's 5 connections
     // mean a slow read and a concurrent write (e.g. POST /cards/{id}/check,

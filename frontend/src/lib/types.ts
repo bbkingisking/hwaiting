@@ -28,7 +28,7 @@ export type HanjaHint = Api.HanjaHint
 // What's known about the card being reviewed before an answer is checked -
 // everything needed to render the sentence-with-blank, badges, and both
 // translations, but nothing `target` could be inferred from.
-export type CardPrompt = Api.NextCardResponse
+export type CardPrompt = Api.ReviewQueueCard
 
 // Disclosed by POST /api/cards/{id}/check once an attempt has been graded:
 // the answer, the word's citation form, the hanja reading/gloss, and the

@@ -101,23 +101,23 @@ test('display settings and reads do not cause queue refreshes', async () => {
   assert.deepEqual(changes, [])
 })
 
-test('a queue change during a next-card request discards its stale response', async () => {
+test('a queue change during a queue request discards its stale response', async () => {
   let completeOldRead
   let reads = 0
   respond = url => {
-    if (!url.includes('/api/cards/next')) return Response.json({ success: true })
+    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
     reads++
     if (reads === 1) return new Promise(resolve => { completeOldRead = resolve })
     return Response.json({ card: { card_id: 42 } })
   }
-  const nextCard = api.getNextCard({ excludeCardIds: [7] })
+  const nextCard = api.getReviewQueue()
   await api.unsuppressCard(42)
   completeOldRead(Response.json({ card: null, next_due_at: '2026-11-09T12:00:00Z' }))
 
   assert.deepEqual(await nextCard, { card: { card_id: 42 } })
   assert.equal(reads, 2)
-  assert.ok(requests.filter(request => request.url.includes('/api/cards/next'))
-    .every(request => request.url.endsWith('?exclude=7')))
+  assert.ok(requests.filter(request => request.url.includes('/api/cards/queue'))
+    .every(request => request.url.endsWith('/api/cards/queue')))
 })
 
 test('removing a queue subscription stops further notifications', async () => {
@@ -126,14 +126,42 @@ test('removing a queue subscription stops further notifications', async () => {
   assert.deepEqual(changes, [])
 })
 
-test('an own SSE echo does not restart an in-flight next-card read', async () => {
+test('an own SSE echo does not restart an in-flight queue read', async () => {
   const { registerMutation, dispatchLiveEvent } = await import(liveUrl)
   let complete
   let reads = 0
   respond = () => { reads++; return new Promise(resolve => { complete = resolve }) }
-  const next = api.getNextCard({ excludeCardIds: [1] })
+  const next = api.getReviewQueue()
   dispatchLiveEvent({ type: 'card-reviewed', card_id: 1, review_revision: 1, mutation_id: registerMutation() })
   complete(Response.json({ card: { card_id: 2 } }))
   assert.deepEqual(await next, { card: { card_id: 2 } })
   assert.equal(reads, 1)
+})
+
+test('batch queue reads retry when overtaken by a queue mutation', async () => {
+  let finish
+  let reads = 0
+  respond = url => {
+    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
+    reads++
+    if (reads === 1) return new Promise(resolve => { finish = resolve })
+    return Response.json({ cards: [{ card_id: 8 }], refresh_at: '2026-11-10T04:00:00Z' })
+  }
+  const pending = api.getReviewQueue()
+  await api.unsuppressCard(8)
+  finish(Response.json({ cards: [{ card_id: 1 }] }))
+  assert.deepEqual((await pending).cards, [{ card_id: 8 }])
+  assert.equal(reads, 2)
+  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue')))
+})
+
+const { reconcileQueue } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
+test('batch reconciliation replaces stale data and preserves legitimate repetitions', () => {
+  const card = { card_id: 1, sentence_id: 1, review_revision: 0, content_revision: 0 }
+  const other = { ...card, card_id: 2 }
+  assert.deepEqual(reconcileQueue([card, other, other], card), [other])
+  const repetition = { ...card, review_revision: 1, sentence_id: 2 }
+  assert.deepEqual(reconcileQueue([repetition], card), [repetition])
+  assert.deepEqual(reconcileQueue([], card), [])
+  assert.deepEqual(reconcileQueue([card], null), [card])
 })

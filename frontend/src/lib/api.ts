@@ -14,7 +14,6 @@ import { fetchWithCookies } from './http'
 type EditCardRequest = Schemas.UpdateCardRequest
 type EditCardResponse = Schemas.EditCardResponse
 
-type NextCardEnvelope = Schemas.NextCardEnvelope
 type CheckRequest = Schemas.CheckRequest
 type CheckResponse = Schemas.CheckResponse
 type ReviewResponse = Schemas.ReviewResponse
@@ -81,27 +80,13 @@ export async function getCapabilities(): Promise<Capabilities> {
   return response.json()
 }
 
-interface GetNextCardOptions {
-  // Card ids the caller doesn't want back - see NextCardQuery::exclude on
-  // the backend. Comma-joined into one `exclude` param, since the server's
-  // query deserializer has no support for repeated-key arrays.
-  excludeCardIds?: number[]
-  signal?: AbortSignal
-}
+export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 
-export async function getNextCard(options: GetNextCardOptions = {}): Promise<NextCardEnvelope> {
-  const params = new URLSearchParams()
-  if (options.excludeCardIds?.length) {
-    params.set('exclude', options.excludeCardIds.join(','))
-  }
-  const qs = params.toString()
-  const url = `${apiBase()}/api/cards/next${qs ? `?${qs}` : ''}`
-  // A queue mutation can commit while an older read is still in flight.
-  // Discard that response and read again against the new queue.
+export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
   while (true) {
     const revision = reviewQueueRevision
-    const envelope = await fetchWithAuth(url, { signal: options.signal })
-    if (revision === reviewQueueRevision) return envelope
+    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue`, { signal })
+    if (revision === reviewQueueRevision) return result
   }
 }
 
@@ -285,7 +270,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest, signal
   return result
 }
 
-// Backend's admin::AdminCard and cards::NextCardResponse used to be two
+// Backend's admin::AdminCard and cards::ReviewQueueCard used to be two
 // independently hand-declared structs that happened to agree on most
 // fields - now unified into one schema, cards::Card, reused by both.
 //
@@ -304,7 +289,7 @@ export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => vo
 }
 
 // The subset of AdminCard's fields that CardReveal actually has - i.e. the
-// half of a `Card` row the server withholds from `GET /api/cards/next` and
+// half of a `Card` row the server withholds from `GET /api/cards/queue` and
 // only discloses once `POST /api/cards/{id}/check` grades an attempt (see
 // CardPrompt/CardReveal in lib/types.ts). Every other AdminCard field is
 // CardPrompt's. This is the same split toAdminCard (flashcard.tsx) merges
@@ -366,7 +351,6 @@ export async function resetFsrsParameters(): Promise<{ success: boolean }> {
 
 export { ApiError }
 export type {
-  NextCardEnvelope,
   CheckResponse,
   ImportResponse,
   SuppressedCard,
