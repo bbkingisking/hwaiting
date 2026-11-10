@@ -109,7 +109,7 @@ pub struct SearchCardsResponse {
 // exact canonical row it changed rather than reconstructing it from inputs.
 const CARD_PROJECTION_SQL: &str = r#"
     SELECT
-        c.id, c.krdict_id, c.word, c.definition, c.hanja,
+        c.id, c.content_revision, c.krdict_id, c.word, c.definition, c.hanja,
         pop.slug as pos, ot.slug as origin_type, g.slug as grade,
         ct.trans_word, ct.trans_dfn,
         s.id as sentence_id, s.text as sentence, tg.form as target,
@@ -137,6 +137,7 @@ fn project_card(row: SqliteRow, alternatives: Vec<String>) -> Card {
     Card {
         front: CardFront {
             card_id: row.get("id"),
+            content_revision: row.get("content_revision"),
             sentence_id: row.get("sentence_id"),
             krdict_id: row.get("krdict_id"),
             pos: row.get("pos"),
@@ -282,6 +283,8 @@ pub async fn get_card_inflections(
 /// throughout (see the double-option pattern above).
 #[derive(Deserialize, ToSchema, Default)]
 pub struct UpdateCardRequest {
+    /// Revision of the content the editor opened. Stale edits are rejected.
+    pub expected_content_revision: i64,
     /// The sentence variant being edited; it must belong to the card in the path.
     pub sentence_id: i64,
     pub word: Option<String>,
@@ -339,6 +342,7 @@ fn omit_unchanged<T: PartialEq>(requested: &mut Option<T>, current: T) {
         (status = 400, description = "Target word doesn't appear in the sentence", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
+        (status = 409, description = "Card content has changed; reload before editing", body = crate::error::StaleAnswerResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -354,6 +358,7 @@ pub async fn edit_card(
 
     let UpdateCardRequest {
         sentence_id,
+        expected_content_revision,
         mut word,
         mut definition,
         mut pos,
@@ -378,17 +383,17 @@ pub async fn edit_card(
         word, hanja, definition
     );
 
-    // Verify the card exists
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)")
-        .bind(card_id)
-        .fetch_one(&pool)
-        .await?;
-
-    if !exists {
-        return Err(AppError::NotFound);
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let content_revision: i64 =
+        sqlx::query_scalar("SELECT content_revision FROM cards WHERE id = ?")
+            .bind(card_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound)?;
+    if content_revision != expected_content_revision {
+        return Err(AppError::StaleContent);
     }
 
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     // The editor names the exact variant it displayed. Never silently edit
     // the first sentence when a card has more than one.
     let owns_sentence: bool =

@@ -278,7 +278,7 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
     let user_id = test_user(&pool).await;
     let old_answer = target_for(&pool, 1).await;
     let edit: crate::admin::UpdateCardRequest = serde_json::from_value(
-        serde_json::json!({"sentence_id": 1, "sentence": "새 답입니다.", "target": "답"}),
+        serde_json::json!({"expected_content_revision": 0, "sentence_id": 1, "sentence": "새 답입니다.", "target": "답"}),
     )
     .unwrap();
     let edited = crate::admin::edit_card(

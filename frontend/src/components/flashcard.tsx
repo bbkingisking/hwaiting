@@ -53,6 +53,7 @@ function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHi
 function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
   return {
     card_id: card.card_id,
+    content_revision: card.content_revision,
     sentence_id: card.sentence_id,
     krdict_id: card.krdict_id,
     word: reveal.word,
