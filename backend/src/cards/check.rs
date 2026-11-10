@@ -8,6 +8,7 @@ use fsrs::MemoryState;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqliteConnection, SqlitePool};
 use tracing::info;
+use unicode_normalization::UnicodeNormalization;
 use utoipa::ToSchema;
 
 use crate::error::{AppError, AppJson, AppPath};
@@ -84,17 +85,15 @@ pub struct CheckResponse {
     pub reveal: CardReveal,
 }
 
-/// Whether `answer` grades as correct against `target` (or any of
-/// `alternatives`): trimmed exact string match, nothing fuzzier. No
-/// Unicode normalization happens here - an NFD-decomposed answer (e.g. from
-/// some IMEs/OSes, which can produce a jamo-decomposed Hangul string that
-/// renders identically to the NFC form the database stores) will not match
-/// an NFC `target` even though a person reading both would call them the
-/// same word. Extracted from `check_answer` so this comparison - the actual
-/// grading rule - can be tested without a database.
+/// Exact comparison after trimming the submitted answer and normalizing both
+/// operands to NFC. Canonically equivalent Hangul is accepted without folding
+/// compatibility characters or relaxing spelling and internal whitespace.
 fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
-    let trimmed = answer.trim();
-    trimmed == target || alternatives.iter().any(|alt| alt == trimmed)
+    let normalized: String = answer.trim().nfc().collect();
+    normalized.chars().eq(target.nfc())
+        || alternatives
+            .iter()
+            .any(|alt| normalized.chars().eq(alt.nfc()))
 }
 
 // Check an answer against a card: grade it, record the FSRS review, and

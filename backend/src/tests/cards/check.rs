@@ -21,11 +21,26 @@ fn matches_an_alternative_target() {
     assert!(is_correct("드셨어요", "먹어요", &alts));
 }
 
-// No separate "near miss" / "empty answer" cases: both just exercise the
-// same `!=` comparison mismatch_is_incorrect already covers, with
-// different data. And no NFD-vs-NFC normalization test either - there's
-// no normalization step to test, so a test here could only ever pin
-// down the *absence* of a feature, not catch a regression in one.
+#[test]
+fn canonically_equivalent_hangul_matches_targets_and_alternatives() {
+    let composed = "먹어요";
+    let decomposed = "\u{1106}\u{1165}\u{11a8}\u{110b}\u{1165}\u{110b}\u{116d}";
+    assert_ne!(composed, decomposed);
+    assert!(is_correct(decomposed, composed, &[]));
+    assert!(is_correct(composed, decomposed, &[]));
+    assert!(is_correct(&format!("  {decomposed}  "), composed, &[]));
+    assert!(is_correct(decomposed, "다른 답", &[composed.into()]));
+    assert!(is_correct(composed, "다른 답", &[decomposed.into()]));
+}
+
+#[test]
+fn normalization_preserves_exact_comparison_rules() {
+    assert!(!is_correct("먹 어요", "먹어요", &[]));
+    assert!(!is_correct("먹어요", "먹었어요", &[]));
+    // Compatibility jamo and full-width Latin letters require NFKC, not NFC.
+    assert!(!is_correct("ㄱ", "\u{1100}", &[]));
+    assert!(!is_correct("Ａ", "A", &[]));
+}
 
 // --- check_answer (handler-level, in-process SQLite) ---------------------
 
@@ -550,5 +565,41 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
     .await
     .unwrap();
     assert!(!response.0.correct);
+    assert_eq!(revision_for(&pool, user_id, 1).await, 1);
+}
+
+#[tokio::test]
+async fn decomposed_correct_answer_records_a_good_review() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let target = target_for(&pool, 1).await;
+    let decomposed: String = target.nfd().collect();
+    assert_ne!(target, decomposed);
+    let response = check_answer(
+        State(pool.clone()),
+        AppPath(1),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer: decomposed,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(response.correct);
+    assert_eq!(response.reveal.back.target, target);
+    let rating: String =
+        sqlx::query_scalar("SELECT rating FROM review_history WHERE user_id = ? AND card_id = 1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rating, "good");
+    let wrong_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wrong_answers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(wrong_count, 0);
     assert_eq!(revision_for(&pool, user_id, 1).await, 1);
 }
