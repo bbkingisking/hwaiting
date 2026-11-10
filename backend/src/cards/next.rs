@@ -57,7 +57,7 @@ pub struct CardFront {
 /// Everything the client may see before it has attempted an answer:
 /// `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
 /// review-flow-specific rather than a property of the card itself - it
-/// depends on the requesting user's review history (see `hanja_hints_for`),
+/// depends on the requesting user's review history (see `hanja_hints_on_connection`),
 /// so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
 #[derive(Serialize, ToSchema)]
 pub struct CardPrompt {

@@ -6,7 +6,7 @@ use axum::{Json, extract::State};
 use chrono::{Timelike, Utc};
 use fsrs::MemoryState;
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 use tracing::info;
 use utoipa::ToSchema;
 
@@ -14,7 +14,7 @@ use crate::error::{AppError, AppJson, AppPath};
 
 use super::scheduling::{Scheduler, due_at};
 use super::time::parse_flexible_datetime;
-use super::{HanjaHint, hanja_hints_for};
+use super::{HanjaHint, hanja_hints_on_connection};
 
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
@@ -52,7 +52,7 @@ pub struct CardInflection {
 /// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
 /// `CardBack` plus the fields that are genuinely review-flow-specific
 /// rather than properties of the card itself - `hanja_hints` depends on the
-/// requesting user's review history (see `hanja_hints_for`), and
+/// requesting user's review history (see `hanja_hints_on_connection`), and
 /// `grammar_pattern_endings`/`inflections` belong to rows referencing this
 /// card rather than the card itself - so none has a place on
 /// `CardBack`/`Card`.
@@ -131,16 +131,35 @@ pub async fn check_answer(
     let claims =
         super::attempt::validate_attempt(&mut tx, &payload.attempt_token, user_id, Some(card_id))
             .await?;
-    let revision = claims.review_revision;
+    let content = load_answer_content(&mut tx, card_id, claims.sentence_id).await?;
+    let correct = is_correct(
+        &payload.answer,
+        &content.back.target,
+        &content.back.alternatives,
+    );
+    record_review(&mut tx, &claims, &payload.answer, correct).await?;
 
-    let card_state_row = sqlx::query(
-        "SELECT stability, difficulty, last_review, review_revision
-         FROM cards_states WHERE user_id = ? AND card_id = ?",
-    )
-    .bind(user_id)
-    .bind(card_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    // Build the response before committing, so a failed reveal also rolls
+    // back the review. Every helper borrows this transaction's connection.
+    let reveal = assemble_reveal(&mut tx, user_id, card_id, content).await?;
+    tx.commit().await?;
+
+    Ok(Json(CheckResponse { correct, reveal }))
+}
+
+/// Content loaded from the validated attempt's snapshot, shared by grading
+/// and reveal assembly so the response contains the answer actually graded.
+struct AnswerContent {
+    back: CardBack,
+    hanja: Option<String>,
+    grammar_pattern_endings: Vec<String>,
+}
+
+async fn load_answer_content(
+    connection: &mut SqliteConnection,
+    card_id: i64,
+    sentence_id: i64,
+) -> Result<AnswerContent, AppError> {
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
     //
@@ -151,7 +170,7 @@ pub async fn check_answer(
     // grammar_patterns' own public listing.
     let row = sqlx::query(
         r#"
-        SELECT c.word, c.definition, c.hanja, c.content_revision,
+        SELECT c.word, c.definition, c.hanja,
                s.id as sentence_id, s.text as sentence, tg.form as target,
                COALESCE((SELECT json_group_array(ending) FROM
                 (SELECT ending FROM grammar_patterns_endings
@@ -164,8 +183,8 @@ pub async fn check_answer(
         "#,
     )
     .bind(card_id)
-    .bind(claims.sentence_id)
-    .fetch_optional(&mut *tx)
+    .bind(sentence_id)
+    .fetch_optional(&mut *connection)
     .await?
     .ok_or(AppError::NotFound)?;
 
@@ -182,15 +201,42 @@ pub async fn check_answer(
     let alternatives: Vec<String> =
         sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
             .bind(sentence_id)
-            .fetch_all(&mut *tx)
+            .fetch_all(&mut *connection)
             .await?;
 
-    let correct = is_correct(&payload.answer, &target, &alternatives);
+    Ok(AnswerContent {
+        back: CardBack {
+            word,
+            definition,
+            sentence,
+            target,
+            alternatives,
+        },
+        hanja,
+        grammar_pattern_endings,
+    })
+}
 
-    let hanja_hints = hanja_hints_for(&pool, user_id, card_id, &hanja).await?;
-
-    let inflections = super::inflections_for(&mut *tx, card_id).await?;
-
+/// Persist the scheduling and history effects of grading, without assembling
+/// response fields or fetching hints.
+async fn record_review(
+    connection: &mut SqliteConnection,
+    claims: &super::attempt::AttemptClaims,
+    answer: &str,
+    correct: bool,
+) -> Result<(), AppError> {
+    let user_id = claims.user_id;
+    let card_id = claims.card_id;
+    let sentence_id = claims.sentence_id;
+    let revision = claims.review_revision;
+    let card_state_row = sqlx::query(
+        "SELECT stability, difficulty, last_review, review_revision
+         FROM cards_states WHERE user_id = ? AND card_id = ?",
+    )
+    .bind(user_id)
+    .bind(card_id)
+    .fetch_optional(&mut *connection)
+    .await?;
     info!(
         "Checking answer for user_id: {}, card_id: {}, correct: {}",
         user_id, card_id, correct
@@ -208,7 +254,7 @@ pub async fn check_answer(
     // Read the model and retention under the same writer reservation as the
     // review: a settings change must not reschedule and then be overwritten
     // by an in-flight answer using the previous policy.
-    let scheduler = Scheduler::load(&mut tx, user_id).await?;
+    let scheduler = Scheduler::load(&mut *connection, user_id).await?;
     let now = Utc::now().with_nanosecond(0).unwrap();
     let (memory_state, elapsed_days) = if let Some(ref row) = card_state_row {
         // Existing card - load state if stability and difficulty are not NULL
@@ -292,7 +338,7 @@ pub async fn check_answer(
     .bind(new_state)
     .bind(revision + 1)
     .bind(deadline)
-    .execute(&mut *tx)
+    .execute(&mut *connection)
     .await?;
 
     // Insert into review_history with full FSRS metadata
@@ -312,7 +358,7 @@ pub async fn check_answer(
     .bind(scheduled_state.memory.difficulty as f64)
     .bind(new_state)
     .bind(super::time::sqlite_datetime(now))
-    .execute(&mut *tx)
+    .execute(&mut *connection)
     .await?
     .last_insert_rowid();
 
@@ -322,28 +368,39 @@ pub async fn check_answer(
         )
         .bind(review_id)
         .bind(sentence_id)
-        .bind(payload.answer.trim())
-        .execute(&mut *tx)
+        .bind(answer.trim())
+        .execute(&mut *connection)
         .await?;
     }
 
-    tx.commit().await?;
+    Ok(())
+}
 
-    Ok(Json(CheckResponse {
-        correct,
-        reveal: CardReveal {
-            back: CardBack {
-                word,
-                definition,
-                sentence,
-                target,
-                alternatives,
-            },
-            hanja_hints,
-            grammar_pattern_endings,
-            inflections,
-        },
-    }))
+async fn assemble_reveal(
+    connection: &mut SqliteConnection,
+    user_id: i64,
+    card_id: i64,
+    content: AnswerContent,
+) -> Result<CardReveal, AppError> {
+    let AnswerContent {
+        back,
+        hanja,
+        grammar_pattern_endings,
+    } = content;
+    // Keep hint reads on the writer's connection: acquiring another pool
+    // connection here can deadlock with writers waiting for this transaction.
+    let eng_id = crate::enum_lookup::eng_language_id(&mut *connection).await?;
+    let hanja_hints =
+        hanja_hints_on_connection(&mut *connection, eng_id, user_id, card_id, &hanja).await?;
+
+    let inflections = super::inflections_for(&mut *connection, card_id).await?;
+
+    Ok(CardReveal {
+        back,
+        hanja_hints,
+        grammar_pattern_endings,
+        inflections,
+    })
 }
 
 #[cfg(test)]
