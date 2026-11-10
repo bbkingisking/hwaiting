@@ -200,7 +200,7 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .unwrap();
     assert!(matches!(
         sub.receiver.as_mut().unwrap().recv().await.unwrap(),
-        Notification::CardMutated { card_id: 1, .. }
+        Notification::StateChanged { .. }
     ));
     let payload = serde_json::from_value(serde_json::json!({"daily_new_card_limit": -1})).unwrap();
     assert!(
@@ -230,7 +230,7 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .unwrap();
     assert!(matches!(
         sub.receiver.as_mut().unwrap().recv().await.unwrap(),
-        Notification::CardMutated { card_id: 1, .. }
+        Notification::StateChanged { .. }
     ));
     assert!(sub.receiver.as_mut().unwrap().try_recv().is_err());
 }
