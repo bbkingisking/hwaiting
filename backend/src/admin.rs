@@ -319,6 +319,14 @@ pub struct EditCardResponse {
     pub success: bool,
     pub content_revision: i64,
     pub card: Card,
+    #[serde(skip)]
+    pub(crate) changed: bool,
+}
+
+fn omit_unchanged<T: PartialEq>(requested: &mut Option<T>, current: T) {
+    if requested.as_ref() == Some(&current) {
+        *requested = None;
+    }
 }
 
 #[utoipa::path(
@@ -346,21 +354,21 @@ pub async fn edit_card(
 
     let UpdateCardRequest {
         sentence_id,
-        word,
-        definition,
-        pos,
-        origin_type,
-        hanja,
-        grade,
-        trans_word,
-        trans_dfn,
-        sentence,
-        sentence_translation,
-        target,
+        mut word,
+        mut definition,
+        mut pos,
+        mut origin_type,
+        mut hanja,
+        mut grade,
+        mut trans_word,
+        mut trans_dfn,
+        mut sentence,
+        mut sentence_translation,
+        mut target,
         alternatives,
-        speech_level: speech_level_slug,
-        tense: tense_slug,
-        grammar_pattern: grammar_pattern_slug,
+        speech_level: mut speech_level_slug,
+        tense: mut tense_slug,
+        grammar_pattern: mut grammar_pattern_slug,
         is_honorific,
         is_humble,
     } = payload;
@@ -391,6 +399,91 @@ pub async fn edit_card(
             .await?;
     if !owns_sentence {
         return Err(AppError::NotFound);
+    }
+
+    // Compare inside the writer transaction, before any updates or enum resolution.
+    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+    let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
+    let current = sqlx::query(&projection_sql)
+        .bind(eng_id)
+        .bind(eng_id)
+        .bind(card_id)
+        .bind(sentence_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let current_alternatives: Vec<String> = sqlx::query_scalar(
+        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ? ORDER BY id",
+    )
+    .bind(sentence_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut alternatives = alternatives.map(|values| {
+        values
+            .into_iter()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>()
+    });
+    // Explicit null clears these NOT NULL columns to false.
+    let mut is_honorific = is_honorific.map(|value| value.unwrap_or(false));
+    let mut is_humble = is_humble.map(|value| value.unwrap_or(false));
+
+    omit_unchanged(&mut word, current.get("word"));
+    omit_unchanged(&mut definition, current.get("definition"));
+    omit_unchanged(&mut pos, current.get("pos"));
+    omit_unchanged(&mut origin_type, current.get("origin_type"));
+    omit_unchanged(&mut hanja, current.get("hanja"));
+    omit_unchanged(&mut grade, current.get("grade"));
+    omit_unchanged(&mut trans_word, current.get("trans_word"));
+    omit_unchanged(&mut trans_dfn, current.get("trans_dfn"));
+    omit_unchanged(&mut sentence, current.get("sentence"));
+    if sentence_translation.as_ref().is_some_and(|value| {
+        current
+            .get::<Option<String>, _>("sentence_translation")
+            .as_ref()
+            == Some(value)
+    }) {
+        sentence_translation = None;
+    }
+    omit_unchanged(&mut target, current.get("target"));
+    omit_unchanged(&mut speech_level_slug, current.get("speech_level"));
+    omit_unchanged(&mut tense_slug, current.get("tense"));
+    omit_unchanged(&mut grammar_pattern_slug, current.get("grammar_pattern"));
+    omit_unchanged(&mut is_honorific, current.get("is_honorific"));
+    omit_unchanged(&mut is_humble, current.get("is_humble"));
+    omit_unchanged(&mut alternatives, current_alternatives.clone());
+
+    let changed = word.is_some()
+        || definition.is_some()
+        || pos.is_some()
+        || origin_type.is_some()
+        || hanja.is_some()
+        || grade.is_some()
+        || trans_word.is_some()
+        || trans_dfn.is_some()
+        || sentence.is_some()
+        || sentence_translation.is_some()
+        || target.is_some()
+        || alternatives.is_some()
+        || speech_level_slug.is_some()
+        || tense_slug.is_some()
+        || grammar_pattern_slug.is_some()
+        || is_honorific.is_some()
+        || is_humble.is_some();
+    if !changed {
+        let content_revision =
+            sqlx::query_scalar("SELECT content_revision FROM cards WHERE id = ?")
+                .bind(card_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let card = project_card(current, current_alternatives);
+        tx.commit().await?;
+        return Ok(Json(EditCardResponse {
+            success: true,
+            content_revision,
+            card,
+            changed: false,
+        }));
     }
 
     // Resolve enum slugs -> lookup table ids (None: field absent; Some(None): clear it;
@@ -568,12 +661,6 @@ pub async fn edit_card(
                 .await?;
         let tense_id =
             crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
-        // is_honorific/is_humble are NOT NULL, so an explicit null clears to
-        // the column's own default (false) rather than being rejected -
-        // there's no NULL state on a boolean column for "clear" to mean
-        // anything else.
-        let is_honorific = is_honorific.map(|v| v.unwrap_or(false));
-        let is_humble = is_humble.map(|v| v.unwrap_or(false));
 
         let mut sets: Vec<&str> = Vec::new();
         if target.is_some() {
@@ -630,16 +717,13 @@ pub async fn edit_card(
                 .await?;
 
             for alt in alts {
-                let trimmed = alt.trim();
-                if !trimmed.is_empty() {
-                    sqlx::query(
-                        "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)",
-                    )
-                    .bind(sid)
-                    .bind(trimmed)
-                    .execute(&mut *tx)
-                    .await?;
-                }
+                sqlx::query(
+                    "INSERT INTO targets_alternatives (sentence_id, alt_target) VALUES (?, ?)",
+                )
+                .bind(sid)
+                .bind(alt)
+                .execute(&mut *tx)
+                .await?;
             }
         }
     }
@@ -672,6 +756,7 @@ pub async fn edit_card(
         success: true,
         content_revision,
         card,
+        changed: true,
     }))
 }
 
