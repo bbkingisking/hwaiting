@@ -1,3 +1,4 @@
+import { subscribeLiveEvents } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getFieldValues, type FieldValue, type InflectionFormValue } from '@/lib/api'
@@ -68,7 +69,10 @@ export function FieldValuesProvider({ children }: { children: React.ReactNode })
 
     const task = createRefreshTask(fetchFieldValues)
     task.request()
-    return () => { task.dispose() }
+    const live = subscribeLiveEvents(event => {
+      if (!event.own && event.type !== 'state-changed') task.request()
+    })
+    return () => { live(); task.dispose() }
   }, [isAuthenticated])
 
   return (

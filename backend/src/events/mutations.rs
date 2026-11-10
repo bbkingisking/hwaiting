@@ -1,4 +1,4 @@
-// HTTP mutation adapters publish one payload-free notification after success.
+// HTTP mutation adapters publish one notification after success.
 // Domain handlers remain usable without a live-event service; failures emit none.
 use crate::{
     admin,
@@ -23,8 +23,9 @@ pub async fn check_answer(
     payload: AppJson<cards::CheckRequest>,
 ) -> Result<Json<cards::CheckResponse>, AppError> {
     let user_id = auth.0;
+    let card_id = path.0;
     let response = cards::check_answer(State(state.pool), path, auth, payload).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), Some(card_id), &headers);
     Ok(response)
 }
 
@@ -35,8 +36,9 @@ pub async fn suppress_card(
     headers: HeaderMap,
 ) -> Result<Json<cards::ReviewResponse>, AppError> {
     let user_id = auth.0;
+    let card_id = path.0;
     let response = cards::suppress_card(State(state.pool), path, auth).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), Some(card_id), &headers);
     Ok(response)
 }
 pub async fn unsuppress_card(
@@ -46,8 +48,9 @@ pub async fn unsuppress_card(
     headers: HeaderMap,
 ) -> Result<Json<cards::ReviewResponse>, AppError> {
     let user_id = auth.0;
+    let card_id = path.0;
     let response = cards::unsuppress_card(State(state.pool), path, auth).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), Some(card_id), &headers);
     Ok(response)
 }
 pub async fn update_settings(
@@ -58,7 +61,7 @@ pub async fn update_settings(
 ) -> Result<Json<user::UpdateSettingsResponse>, AppError> {
     let user_id = auth.0;
     let response = user::update_settings(State(state.pool), auth, payload).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), None, &headers);
     Ok(response)
 }
 pub async fn import_data(
@@ -69,7 +72,7 @@ pub async fn import_data(
 ) -> Result<Json<export_import::ImportDataResponse>, AppError> {
     let user_id = auth.0;
     let response = export_import::import_data(State(state.pool), auth, payload).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), None, &headers);
     Ok(response)
 }
 pub async fn edit_card(
@@ -79,9 +82,10 @@ pub async fn edit_card(
     headers: HeaderMap,
     payload: AppJson<admin::UpdateCardRequest>,
 ) -> Result<Json<admin::EditCardResponse>, AppError> {
+    let card_id = path.0;
     let response = admin::edit_card(admin, State(state.pool), path, payload).await?;
     if response.changed {
-        state.events.publish(None, &headers);
+        state.events.publish(None, Some(card_id), &headers);
     }
     Ok(response)
 }
@@ -92,7 +96,7 @@ pub async fn optimize_fsrs(
 ) -> Result<Json<cards::OptimizeFsrsResponse>, AppError> {
     let user_id = auth.0;
     let response = cards::optimize_fsrs(State(state.pool), auth).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), None, &headers);
     Ok(response)
 }
 pub async fn reset_fsrs_parameters(
@@ -102,6 +106,6 @@ pub async fn reset_fsrs_parameters(
 ) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     let response = cards::reset_fsrs_parameters(State(state.pool), auth).await?;
-    state.events.publish(Some(user_id), &headers);
+    state.events.publish(Some(user_id), None, &headers);
     Ok(response)
 }

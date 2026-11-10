@@ -1,6 +1,6 @@
 import { reconcileQueue } from '@/lib/review-queue'
 import { scheduleReviewRefresh } from '@/lib/review-timing'
-import { subscribeLiveEvents } from '@/lib/live-events'
+import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { useState, useEffect, useEffectEvent, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
@@ -15,8 +15,8 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getReviewQueue, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
-import type { ReviewQueueResponse, ReviewQueueChange } from '@/lib/api'
+import { getReviewQueue, checkAnswer, validateAttempt, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
+import type { ReviewQueueResponse, ReviewQueueChange, CardEdit } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
@@ -48,6 +48,9 @@ function AppContent() {
   const [staleReason, setStaleReason] = useState<string | null>(null)
   const currentCard = useRef(card)
   currentCard.current = card
+  const checkingRef = useRef(false)
+  const acceptedToken = useRef<string | null>(null)
+  const validationTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   const submissionVersion = useRef(0)
   const refillTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   useEffect(() => {
@@ -74,9 +77,16 @@ function AppContent() {
   const cardRequestId = useRef(0)
   useEffect(() => {
     if (isAuthenticated) {
+      setChecking(false)
       loadCardCold()
     }
-    return () => { ++cardRequestId.current; ++submissionVersion.current; cancelPrefetch() }
+    return () => {
+      ++cardRequestId.current
+      ++submissionVersion.current
+      checkingRef.current = false
+      acceptedToken.current = null
+      cancelPrefetch()
+    }
   }, [isAuthenticated])
 
   const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
@@ -97,8 +107,10 @@ function AppContent() {
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
-  const discardReviewedCard = () => {
+  const discardInvalidPrompt = () => {
     ++submissionVersion.current
+    checkingRef.current = false
+    acceptedToken.current = null
     setChecking(false)
     setSubmitError(null)
     setLastCheckMs(null)
@@ -106,7 +118,7 @@ function AppContent() {
     currentCard.current = null
     setCard(null)
     // A ready, still-eligible successor is promoted synchronously. Otherwise
-    // show loading, never leave an already-reviewed card available to submit.
+    // show loading, never leave an invalid prompt available to submit.
     setLoading(true)
     void advanceToNextCard().catch(() => { void loadCardCold() })
   }
@@ -127,6 +139,58 @@ function AppContent() {
     refillTask.current = task
     return () => { task.dispose(); refillTask.current = null }
   }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const task = createRefreshTask(async current => {
+      const active = currentCard.current
+      if (!active) {
+        if (!await loadCardCold()) throw new Error('Queue refresh failed')
+        return
+      }
+      if (acceptedToken.current === active.attempt_token) return
+      if (checkingRef.current) throw new Error('Wait for pending submission')
+      const submission = submissionVersion.current
+      const navigation = cardRequestId.current
+      const valid = await validateAttempt(active.attempt_token)
+      // Validation only owns the still-unanswered attempt it started against.
+      if (!current() || currentCard.current !== active || checkingRef.current ||
+        acceptedToken.current === active.attempt_token ||
+        submissionVersion.current !== submission || cardRequestId.current !== navigation) return
+      if (!valid) {
+        cancelPrefetch()
+        discardInvalidPrompt()
+      }
+    })
+    validationTask.current = task
+    return () => { task.dispose(); validationTask.current = null }
+  }, [isAuthenticated])
+
+  const refreshAfterChange = (cardId?: number, resync = false) => {
+    cancelPrefetch()
+    setStatsKey(value => value + 1)
+    const active = currentCard.current
+    if (!active) {
+      validationTask.current?.request()
+      return
+    }
+    refillTask.current?.request()
+    if ((resync || active.card_id === cardId) && !checkingRef.current &&
+      acceptedToken.current !== active.attempt_token) validationTask.current?.request()
+  }
+
+  const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
+    if (!isAuthenticated || event.own) return
+    refreshAfterChange(event.type === 'card-mutated' ? event.card_id : undefined,
+      event.type === 'resync-required')
+  })
+  useEffect(() => subscribeLiveEvents(handleLiveEvent), [])
+
+  // Own notifications are ignored, so a local editor save takes this path.
+  const handleLocalEdit = useEffectEvent(({ card: edited }: CardEdit) => {
+    if (isAuthenticated) refreshAfterChange(edited.card_id)
+  })
+  useEffect(() => subscribeCardEdits(handleLocalEdit), [])
 
   const refreshQueueAtDeadline = useEffectEvent(() => {
     cancelPrefetch()
@@ -206,6 +270,7 @@ function AppContent() {
       const first = envelope.cards[0]
       if (first) {
         setStaleReason(null)
+        acceptedToken.current = null
         currentCard.current = first
         setCard(first)
         setNoCards(false)
@@ -267,6 +332,7 @@ function AppContent() {
       }
       const next = buffer.current.shift()!
       setStaleReason(null)
+      acceptedToken.current = null
       currentCard.current = next
       setCard(next)
       setNoCards(false)
@@ -299,6 +365,7 @@ function AppContent() {
     const submission = ++submissionVersion.current
 
     setSubmitError(null)
+    checkingRef.current = true
     setChecking(true)
 
     try {
@@ -307,6 +374,7 @@ function AppContent() {
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
       const { correct, ...reveal } = await checkAnswer(cardId, card.attempt_token, answer)
       if (submission !== submissionVersion.current) return null
+      acceptedToken.current = card.attempt_token
       ++queueGeneration.current
       prefetchRef.current?.abort.abort()
       prefetchRef.current = null
@@ -331,7 +399,7 @@ function AppContent() {
       if (submission !== submissionVersion.current) return null
       if (err instanceof ApiError && err.status === 409 && err.code === 'stale_review') {
         cancelPrefetch()
-        discardReviewedCard()
+        discardInvalidPrompt()
         setStatsKey(value => value + 1)
         return null
       }
@@ -349,10 +417,12 @@ function AppContent() {
       } else {
         setSubmitError('Failed to check answer')
       }
+      validationTask.current?.request()
       console.error('Error checking answer:', err)
       throw err
     } finally {
       if (submission === submissionVersion.current) {
+        checkingRef.current = false
         setChecking(false)
       }
     }
@@ -447,29 +517,16 @@ function AppContent() {
   )
 }
 
-// Keep the authenticated SSE connection above this boundary: each new
-// subscription emits a notification, so reconnecting on reset would loop.
-function LiveContent() {
-  const [generation, setGeneration] = useState(0)
-  useEffect(() => subscribeLiveEvents(event => {
-    if (!event.own) setGeneration(value => value + 1)
-  }), [])
-
-  return (
-    <SettingsProvider key={generation}>
-      <FieldValuesProvider>
-        <AppContent />
-      </FieldValuesProvider>
-    </SettingsProvider>
-  )
-}
-
 function App() {
   return (
     <ThemeProvider>
       <CardThemeProvider>
         <AuthProvider>
-          <LiveContent />
+          <SettingsProvider>
+            <FieldValuesProvider>
+              <AppContent />
+            </FieldValuesProvider>
+          </SettingsProvider>
         </AuthProvider>
       </CardThemeProvider>
     </ThemeProvider>
