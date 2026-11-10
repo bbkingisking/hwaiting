@@ -80,7 +80,9 @@ pub async fn edit_card(
     payload: AppJson<admin::UpdateCardRequest>,
 ) -> Result<Json<admin::EditCardResponse>, AppError> {
     let response = admin::edit_card(admin, State(state.pool), path, payload).await?;
-    state.events.publish(None, &headers);
+    if response.changed {
+        state.events.publish(None, &headers);
+    }
     Ok(response)
 }
 pub async fn optimize_fsrs(
