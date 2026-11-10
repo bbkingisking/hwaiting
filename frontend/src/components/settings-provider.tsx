@@ -1,3 +1,4 @@
+import { subscribeLiveEvents } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Settings } from '@/lib/types'
@@ -94,7 +95,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     refreshTask.current = task
     task.request()
     const local = subscribeReviewQueueChanges(change => { if (change === 'import') task.request() })
-    return () => { local(); task.dispose(); refreshTask.current = null }
+    const live = subscribeLiveEvents(event => {
+      if (!event.own && event.type !== 'card-mutated') task.request()
+    })
+    return () => { local(); live(); task.dispose(); refreshTask.current = null }
   }, [isAuthenticated])
 
   const saveSettings = async (changes: SettingsChange) => {

@@ -23,7 +23,7 @@ export function subscribeLiveEvents(listener: (event: ReceivedEvent) => void) {
 }
 
 export function dispatchLiveEvent(event: LiveEvent) {
-  const received = { ...event, own: !!event.mutation_id && mutations.has(event.mutation_id) }
+  const received = { ...event, own: 'mutation_id' in event && !!event.mutation_id && mutations.has(event.mutation_id) }
   for (const listener of listeners) listener(received)
 }
 
@@ -40,19 +40,21 @@ export function connectLiveEvents(url: string, checkSession: () => Promise<boole
     clearTimeout(retry)
     source?.close()
     source = new EventSource(url, { withCredentials: true })
-    source.addEventListener('state-changed', event => {
-      try {
-        const data = JSON.parse((event as MessageEvent).data)
-        if (data.type !== 'state-changed' ||
-          (data.mutation_id != null && typeof data.mutation_id !== 'string')) {
-          throw new Error('Invalid notification')
+    for (const type of ['card-mutated', 'state-changed', 'resync-required'] as const) {
+      source.addEventListener(type, event => {
+        try {
+          const data = JSON.parse((event as MessageEvent).data)
+          if (data.type !== type ||
+            (data.mutation_id != null && typeof data.mutation_id !== 'string') ||
+            (type === 'card-mutated' && !Number.isSafeInteger(data.card_id))) {
+            throw new Error('Invalid notification')
+          }
+          dispatchLiveEvent(type === 'resync-required' ? { type } : data)
+        } catch {
+          dispatchLiveEvent({ type: 'resync-required' })
         }
-        dispatchLiveEvent(data)
-      } catch {
-        // Unknown notifications must not accidentally suppress a reset.
-        dispatchLiveEvent({ type: 'state-changed' })
-      }
-    })
+      })
+    }
     source.onopen = () => { delay = 1000 }
     source.onerror = () => {
       if (!probing) void probe()

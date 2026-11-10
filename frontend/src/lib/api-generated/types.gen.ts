@@ -423,8 +423,14 @@ export type LoginRequest = {
 };
 
 export type Notification = {
+    card_id: number;
+    mutation_id?: string | null;
+    type: 'card-mutated';
+} | {
     mutation_id?: string | null;
     type: 'state-changed';
+} | {
+    type: 'resync-required';
 };
 
 export type OptimizeFsrsResponse = {
@@ -706,7 +712,7 @@ export type EditCardData = {
     body: UpdateCardRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -830,7 +836,7 @@ export type LoginData = {
     body: LoginRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -869,7 +875,7 @@ export type LogoutData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -895,7 +901,7 @@ export type LoginFinishData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -938,7 +944,7 @@ export type LoginStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -962,7 +968,7 @@ export type RegisterFinishData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1001,7 +1007,7 @@ export type RegisterStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1025,7 +1031,7 @@ export type SignupData = {
     body: SignupRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1115,7 +1121,7 @@ export type ResetFsrsParametersData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1150,7 +1156,7 @@ export type OptimizeFsrsData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1324,7 +1330,7 @@ export type ValidateCardAttemptData = {
     body: ValidateRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1367,7 +1373,7 @@ export type CheckAnswerData = {
     body: CheckRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1423,7 +1429,7 @@ export type CommentOnCardData = {
     body: CommentRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1492,7 +1498,7 @@ export type SuppressCardData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1536,7 +1542,7 @@ export type UnsuppressCardData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1588,7 +1594,7 @@ export type SubscribeErrors = {
 
 export type SubscribeResponses = {
     /**
-     * Named state-changed SSE notifications with JSON {"type":"state-changed"} and an optional mutation_id UUID for successful mutations; initial connection and lag omit it and also request a full reread. No replay or Last-Event-ID contract.
+     * Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS/import and generic background updates (same user); resync-required {type} on initial subscription, reconnect, or lag requests a full reread and never carries a mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.
      */
     200: string;
 };
@@ -1640,7 +1646,7 @@ export type ImportDataData = {
     body: ImportDataRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1729,7 +1735,7 @@ export type AddPasskeyFinishData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1776,7 +1782,7 @@ export type AddPasskeyStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1809,7 +1815,7 @@ export type DeletePasskeyData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1857,7 +1863,7 @@ export type UpdatePasskeyData = {
     body: UpdatePasskeyRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
@@ -1930,7 +1936,7 @@ export type UpdateSettingsData = {
     body: UpdateSettingsRequest;
     headers: {
         /**
-         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         * Optional UUID echoed in card-mutated or state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Never included in resync-required. Not an identity or idempotency key.
          */
         'X-Mutation-Id'?: string;
         /**
