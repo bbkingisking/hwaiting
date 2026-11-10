@@ -90,19 +90,7 @@ function AppContent() {
   }, [isAuthenticated])
 
   const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
-    if (!isAuthenticated) return
-    cancelPrefetch()
-    setStatsKey(prev => prev + 1)
-    if (change === 'import') {
-      setCard(null)
-      setSubmitError(null)
-      setLastCheckMs(null)
-    }
-    if (change === 'import' || !card || loading) {
-      loadCardCold()
-    } else {
-      refillTask.current?.request()
-    }
+    if (isAuthenticated) refreshAfterChange(undefined, change === 'import')
   })
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])

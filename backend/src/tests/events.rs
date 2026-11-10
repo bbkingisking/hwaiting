@@ -230,7 +230,7 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .unwrap();
     assert!(matches!(
         sub.receiver.as_mut().unwrap().recv().await.unwrap(),
-        Notification::StateChanged { .. }
+        Notification::ResyncRequired { .. }
     ));
     assert!(sub.receiver.as_mut().unwrap().try_recv().is_err());
 }

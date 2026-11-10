@@ -72,7 +72,7 @@ pub async fn import_data(
 ) -> Result<Json<export_import::ImportDataResponse>, AppError> {
     let user_id = auth.0;
     let response = export_import::import_data(State(state.pool), auth, payload).await?;
-    state.events.publish(Some(user_id), None, &headers);
+    state.events.publish_resync(user_id, &headers);
     Ok(response)
 }
 pub async fn edit_card(

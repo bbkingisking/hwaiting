@@ -49,7 +49,7 @@ export function connectLiveEvents(url: string, checkSession: () => Promise<boole
             (type === 'card-mutated' && !Number.isSafeInteger(data.card_id))) {
             throw new Error('Invalid notification')
           }
-          dispatchLiveEvent(type === 'resync-required' ? { type } : data)
+          dispatchLiveEvent(data)
         } catch {
           dispatchLiveEvent({ type: 'resync-required' })
         }

@@ -4,7 +4,8 @@
 // Both may carry a correlation UUID. Clients reread authoritative state,
 // coalesce refreshes, and discard reads superseded by a notification.
 // Each subscription starts with resync-required; lag drops the backlog and
-// requests another resync. There is no durable replay or Last-Event-ID contract.
+// requests another resync. Successful imports also request a resync, with correlation.
+// There is no durable replay or Last-Event-ID contract.
 // Subscribe before the initial read so concurrent changes are queued.
 // Heartbeats do no DB work. This assumes one backend process and API mutations;
 // external writers or multiple processes require shared event distribution.
@@ -49,7 +50,10 @@ pub enum Notification {
         #[serde(skip_serializing_if = "Option::is_none")]
         mutation_id: Option<String>,
     },
-    ResyncRequired,
+    ResyncRequired {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mutation_id: Option<String>,
+    },
 }
 impl Notification {
     fn event(&self) -> Event {
@@ -57,7 +61,7 @@ impl Notification {
             .event(match self {
                 Self::CardMutated { .. } => "card-mutated",
                 Self::StateChanged { .. } => "state-changed",
-                Self::ResyncRequired => "resync-required",
+                Self::ResyncRequired { .. } => "resync-required",
             })
             .json_data(self)
             .expect("serializable notification")
@@ -81,13 +85,7 @@ impl EventHub {
         }
     }
     pub fn publish(&self, user_id: Option<i64>, card_id: Option<i64>, headers: &HeaderMap) {
-        // Bound input before parsing; only canonical UUIDs enter subscriber buffers.
-        let mutation_id = headers
-            .get(MUTATION_HEADER)
-            .filter(|value| value.as_bytes().len() <= 45)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| uuid::Uuid::parse_str(value).ok())
-            .map(|value| value.to_string());
+        let mutation_id = mutation_id(headers);
         let message = match card_id {
             Some(card_id) => Notification::CardMutated {
                 card_id,
@@ -95,6 +93,17 @@ impl EventHub {
             },
             None => Notification::StateChanged { mutation_id },
         };
+        self.send(user_id, message);
+    }
+    pub fn publish_resync(&self, user_id: i64, headers: &HeaderMap) {
+        self.send(
+            Some(user_id),
+            Notification::ResyncRequired {
+                mutation_id: mutation_id(headers),
+            },
+        );
+    }
+    fn send(&self, user_id: Option<i64>, message: Notification) {
         let users = self.0.lock().unwrap();
         for (id, sender) in users.iter() {
             if user_id.is_none_or(|user| user == *id) {
@@ -103,6 +112,16 @@ impl EventHub {
         }
     }
 }
+fn mutation_id(headers: &HeaderMap) -> Option<String> {
+    // Bound input before parsing; only canonical UUIDs enter subscriber buffers.
+    headers
+        .get(MUTATION_HEADER)
+        .filter(|value| value.as_bytes().len() <= 45)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(|value| value.to_string())
+}
+
 struct Subscription {
     receiver: Option<broadcast::Receiver<Notification>>,
     hub: EventHub,
@@ -122,7 +141,7 @@ impl Drop for Subscription {
 }
 
 #[utoipa::path(get, path = "/api/events", responses(
-    (status = 200, description = "Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS/import and generic background updates (same user); resync-required {type} on initial subscription, reconnect, or lag requests a full reread and never carries a mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.", content_type = "text/event-stream", body = String),
+    (status = 200, description = "Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS and generic background updates (same user); resync-required {type, mutation_id?: UUID string} requests broad refresh and prompt validation after imports (same user) or initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.", content_type = "text/event-stream", body = String),
     (status = 401, description = "Missing or expired authentication")
 ), security(("cookie_auth" = [])), tag = "events")]
 pub async fn subscribe(
@@ -153,7 +172,7 @@ fn notification_stream(
             }
             if initial {
                 return Some((
-                    Ok(Notification::ResyncRequired.event()),
+                    Ok(Notification::ResyncRequired { mutation_id: None }.event()),
                     (sub, false, expires),
                 ));
             }
@@ -172,7 +191,7 @@ fn notification_stream(
                         Err(broadcast::error::RecvError::Lagged(_)) => {
                             // Drop the old backlog; the forthcoming read covers it.
                             sub.receiver = Some(sub.receiver.as_ref().unwrap().resubscribe());
-                            Notification::ResyncRequired
+                            Notification::ResyncRequired { mutation_id: None }
                         }
                         Err(broadcast::error::RecvError::Closed) => return None,
                     };
