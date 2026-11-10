@@ -241,8 +241,10 @@ async fn shared_edit_advances_content_revision_and_notifies_other_users() {
     let admin = crate::test_support::test_admin_user(&pool).await;
     let state = AppState::new(pool.clone());
     let mut sub = state.events.subscribe(123);
-    let payload =
-        serde_json::from_value(serde_json::json!({"sentence_id": 1, "hanja": "test"})).unwrap();
+    let payload = serde_json::from_value(
+        serde_json::json!({"expected_content_revision": 0, "sentence_id": 1, "hanja": "test"}),
+    )
+    .unwrap();
     let _ = mutations::edit_card(
         crate::auth::AdminUser(admin),
         State(state),

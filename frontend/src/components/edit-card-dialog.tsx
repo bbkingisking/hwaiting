@@ -1,5 +1,6 @@
-import { useState, useEffect, useId } from 'react'
-import { editCard, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
+import { cardEditPatch, toFormState, type FormState } from '@/lib/card-edit-draft'
+import { useState, useEffect, useId, useRef } from 'react'
+import { editCard, ApiError, CARD_BACK_FIELDS, type AdminCard } from '@/lib/api'
 import { krdictUrl } from '@/lib/utils'
 import { useFieldValues } from '@/components/field-values-provider'
 import { EnumSelect } from '@/components/enum-select'
@@ -19,44 +20,6 @@ interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   card: AdminCard
-}
-
-interface FormState {
-  word: string
-  hanja: string
-  trans_word: string
-  trans_dfn: string
-  sentence: string
-  sentence_translation: string
-  target: string
-  alternatives: string
-  speech_level: string
-  tense: string
-  is_honorific: boolean
-  is_humble: boolean
-  grammar_pattern: string
-}
-
-function toFormState(card: AdminCard): FormState {
-  return {
-    word: card.word ?? '',
-    hanja: card.hanja ?? '',
-    trans_word: card.trans_word ?? '',
-    trans_dfn: card.trans_dfn ?? '',
-    sentence: card.sentence ?? '',
-    sentence_translation: card.sentence_translation ?? '',
-    target: card.target ?? '',
-    alternatives: (card.alternatives ?? []).join(', '),
-    speech_level: card.speech_level ?? '',
-    tense: card.tense ?? '',
-    is_honorific: card.is_honorific ?? false,
-    is_humble: card.is_humble ?? false,
-    grammar_pattern: card.grammar_pattern ?? '',
-  }
-}
-
-function nullIfEmpty(val: string): string | null {
-  return val.trim() === '' ? null : val.trim()
 }
 
 // The "front"/"back" of a physical flashcard, reconstructed from AdminCard
@@ -99,6 +62,8 @@ async function copyText(text: string) {
 
 export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps) {
   const [form, setForm] = useState<FormState>(toFormState(card))
+  const [baseline, setBaseline] = useState(card)
+  const wasOpen = useRef(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'full' | 'front' | 'back' | null>(null)
@@ -106,12 +71,14 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
 
   // Reset form whenever the dialog opens with a (potentially new) card
   useEffect(() => {
-    if (open) {
+    if (open && (!wasOpen.current || baseline.card_id !== card.card_id || baseline.sentence_id !== card.sentence_id)) {
+      setBaseline(card)
       setForm(toFormState(card))
       setError(null)
       setCopied(null)
     }
-  }, [open, card])
+    wasOpen.current = open
+  }, [open, card, baseline])
 
   function handleChange(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -129,26 +96,12 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     setSaving(true)
     setError(null)
     try {
-      const updates = {
-        sentence_id: card.sentence_id,
-        word: form.word.trim() || undefined,
-        hanja: nullIfEmpty(form.hanja),
-        trans_word: form.trans_word.trim() || undefined,
-        trans_dfn: nullIfEmpty(form.trans_dfn),
-        sentence: form.sentence.trim() || undefined,
-        sentence_translation: form.sentence_translation.trim() || undefined,
-        target: form.target.trim() || undefined,
-        alternatives: form.alternatives.split(',').map(s => s.trim()).filter(s => s.length > 0),
-        speech_level: nullIfEmpty(form.speech_level),
-        tense: nullIfEmpty(form.tense),
-        is_honorific: form.is_honorific,
-        is_humble: form.is_humble,
-        grammar_pattern: nullIfEmpty(form.grammar_pattern),
-      }
-      await editCard(card.card_id, updates)
+      await editCard(baseline.card_id, cardEditPatch(baseline, form))
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save')
+      setError(err instanceof ApiError && err.status === 409
+        ? 'This card has changed since you opened it. Your edits have not been saved. Copy your changes, then close and reopen the card from refreshed results before trying again.'
+        : err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }

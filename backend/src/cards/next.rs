@@ -29,6 +29,7 @@ use super::time::{logical_day_start, sqlite_datetime};
 /// baseline to save over.
 #[derive(Serialize, ToSchema)]
 pub struct CardFront {
+    pub content_revision: i64,
     pub card_id: i64,
     /// The particular prompt selected for this review of the card.
     pub sentence_id: i64,
@@ -420,6 +421,7 @@ async fn select_cards(
             prompt: CardPrompt {
                 front: CardFront {
                     card_id,
+                    content_revision: row.get("content_revision"),
                     sentence_id: row.get("sentence_id"),
                     krdict_id,
                     pos,

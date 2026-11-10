@@ -7,7 +7,8 @@ use super::*;
 
 #[test]
 fn key_absent_is_none() {
-    let req: UpdateCardRequest = serde_json::from_str(r#"{"sentence_id":1}"#).unwrap();
+    let req: UpdateCardRequest =
+        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1}"#).unwrap();
     assert!(req.hanja.is_none());
 }
 
@@ -17,14 +18,16 @@ fn key_explicit_null_is_some_none() {
     // an explicit `null` (clear the column) used to be indistinguishable
     // from the key being absent (leave the column alone).
     let req: UpdateCardRequest =
-        serde_json::from_str(r#"{"sentence_id":1,"hanja": null}"#).unwrap();
+        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1,"hanja": null}"#)
+            .unwrap();
     assert_eq!(req.hanja, Some(None));
 }
 
 #[test]
 fn key_with_value_is_some_some() {
     let req: UpdateCardRequest =
-        serde_json::from_str(r#"{"sentence_id":1,"hanja": "漢字"}"#).unwrap();
+        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1,"hanja": "漢字"}"#)
+            .unwrap();
     assert_eq!(req.hanja, Some(Some("漢字".to_string())));
 }
 
@@ -267,4 +270,72 @@ async fn editing_a_second_sentence_does_not_change_the_first() {
     )
     .await;
     assert!(matches!(result, Err(AppError::NotFound)));
+}
+
+#[test]
+fn edit_requires_content_revision() {
+    assert!(serde_json::from_str::<UpdateCardRequest>(r#"{"sentence_id":1}"#).is_err());
+}
+
+#[tokio::test]
+async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
+    let pool = test_pool().await;
+    let admin_id = test_admin_user(&pool).await;
+    let first = edit_card(
+        AdminUser(admin_id),
+        State(pool.clone()),
+        AppPath(1),
+        AppJson(UpdateCardRequest {
+            sentence_id: 1,
+            hanja: Some(Some("first editor".into())),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(first.content_revision, 1);
+    assert_eq!(first.card.front.content_revision, 1);
+    let stale = edit_card(
+        AdminUser(admin_id),
+        State(pool.clone()),
+        AppPath(1),
+        AppJson(UpdateCardRequest {
+            sentence_id: 1,
+            trans_word: Some("second editor".into()),
+            grammar_pattern: Some(Some("must not create an enum".into())),
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert!(matches!(stale, Err(AppError::StaleContent)));
+    let current = search_cards(
+        AdminUser(admin_id),
+        State(pool.clone()),
+        AppQuery(SearchCardsQuery { q: "1".into() }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(
+        serde_json::to_value(&current.cards[0]).unwrap(),
+        serde_json::to_value(&first.card).unwrap()
+    );
+    let retry = edit_card(
+        AdminUser(admin_id),
+        State(pool),
+        AppPath(1),
+        AppJson(UpdateCardRequest {
+            sentence_id: 1,
+            expected_content_revision: 1,
+            trans_word: Some("second editor".into()),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(retry.content_revision, 2);
+    assert_eq!(retry.card.front.hanja.as_deref(), Some("first editor"));
+    assert_eq!(retry.card.front.trans_word, "second editor");
 }
