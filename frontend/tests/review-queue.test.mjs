@@ -127,16 +127,20 @@ test('removing a queue subscription stops further notifications', async () => {
   assert.deepEqual(changes, [])
 })
 
-test('an own SSE echo does not restart an in-flight queue read', async () => {
-  const { registerMutation, dispatchLiveEvent } = await import(liveUrl)
+test('any SSE notification invalidates an in-flight queue read', async () => {
+  const { dispatchLiveEvent } = await import(liveUrl)
   let complete
   let reads = 0
-  respond = () => { reads++; return new Promise(resolve => { complete = resolve }) }
+  respond = () => {
+    reads++
+    if (reads === 1) return new Promise(resolve => { complete = resolve })
+    return Response.json({ card: { card_id: 3 } })
+  }
   const next = api.getReviewQueue()
-  dispatchLiveEvent({ type: 'card-reviewed', card_id: 1, review_revision: 1, mutation_id: registerMutation() })
+  dispatchLiveEvent({ type: 'state-changed' })
   complete(Response.json({ card: { card_id: 2 } }))
-  assert.deepEqual(await next, { card: { card_id: 2 } })
-  assert.equal(reads, 1)
+  assert.deepEqual(await next, { card: { card_id: 3 } })
+  assert.equal(reads, 2)
 })
 
 test('batch queue reads retry when overtaken by a queue mutation', async () => {

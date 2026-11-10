@@ -22,9 +22,7 @@ type UserProfile = Schemas.UserProfile
 export type ReviewQueueChange = 'availability' | 'import'
 const reviewQueueChanges = new EventTarget()
 let reviewQueueRevision = 0
-subscribeLiveEvents(event => {
-  if (!event.own && !(event.type === 'settings-changed' && !event.queue_affected)) reviewQueueRevision++
-})
+subscribeLiveEvents(event => { if (!event.own) reviewQueueRevision++ })
 
 // Review submissions and suppression already refresh through App's handlers.
 // Mutations elsewhere publish here, after the server has committed them.

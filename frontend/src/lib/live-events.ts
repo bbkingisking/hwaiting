@@ -1,13 +1,12 @@
-import type { Change } from './api-generated/types.gen'
+import type { Notification } from './api-generated/types.gen'
 
-export type LiveEvent = Change & { mutation_id?: string | null }
+export type LiveEvent = Notification
 export type ReceivedEvent = LiveEvent & { own: boolean }
 const listeners = new Set<(event: ReceivedEvent) => void>()
 const mutations = new Set<string>()
 
-// Register before sending: the event can arrive before the HTTP response.
+// Register before sending: the notification can precede the HTTP response.
 export function registerMutation(): string {
-  // crypto.randomUUID is unavailable on plain HTTP LAN origins.
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   bytes[6] = (bytes[6] & 15) | 64
   bytes[8] = (bytes[8] & 63) | 128
@@ -17,15 +16,16 @@ export function registerMutation(): string {
   if (mutations.size > 1024) mutations.delete(mutations.values().next().value!)
   return id
 }
+
 export function subscribeLiveEvents(listener: (event: ReceivedEvent) => void) {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+
 export function dispatchLiveEvent(event: LiveEvent) {
   const received = { ...event, own: !!event.mutation_id && mutations.has(event.mutation_id) }
   for (const listener of listeners) listener(received)
 }
-const names = ['card-reviewed', 'queue-changed', 'settings-changed', 'card-updated', 'state-reset', 'resync-required'] as const
 
 // EventSource owns ordinary reconnections. A fatal HTTP error closes it;
 // probe auth before retrying rather than interpreting every outage as logout.
@@ -40,13 +40,17 @@ export function connectLiveEvents(url: string, checkSession: () => Promise<boole
     clearTimeout(retry)
     source?.close()
     source = new EventSource(url, { withCredentials: true })
-    for (const name of names) source.addEventListener(name, event => {
+    source.addEventListener('state-changed', event => {
       try {
         const data = JSON.parse((event as MessageEvent).data)
-        if (data.type !== name) throw new Error('Mismatched event type')
+        if (data.type !== 'state-changed' ||
+          (data.mutation_id != null && typeof data.mutation_id !== 'string')) {
+          throw new Error('Invalid notification')
+        }
         dispatchLiveEvent(data)
       } catch {
-        dispatchLiveEvent({ type: 'resync-required' })
+        // Unknown notifications must not accidentally suppress a reset.
+        dispatchLiveEvent({ type: 'state-changed' })
       }
     })
     source.onopen = () => { delay = 1000 }

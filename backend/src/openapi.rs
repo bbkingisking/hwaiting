@@ -37,7 +37,7 @@ impl Modify for SecurityAddon {
                         .name("X-Mutation-Id")
                         .parameter_in(ParameterIn::Header)
                         .required(Required::False)
-                        .description(Some("Optional UUID echoed in SSE notifications for this operation; not an identity or idempotency key."))
+                        .description(Some("Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key."))
                         .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
                         .build(),
                 );
@@ -104,7 +104,7 @@ impl Modify for SecurityAddon {
         crate::health_check,
     ),
     components(schemas(
-        crate::events::Change,
+        crate::events::Notification,
         crate::events::CardState,
         crate::error::ErrorResponse,
         crate::error::StaleAnswerResponse,
