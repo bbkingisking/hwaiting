@@ -19,12 +19,7 @@ use super::{HanjaHint, hanja_hints_for};
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
     pub answer: String,
-    /// The sentence prompt returned by next-card for this attempt.
-    pub sentence_id: i64,
-    /// Revision returned with the due card; stale revisions cannot record a review.
-    pub review_revision: i64,
-    /// Content revision returned with the due card; grading must use that version.
-    pub content_revision: i64,
+    pub attempt_token: String,
 }
 
 /// The card fields disclosed once an answer is graded, shared with the
@@ -111,10 +106,11 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
-        (status = 400, description = "Invalid request, including missing sentence identity or revisions", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid request or invalid, forged, wrong-user, or wrong-card attempt token", body = crate::error::ErrorResponse),
         (status = 409, description = "Review state, selected sentence, or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
+        (status = 403, description = "Card is suppressed", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
     tag = "cards"
@@ -132,6 +128,11 @@ pub async fn check_answer(
     // the revision comparison, and the recorded review share one snapshot.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
+    let claims =
+        super::attempt::validate_attempt(&mut tx, &payload.attempt_token, user_id, Some(card_id))
+            .await?;
+    let revision = claims.review_revision;
+
     let card_state_row = sqlx::query(
         "SELECT stability, difficulty, last_review, review_revision
          FROM cards_states WHERE user_id = ? AND card_id = ?",
@@ -140,35 +141,6 @@ pub async fn check_answer(
     .bind(card_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let revision = card_state_row
-        .as_ref()
-        .map(|row| row.get::<i64, _>("review_revision"))
-        .unwrap_or(0);
-    if payload.review_revision != revision {
-        return Err(AppError::StaleReview);
-    }
-
-    // The backend chooses the prompt. Re-evaluate the same deterministic
-    // per-user rotation as next-card before trusting the submitted ID.
-    let selected_sentence_id: Option<i64> = sqlx::query_scalar(
-        "SELECT s.id FROM sentences s
-         JOIN targets t ON t.sentence_id = s.id
-         WHERE s.card_id = ?
-         ORDER BY COALESCE((
-             SELECT MAX(rh.id) FROM review_history rh
-             WHERE rh.user_id = ? AND rh.sentence_id = s.id
-         ), 0), s.id
-         LIMIT 1",
-    )
-    .bind(card_id)
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let selected_sentence_id = selected_sentence_id.ok_or(AppError::NotFound)?;
-    if payload.sentence_id != selected_sentence_id {
-        return Err(AppError::StalePrompt);
-    }
-
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
     //
@@ -192,14 +164,10 @@ pub async fn check_answer(
         "#,
     )
     .bind(card_id)
-    .bind(payload.sentence_id)
+    .bind(claims.sentence_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
-
-    if payload.content_revision != row.get::<i64, _>("content_revision") {
-        return Err(AppError::StaleContent);
-    }
 
     let word: String = row.get("word");
     let definition: Option<String> = row.get("definition");

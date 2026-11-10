@@ -93,9 +93,8 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
 pub struct ReviewQueueCard {
     #[serde(flatten)]
     prompt: CardPrompt,
-    /// Return unchanged when submitting an answer.
-    review_revision: i64,
-    content_revision: i64,
+    // Return unchanged when submitting an answer.
+    attempt_token: String,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
@@ -437,8 +436,13 @@ async fn select_cards(
                 },
                 hanja_hint_words,
             },
-            review_revision: row.get("review_revision"),
-            content_revision: row.get("content_revision"),
+            attempt_token: super::attempt::issue_attempt_token(
+                user_id,
+                card_id,
+                row.get("sentence_id"),
+                row.get("review_revision"),
+                row.get("content_revision"),
+            )?,
             difficulty,
             guess_count,
             wrong_guess_count,

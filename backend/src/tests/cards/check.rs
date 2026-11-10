@@ -73,9 +73,7 @@ async fn new_card_graded_correct_becomes_learning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -120,9 +118,7 @@ async fn new_card_graded_wrong_is_incorrect_but_still_learning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -151,9 +147,7 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -167,9 +161,7 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
-            sentence_id: 1,
-            review_revision: 1,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 1, 0).unwrap(),
         }),
     )
     .await
@@ -220,9 +212,7 @@ async fn existing_row_with_no_last_review_is_treated_as_a_new_card() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -255,9 +245,7 @@ async fn stale_answer_preserves_state_and_history() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer,
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -269,9 +257,7 @@ async fn stale_answer_preserves_state_and_history() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "wrong".into(),
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
         }),
     )
     .await;
@@ -311,9 +297,7 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: old_answer,
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
         }),
     )
     .await;
@@ -339,9 +323,14 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "답".into(),
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: edited.0.content_revision,
+            attempt_token: crate::cards::issue_attempt_token(
+                user_id,
+                1,
+                1,
+                0,
+                edited.0.content_revision,
+            )
+            .unwrap(),
         }),
     )
     .await
@@ -377,9 +366,8 @@ async fn grading_rejects_a_sentence_the_backend_did_not_select() {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "anything".into(),
-                sentence_id,
-                review_revision: 0,
-                content_revision: 0,
+                attempt_token: crate::cards::issue_attempt_token(user_id, 1, sentence_id, 0, 0)
+                    .unwrap(),
             }),
         )
         .await;
@@ -407,9 +395,8 @@ async fn simultaneous_answers_only_record_one_review_per_revision() {
                 AuthUser(user_id),
                 AppJson(CheckRequest {
                     answer: answer.clone(),
-                    sentence_id: 1,
-                    review_revision: revision,
-                    content_revision: 0,
+                    attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, revision, 0)
+                        .unwrap(),
                 }),
             )
         };

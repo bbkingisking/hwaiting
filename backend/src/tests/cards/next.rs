@@ -351,7 +351,10 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         )
     };
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
-    assert_eq!(card.review_revision, 0);
+    assert_eq!(
+        card.attempt_token,
+        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 0, 0).unwrap()
+    );
     assert_eq!(
         fetch()
             .await
@@ -361,8 +364,8 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
             .into_iter()
             .next()
             .unwrap()
-            .review_revision,
-        0
+            .attempt_token,
+        crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap()
     );
     let answer: String = sqlx::query_scalar("SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = 1")
         .fetch_one(&pool).await.unwrap();
@@ -372,9 +375,7 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer: answer.clone(),
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -382,16 +383,17 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
     sqlx::query("UPDATE cards_states SET last_review = '2000-01-01T00:00:00Z', due_at = 0 WHERE user_id = ? AND card_id = 1")
         .bind(user_id).execute(&pool).await.unwrap();
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
-    assert_eq!(card.review_revision, 1);
+    assert_eq!(
+        card.attempt_token,
+        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 1, 0).unwrap()
+    );
     let _ = super::super::check::check_answer(
         State(pool.clone()),
         crate::error::AppPath(1),
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer,
-            sentence_id: card.prompt.front.sentence_id,
-            review_revision: card.review_revision,
-            content_revision: card.content_revision,
+            attempt_token: card.attempt_token.clone(),
         }),
     )
     .await
@@ -438,16 +440,24 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
         let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
         assert_eq!(card.prompt.front.card_id, 1);
         assert_eq!(card.prompt.front.sentence_id, expected_id);
-        assert_eq!(card.review_revision, revision);
+        assert_eq!(
+            card.attempt_token,
+            crate::cards::issue_attempt_token(user_id, 1, expected_id, revision, 0).unwrap()
+        );
         let result = super::super::check::check_answer(
             State(pool.clone()),
             crate::error::AppPath(1),
             AuthUser(user_id),
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer: answer.into(),
-                sentence_id: expected_id,
-                review_revision: revision,
-                content_revision: 0,
+                attempt_token: crate::cards::issue_attempt_token(
+                    user_id,
+                    1,
+                    expected_id,
+                    revision,
+                    0,
+                )
+                .unwrap(),
             }),
         )
         .await

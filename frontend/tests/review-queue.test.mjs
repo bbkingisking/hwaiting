@@ -162,10 +162,10 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
 
 const { reconcileQueue } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
 test('batch reconciliation replaces stale data and preserves legitimate repetitions', () => {
-  const card = { card_id: 1, sentence_id: 1, review_revision: 0, content_revision: 0 }
+  const card = { card_id: 1, sentence_id: 1, attempt_token: 'initial-attempt' }
   const other = { ...card, card_id: 2 }
   assert.deepEqual(reconcileQueue([card, other, other], card), [other])
-  const repetition = { ...card, review_revision: 1, sentence_id: 2 }
+  const repetition = { ...card, attempt_token: 'later-attempt', sentence_id: 2 }
   assert.deepEqual(reconcileQueue([repetition], card), [repetition])
   assert.deepEqual(reconcileQueue([], card), [])
   assert.deepEqual(reconcileQueue([card], null), [card])

@@ -102,13 +102,23 @@ export async function getFieldValues(): Promise<FieldValues> {
 // Grades `answer` against `cardId` server-side, records the FSRS review,
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
-export async function checkAnswer(cardId: number, sentenceId: number, answer: string, reviewRevision: number, contentRevision: number): Promise<CheckResponse> {
+export async function checkAnswer(cardId: number, attemptToken: string, answer: string): Promise<CheckResponse> {
   const url = `${apiBase()}/api/cards/${cardId}/check`
-  const body: CheckRequest = { answer, sentence_id: sentenceId, review_revision: reviewRevision, content_revision: contentRevision }
+  const body: CheckRequest = { answer, attempt_token: attemptToken }
   return fetchWithAuth(url, {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+// A successful validation is a snapshot, not a reservation; grading validates again.
+export async function validateAttempt(attemptToken: string): Promise<boolean> {
+  const body: Schemas.ValidateRequest = { attempt_token: attemptToken }
+  const result: Schemas.ValidateResponse = await fetchWithAuth(`${apiBase()}/api/cards/validate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return result.valid
 }
 
 export async function suppressCard(cardId: number): Promise<ReviewResponse> {

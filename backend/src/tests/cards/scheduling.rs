@@ -123,9 +123,7 @@ async fn review(pool: &SqlitePool, uid: i64, answer: &str, revision: i64) {
         AuthUser(uid),
         AppJson(cards::CheckRequest {
             answer: answer.into(),
-            sentence_id: 1,
-            review_revision: revision,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(uid, 1, 1, revision, 0).unwrap(),
         }),
     )
     .await
