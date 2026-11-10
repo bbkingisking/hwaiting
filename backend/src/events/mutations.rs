@@ -1,8 +1,5 @@
-//! HTTP mutation adapters: publish only after the underlying operation commits.
-//! Keep domain handlers usable without a live-event service (tests/other callers).
-//! Each successful operation publishes one descriptive event; failed operations
-//! publish none. A review/settings/import event already conveys its queue impact.
-use super::Change;
+// HTTP mutation adapters publish one payload-free notification after success.
+// Domain handlers remain usable without a live-event service; failures emit none.
 use crate::{
     admin,
     auth::{AdminUser, AuthUser},
@@ -26,12 +23,8 @@ pub async fn check_answer(
     payload: AppJson<cards::CheckRequest>,
 ) -> Result<Json<cards::CheckResponse>, AppError> {
     let user_id = auth.0;
-    let change = Change::CardReviewed {
-        card_id: path.0,
-        review_revision: payload.0.review_revision.saturating_add(1),
-    };
     let response = cards::check_answer(State(state.pool), path, auth, payload).await?;
-    state.events.publish(Some(user_id), change, &headers);
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 
@@ -42,12 +35,8 @@ pub async fn suppress_card(
     headers: HeaderMap,
 ) -> Result<Json<cards::ReviewResponse>, AppError> {
     let user_id = auth.0;
-    let change = Change::QueueChanged {
-        card_id: path.0,
-        suppressed: true,
-    };
     let response = cards::suppress_card(State(state.pool), path, auth).await?;
-    state.events.publish(Some(user_id), change, &headers);
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 pub async fn unsuppress_card(
@@ -57,12 +46,8 @@ pub async fn unsuppress_card(
     headers: HeaderMap,
 ) -> Result<Json<cards::ReviewResponse>, AppError> {
     let user_id = auth.0;
-    let change = Change::QueueChanged {
-        card_id: path.0,
-        suppressed: false,
-    };
     let response = cards::unsuppress_card(State(state.pool), path, auth).await?;
-    state.events.publish(Some(user_id), change, &headers);
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 pub async fn update_settings(
@@ -72,17 +57,8 @@ pub async fn update_settings(
     payload: AppJson<user::UpdateSettingsRequest>,
 ) -> Result<Json<user::UpdateSettingsResponse>, AppError> {
     let user_id = auth.0;
-    let queue_affected = payload.0.study_timezone.is_some()
-        || payload.0.initial_study_timezone.is_some()
-        || payload.0.day_boundary_hour.is_some()
-        || payload.0.daily_new_card_limit.is_some()
-        || payload.0.desired_retention.is_some();
     let response = user::update_settings(State(state.pool), auth, payload).await?;
-    state.events.publish(
-        Some(user_id),
-        Change::SettingsChanged { queue_affected },
-        &headers,
-    );
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 pub async fn import_data(
@@ -93,9 +69,7 @@ pub async fn import_data(
 ) -> Result<Json<export_import::ImportDataResponse>, AppError> {
     let user_id = auth.0;
     let response = export_import::import_data(State(state.pool), auth, payload).await?;
-    state
-        .events
-        .publish(Some(user_id), Change::StateReset, &headers);
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 pub async fn edit_card(
@@ -105,9 +79,8 @@ pub async fn edit_card(
     headers: HeaderMap,
     payload: AppJson<admin::UpdateCardRequest>,
 ) -> Result<Json<admin::EditCardResponse>, AppError> {
-    let change = Change::CardUpdated { card_id: path.0 };
     let response = admin::edit_card(admin, State(state.pool), path, payload).await?;
-    state.events.publish(None, change, &headers);
+    state.events.publish(None, &headers);
     Ok(response)
 }
 pub async fn optimize_fsrs(
@@ -117,13 +90,7 @@ pub async fn optimize_fsrs(
 ) -> Result<Json<cards::OptimizeFsrsResponse>, AppError> {
     let user_id = auth.0;
     let response = cards::optimize_fsrs(State(state.pool), auth).await?;
-    state.events.publish(
-        Some(user_id),
-        Change::SettingsChanged {
-            queue_affected: true,
-        },
-        &headers,
-    );
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }
 pub async fn reset_fsrs_parameters(
@@ -133,12 +100,6 @@ pub async fn reset_fsrs_parameters(
 ) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     let response = cards::reset_fsrs_parameters(State(state.pool), auth).await?;
-    state.events.publish(
-        Some(user_id),
-        Change::SettingsChanged {
-            queue_affected: true,
-        },
-        &headers,
-    );
+    state.events.publish(Some(user_id), &headers);
     Ok(response)
 }

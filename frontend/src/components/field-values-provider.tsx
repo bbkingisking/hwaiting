@@ -1,4 +1,3 @@
-import { subscribeLiveEvents } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getFieldValues, type FieldValue, type InflectionFormValue } from '@/lib/api'
@@ -69,8 +68,7 @@ export function FieldValuesProvider({ children }: { children: React.ReactNode })
 
     const task = createRefreshTask(fetchFieldValues)
     task.request()
-    const live = subscribeLiveEvents(event => { if (event.type === 'card-updated' || event.type === 'resync-required') task.request() })
-    return () => { live(); task.dispose() }
+    return () => { task.dispose() }
   }, [isAuthenticated])
 
   return (

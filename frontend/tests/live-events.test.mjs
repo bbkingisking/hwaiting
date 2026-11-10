@@ -11,13 +11,12 @@ const { createRefreshTask } = await module('refresh-task')
 const { registerMutation, subscribeLiveEvents, dispatchLiveEvent, connectLiveEvents } = await module('live-events')
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
-test('own events are recognised before the HTTP response and external operations remain external', () => {
+test('notifications identify own mutations without adding event types', () => {
   const received = []
   const unsubscribe = subscribeLiveEvents(event => received.push(event))
   const id = registerMutation()
-  assert.match(id, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
-  dispatchLiveEvent({ type: 'card-reviewed', card_id: 1, review_revision: 1, mutation_id: id })
-  dispatchLiveEvent({ type: 'card-reviewed', card_id: 1, review_revision: 2, mutation_id: 'another-operation' })
+  dispatchLiveEvent({ type: 'state-changed', mutation_id: id })
+  dispatchLiveEvent({ type: 'state-changed' })
   assert.deepEqual(received.map(event => event.own), [true, false])
   unsubscribe()
 })

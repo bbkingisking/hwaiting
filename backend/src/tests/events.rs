@@ -12,30 +12,30 @@ async fn user_isolation_global_edits_and_subscription_cleanup() {
     let mut a = hub.subscribe(1);
     let mut b = hub.subscribe(2);
     let mut a2 = hub.subscribe(1);
-    hub.publish(Some(1), Change::StateReset, &HeaderMap::new());
+    hub.publish(Some(1), &HeaderMap::new());
     assert!(matches!(
-        a.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::StateReset
+        a.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     assert!(matches!(
-        a2.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::StateReset
+        a2.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     assert!(matches!(
         b.receiver.as_mut().unwrap().try_recv(),
         Err(broadcast::error::TryRecvError::Empty)
     ));
-    hub.publish(None, Change::CardUpdated { card_id: 4 }, &HeaderMap::new());
+    hub.publish(None, &HeaderMap::new());
     assert!(matches!(
-        b.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::CardUpdated { card_id: 4 }
+        b.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     drop(a);
     assert_eq!(hub.0.lock().unwrap().len(), 2);
     drop(a2);
     drop(b);
     assert!(hub.0.lock().unwrap().is_empty());
-    hub.publish(Some(1), Change::StateReset, &HeaderMap::new());
+    hub.publish(Some(1), &HeaderMap::new());
     assert!(hub.0.lock().unwrap().is_empty());
 }
 
@@ -43,41 +43,37 @@ async fn user_isolation_global_edits_and_subscription_cleanup() {
 async fn subscribe_before_initial_sync_and_lag_requires_another_sync() {
     let hub = EventHub::default();
     let sub = hub.subscribe(1);
-    hub.publish(
-        Some(1),
-        Change::CardReviewed {
-            card_id: 42,
-            review_revision: 8,
-        },
-        &HeaderMap::new(),
-    );
+    hub.publish(Some(1), &HeaderMap::new());
     let mut body = Sse::new(notification_stream(sub, None))
         .into_response()
         .into_body()
         .into_data_stream();
     let first = body.next().await.unwrap().unwrap();
-    assert!(
-        std::str::from_utf8(&first)
-            .unwrap()
-            .contains("event: resync-required")
-    );
+    let expected = "event: state-changed\ndata: {\"type\":\"state-changed\"}\n\n";
+    assert_eq!(std::str::from_utf8(&first).unwrap(), expected);
     let second = body.next().await.unwrap().unwrap();
-    assert!(
-        std::str::from_utf8(&second)
-            .unwrap()
-            .contains("event: card-reviewed")
-    );
+    assert_eq!(std::str::from_utf8(&second).unwrap(), expected);
     for _ in 0..100 {
-        hub.publish(Some(1), Change::StateReset, &HeaderMap::new());
+        hub.publish(Some(1), &HeaderMap::new());
     }
     let lag = body.next().await.unwrap().unwrap();
+    assert_eq!(std::str::from_utf8(&lag).unwrap(), expected);
     assert!(
-        std::str::from_utf8(&lag)
-            .unwrap()
-            .contains("event: resync-required")
+        tokio::time::timeout(Duration::from_millis(20), body.next())
+            .await
+            .is_err()
     );
+    hub.publish(Some(1), &HeaderMap::new());
+    let next = body.next().await.unwrap().unwrap();
+    assert_eq!(std::str::from_utf8(&next).unwrap(), expected);
     drop(body);
     assert!(hub.0.lock().unwrap().is_empty());
+    let mut reconnected = Sse::new(notification_stream(hub.subscribe(1), None))
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let initial = reconnected.next().await.unwrap().unwrap();
+    assert_eq!(std::str::from_utf8(&initial).unwrap(), expected);
 }
 
 #[tokio::test]
@@ -101,21 +97,18 @@ async fn expiry_closes_idle_stream_and_releases_subscription() {
 }
 
 #[tokio::test]
-async fn review_event_matches_committed_revision_and_stale_writes_emit_nothing() {
+async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
     let pool = test_pool().await;
     let user = test_user(&pool).await;
     let state = AppState::new(pool.clone());
     let mut subscription = state.events.subscribe(user);
-    let mutation = uuid::Uuid::new_v4().to_string();
-    let mut headers = HeaderMap::new();
-    headers.insert(MUTATION_HEADER, mutation.parse().unwrap());
     let answer: String = sqlx::query_scalar("SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = 1")
         .fetch_one(&pool).await.unwrap();
     let _ = mutations::check_answer(
         State(state.clone()),
         AppPath(1),
         AuthUser(user),
-        headers,
+        HeaderMap::new(),
         AppJson(crate::cards::CheckRequest {
             answer: answer.clone(),
             sentence_id: 1,
@@ -132,14 +125,10 @@ async fn review_event_matches_committed_revision_and_stale_writes_emit_nothing()
         .recv()
         .await
         .unwrap();
-    assert_eq!(event.mutation_id.as_deref(), Some(mutation.as_str()));
-    assert!(matches!(
-        event.change,
-        Change::CardReviewed {
-            card_id: 1,
-            review_revision: 1
-        }
-    ));
+    assert_eq!(
+        serde_json::to_value(event).unwrap(),
+        serde_json::json!({"type": "state-changed"})
+    );
     let Json(card) = card_state(State(pool), AuthUser(user), AppPath(1))
         .await
         .unwrap();
@@ -181,11 +170,8 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .await
     .unwrap();
     assert!(matches!(
-        sub.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::QueueChanged {
-            card_id: 1,
-            suppressed: true
-        }
+        sub.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     assert!(
         card_state(State(pool.clone()), AuthUser(user), AppPath(1))
@@ -203,11 +189,8 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .await
     .unwrap();
     assert!(matches!(
-        sub.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::QueueChanged {
-            suppressed: false,
-            ..
-        }
+        sub.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     let payload = serde_json::from_value(serde_json::json!({"daily_new_card_limit": 25})).unwrap();
     let _ = mutations::update_settings(
@@ -219,10 +202,8 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .await
     .unwrap();
     assert!(matches!(
-        sub.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::SettingsChanged {
-            queue_affected: true
-        }
+        sub.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     let payload = serde_json::from_value(serde_json::json!({"daily_new_card_limit": -1})).unwrap();
     assert!(
@@ -251,8 +232,8 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
     .await
     .unwrap();
     assert!(matches!(
-        sub.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::StateReset
+        sub.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     assert!(sub.receiver.as_mut().unwrap().try_recv().is_err());
 }
@@ -275,8 +256,8 @@ async fn shared_edit_advances_content_revision_and_notifies_other_users() {
     .await
     .unwrap();
     assert!(matches!(
-        sub.receiver.as_mut().unwrap().recv().await.unwrap().change,
-        Change::CardUpdated { card_id: 1 }
+        sub.receiver.as_mut().unwrap().recv().await.unwrap(),
+        Notification::StateChanged { .. }
     ));
     let card = card_state(State(pool), AuthUser(admin), AppPath(1))
         .await

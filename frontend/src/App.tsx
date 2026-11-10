@@ -1,6 +1,6 @@
 import { reconcileQueue } from '@/lib/review-queue'
 import { scheduleReviewRefresh } from '@/lib/review-timing'
-import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
+import { subscribeLiveEvents } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
 import { useState, useEffect, useEffectEvent, useRef } from 'react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
@@ -15,8 +15,8 @@ import { AuthDialog } from '@/components/auth-dialog'
 import { AppHeader } from '@/components/app-header'
 import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
-import { getReviewQueue, getCardState, checkAnswer, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
-import type { ReviewQueueResponse, ReviewQueueChange, CardEdit } from '@/lib/api'
+import { getReviewQueue, checkAnswer, subscribeReviewQueueChanges, ApiError } from '@/lib/api'
+import type { ReviewQueueResponse, ReviewQueueChange } from '@/lib/api'
 import type { CardPrompt, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
@@ -48,16 +48,10 @@ function AppContent() {
   const [staleReason, setStaleReason] = useState<string | null>(null)
   const currentCard = useRef(card)
   currentCard.current = card
-  const acceptedReview = useRef<CardPrompt | null>(null)
-  const checkingRef = useRef(false)
   const submissionVersion = useRef(0)
-  const allowCurrentCandidate = useRef(false)
   const refillTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
-  const validationTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   useEffect(() => {
     setStaleReason(null)
-    acceptedReview.current = null
-    allowCurrentCandidate.current = false
   }, [card?.card_id, card?.sentence_id, card?.review_revision, card?.content_revision])
 
   const { isAuthenticated } = useAuth()
@@ -71,7 +65,7 @@ function AppContent() {
 
   const installQueue = (result: ReviewQueueResponse) => {
     const active = currentCard.current
-    buffer.current = reconcileQueue(result.cards, allowCurrentCandidate.current ? null : active)
+    buffer.current = reconcileQueue(result.cards, active)
     refreshAt.current = Date.parse(result.refresh_at)
     setQueueDeadline(result.refresh_at)
   }
@@ -103,69 +97,8 @@ function AppContent() {
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
-  // Refresh successors after every edit, but preserve submitted attempts.
-  // The HTTP response owns in-flight grading; accepted feedback is a snapshot.
-  const invalidateCardContent = (cardId: number, local: boolean) => {
-    setStatsKey(value => value + 1)
-    cancelPrefetch()
-    const active = currentCard.current
-    if (active?.card_id === cardId && !checkingRef.current && acceptedReview.current !== active) {
-      ++submissionVersion.current
-      checkingRef.current = false
-      setChecking(false)
-      setSubmitError(null)
-      if (local) {
-        setStaleReason('This card was edited. Loading a fresh card.')
-        void loadCardCold()
-      } else {
-        allowCurrentCandidate.current = true
-        setStaleReason('This card was edited elsewhere. Continue to load a fresh card.')
-        refillTask.current?.request()
-      }
-    } else if (!active) {
-      validationTask.current?.request()
-    } else {
-      refillTask.current?.request()
-    }
-  }
-
-  const handleLocalCardEdit = useEffectEvent(({ card: edited }: CardEdit) => {
-    invalidateCardContent(edited.card_id, true)
-  })
-  useEffect(() => subscribeCardEdits(handleLocalCardEdit), [])
-
-  // Remote reviews complete this person's attempt on another device. Discard
-  // that attempt automatically; own echoes leave the HTTP-response flow alone.
-  // Other changes preserve active work and replenish the disposable successor.
-  const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
-    if (!isAuthenticated || event.own) return
-    if (event.type === 'settings-changed' && !event.queue_affected) return
-    if (event.type === 'card-updated') {
-      invalidateCardContent(event.card_id, false)
-      return
-    }
-    setStatsKey(value => value + 1)
-    const active = currentCard.current
-    cancelPrefetch()
-    if (active && (checkingRef.current || acceptedReview.current === active)) {
-      refillTask.current?.request()
-      return
-    }
-    if (event.type === 'card-reviewed' && active?.card_id === event.card_id && event.review_revision > active.review_revision) {
-      discardReviewedCard()
-      return
-    } else if (event.type === 'queue-changed' && event.suppressed && active?.card_id === event.card_id) {
-      setStaleReason('This card was suppressed elsewhere. Continue to the next card.')
-    } else if (event.type === 'resync-required' || event.type === 'state-reset') {
-      validationTask.current?.request()
-    }
-    if (!active) validationTask.current?.request()
-    else if (!prefetchRef.current) refillTask.current?.request()
-  })
-
   const discardReviewedCard = () => {
     ++submissionVersion.current
-    checkingRef.current = false
     setChecking(false)
     setSubmitError(null)
     setLastCheckMs(null)
@@ -175,43 +108,8 @@ function AppContent() {
     // A ready, still-eligible successor is promoted synchronously. Otherwise
     // show loading, never leave an already-reviewed card available to submit.
     setLoading(true)
-    void advanceToNextCard().catch(() => {
-      validationTask.current?.request()
-    })
+    void advanceToNextCard().catch(() => { void loadCardCold() })
   }
-
-  useEffect(() => {
-    if (!isAuthenticated) return
-    const task = createRefreshTask(async current => {
-      const active = currentCard.current
-      if (!active) {
-        if (!await loadCardCold()) throw new Error('Queue refresh failed')
-        return
-      }
-      if (acceptedReview.current === active) return
-      if (checkingRef.current) throw new Error('Wait for pending review')
-      const submissionAtStart = submissionVersion.current
-      const state = await getCardState(active.card_id)
-      if (!current() || currentCard.current !== active) return
-      if (acceptedReview.current === active) return
-      if (checkingRef.current || submissionVersion.current !== submissionAtStart) {
-        throw new Error('Local mutation superseded card-state read')
-      }
-      const revision = active.review_revision
-      const contentRevision = active.content_revision
-      if (state.review_revision > revision && state.exists && !state.suppressed && state.content_revision === contentRevision) {
-        discardReviewedCard()
-      } else if (!state.exists || state.suppressed || state.review_revision !== revision || state.content_revision !== contentRevision) {
-        allowCurrentCandidate.current = true
-        cancelPrefetch()
-        refillTask.current?.request()
-        setStaleReason('This card changed while you were away. Continue to load a fresh card.')
-      }
-    })
-    validationTask.current = task
-    const unsubscribe = subscribeLiveEvents(handleLiveEvent)
-    return () => { unsubscribe(); task.dispose(); validationTask.current = null }
-  }, [isAuthenticated])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -233,7 +131,7 @@ function AppContent() {
   const refreshQueueAtDeadline = useEffectEvent(() => {
     cancelPrefetch()
     if (currentCard.current) refillTask.current?.request()
-    else validationTask.current?.request()
+    else void loadCardCold()
   })
   useEffect(() => {
     if (!isAuthenticated || !card) return
@@ -311,7 +209,6 @@ function AppContent() {
         currentCard.current = first
         setCard(first)
         setNoCards(false)
-        allowCurrentCandidate.current = false
         installQueue(envelope)
       } else {
         currentCard.current = null
@@ -403,7 +300,6 @@ function AppContent() {
 
     setSubmitError(null)
     setChecking(true)
-    checkingRef.current = true
 
     try {
       const startedAt = performance.now()
@@ -422,7 +318,6 @@ function AppContent() {
           refillTask.current?.request()
         }
       })
-      acceptedReview.current = card
       setLastCheckMs(performance.now() - startedAt)
       // Refresh only after the committed response: check_answer is
       // what actually records the review server-side - firing this before
@@ -454,13 +349,11 @@ function AppContent() {
       } else {
         setSubmitError('Failed to check answer')
       }
-      validationTask.current?.request()
       console.error('Error checking answer:', err)
       throw err
     } finally {
       if (submission === submissionVersion.current) {
         setChecking(false)
-        checkingRef.current = false
       }
     }
   }
@@ -554,16 +447,29 @@ function AppContent() {
   )
 }
 
+// Keep the authenticated SSE connection above this boundary: each new
+// subscription emits a notification, so reconnecting on reset would loop.
+function LiveContent() {
+  const [generation, setGeneration] = useState(0)
+  useEffect(() => subscribeLiveEvents(event => {
+    if (!event.own) setGeneration(value => value + 1)
+  }), [])
+
+  return (
+    <SettingsProvider key={generation}>
+      <FieldValuesProvider>
+        <AppContent />
+      </FieldValuesProvider>
+    </SettingsProvider>
+  )
+}
+
 function App() {
   return (
     <ThemeProvider>
       <CardThemeProvider>
         <AuthProvider>
-          <SettingsProvider>
-            <FieldValuesProvider>
-              <AppContent />
-            </FieldValuesProvider>
-          </SettingsProvider>
+          <LiveContent />
         </AuthProvider>
       </CardThemeProvider>
     </ThemeProvider>
