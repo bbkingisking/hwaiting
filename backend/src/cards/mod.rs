@@ -92,7 +92,7 @@ pub struct HanjaHint {
 /// `CardReveal` disclose between them minus the two fields that are
 /// review-flow state rather than properties of the card itself
 /// (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
-/// review history, see `hanja_hints_for`).
+/// review history, see `hanja_hints_on_connection`).
 ///
 /// Flattening the same two structs the review flow already produces, rather
 /// than hand-declaring their union a third time, is what keeps this
@@ -124,7 +124,7 @@ pub struct Card {
 /// which needs it alongside the rest of a graded reveal) and admin's
 /// standalone per-card lookup (`admin::get_card_inflections`, which needs
 /// exactly these rows without going through the review-grading flow).
-/// `pub(crate)`, unlike `hanja_hints_for` below, because `admin` is a sibling
+/// `pub(crate)`, unlike `hanja_hints_on_connection` below, because `admin` is a sibling
 /// module rather than a submodule of `cards` and can't otherwise reach it.
 ///
 /// Generic over the executor (rather than fixed to `&SqlitePool`, following
@@ -168,7 +168,7 @@ where
 /// (U+F900 to U+FAFF) - a hanja drawn from either would never register as
 /// shared here even if it's the identical character KRDICT records
 /// elsewhere as canonically decomposing to one already in range. Extracted
-/// from `hanja_hints_for` so the character-matching rule can be tested
+/// from `hanja_hints_on_connection` so the character-matching rule can be tested
 /// without a database.
 fn shares_hanja_character(a: &str, b: &str) -> bool {
     let a_chars: std::collections::HashSet<char> = a
@@ -188,24 +188,6 @@ fn shares_hanja_character(a: &str, b: &str) -> bool {
 /// `get_review_queue` (which only needs the characters - see
 /// `CardPrompt::hanja_hint_words`) and `check_answer` (which needs the full
 /// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
-async fn hanja_hints_for(
-    pool: &SqlitePool,
-    user_id: i64,
-    card_id: i64,
-    hanja: &Option<String>,
-) -> Result<Vec<HanjaHint>, AppError> {
-    let Some(current_hanja) = hanja else {
-        return Ok(vec![]);
-    };
-    if current_hanja.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
-    let mut connection = pool.acquire().await?;
-    hanja_hints_on_connection(&mut connection, eng_id, user_id, card_id, hanja).await
-}
-
 async fn hanja_hints_on_connection(
     connection: &mut sqlx::SqliteConnection,
     eng_id: i64,

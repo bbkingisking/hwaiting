@@ -460,3 +460,95 @@ async fn missing_revision_is_a_bad_request_and_stale_errors_have_codes() {
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["code"], "stale_prompt");
 }
+
+#[tokio::test]
+async fn answer_with_hanja_hints_needs_only_one_available_connection() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    sqlx::query("UPDATE cards SET hanja = '學' WHERE id IN (1, 2)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO cards_states (user_id, card_id, state) VALUES (?, 2, 'review')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let answer = target_for(&pool, 1).await;
+
+    // Reserve every connection except the one used by BEGIN IMMEDIATE.
+    // Any pool read inside that transaction would wait until this times out.
+    let mut reserved = Vec::new();
+    for _ in 1..pool.options().get_max_connections() {
+        reserved.push(pool.acquire().await.unwrap());
+    }
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        check_answer(
+            State(pool.clone()),
+            AppPath(1),
+            AuthUser(user_id),
+            AppJson(CheckRequest {
+                answer,
+                attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            }),
+        ),
+    )
+    .await
+    .expect("answer checking must not acquire a second connection")
+    .unwrap()
+    .0;
+    assert!(response.correct);
+    assert_eq!(response.reveal.hanja_hints.len(), 1);
+    assert_eq!(response.reveal.hanja_hints[0].hanja, "學");
+    drop(reserved);
+    assert_eq!(revision_for(&pool, user_id, 1).await, 1);
+}
+
+#[tokio::test]
+async fn reveal_failure_rolls_back_review_and_allows_retry() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let token = crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap();
+    // Make the reveal-only inflection query fail after grading has written
+    // scheduling state, review history, and the incorrect answer.
+    sqlx::query("ALTER TABLE conjugation_matrix_cards RENAME TO unavailable_inflections")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let result = check_answer(
+        State(pool.clone()),
+        AppPath(1),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer: "definitely incorrect".into(),
+            attempt_token: token.clone(),
+        }),
+    )
+    .await;
+    assert!(matches!(result, Err(AppError::Database(_))));
+    for table in ["cards_states", "review_history", "wrong_answers"] {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "{table} must roll back if reveal assembly fails");
+    }
+    sqlx::query("ALTER TABLE unavailable_inflections RENAME TO conjugation_matrix_cards")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let response = check_answer(
+        State(pool.clone()),
+        AppPath(1),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer: "definitely incorrect".into(),
+            attempt_token: token,
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(!response.0.correct);
+    assert_eq!(revision_for(&pool, user_id, 1).await, 1);
+}
