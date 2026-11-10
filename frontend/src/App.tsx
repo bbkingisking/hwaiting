@@ -52,7 +52,7 @@ function AppContent() {
   const refillTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   useEffect(() => {
     setStaleReason(null)
-  }, [card?.card_id, card?.sentence_id, card?.review_revision, card?.content_revision])
+  }, [card?.attempt_token])
 
   const { isAuthenticated } = useAuth()
   const { cardThemeId } = useCardTheme()
@@ -305,7 +305,7 @@ function AppContent() {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
-      const { correct, ...reveal } = await checkAnswer(cardId, card.sentence_id, answer, card.review_revision, card.content_revision)
+      const { correct, ...reveal } = await checkAnswer(cardId, card.attempt_token, answer)
       if (submission !== submissionVersion.current) return null
       ++queueGeneration.current
       prefetchRef.current?.abort.abort()

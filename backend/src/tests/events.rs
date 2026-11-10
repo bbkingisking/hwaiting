@@ -111,9 +111,7 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
         HeaderMap::new(),
         AppJson(crate::cards::CheckRequest {
             answer: answer.clone(),
-            sentence_id: 1,
-            review_revision: 0,
-            content_revision: 0,
+            attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0).unwrap(),
         }),
     )
     .await
@@ -141,9 +139,7 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
             HeaderMap::new(),
             AppJson(crate::cards::CheckRequest {
                 answer,
-                sentence_id: 1,
-                review_revision: 0,
-                content_revision: 0,
+                attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0).unwrap(),
             })
         )
         .await

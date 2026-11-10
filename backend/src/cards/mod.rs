@@ -4,6 +4,7 @@
 //! wiring plus the couple of types/helpers genuinely shared across more than
 //! one of them.
 
+pub(crate) mod attempt;
 mod check;
 mod field_values;
 mod fsrs_admin;
@@ -22,6 +23,7 @@ mod time;
 // itself `pub(crate)` for the same reason, re-export cleanly instead of
 // tripping the "can't re-export at wider visibility" error a plain `pub use`
 // would hit.
+pub(crate) use attempt::*;
 pub(crate) use check::*;
 pub(crate) use field_values::*;
 pub(crate) use fsrs_admin::*;

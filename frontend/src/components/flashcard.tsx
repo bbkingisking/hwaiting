@@ -210,7 +210,7 @@ function GrammarPatternPill({
 }
 
 export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }: FlashcardProps) {
-  const promptKey = `${card.card_id}:${card.sentence_id}:${card.review_revision}:${card.content_revision}`
+  const promptKey = card.attempt_token
   const promptKeyRef = useRef(promptKey)
   promptKeyRef.current = promptKey
   const staleRef = useRef(staleReason)
@@ -238,7 +238,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
   const autoProgressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.card_id, card.sentence_id, card.review_revision, card.content_revision])
+  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.attempt_token])
   useEffect(() => { if (staleReason) clearTimeout(autoProgressTimer.current) }, [staleReason])
 
   const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === 'verb' || card.pos === 'adjective')
@@ -280,7 +280,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
     // A fresh prompt revision starts a new attempt after a content edit or
     // stale submission. The input stays mounted across that transition.
-  }, [card.card_id, card.sentence_id, card.review_revision, card.content_revision])
+  }, [card.attempt_token])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

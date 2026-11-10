@@ -206,18 +206,7 @@ export type CardState = {
 
 export type CheckRequest = {
     answer: string;
-    /**
-     * Content revision returned with the due card; grading must use that version.
-     */
-    content_revision: number;
-    /**
-     * Version of this user's review state for this card; return unchanged from the prompt. Rejects stale submissions if another client has already reviewed the card.
-     */
-    review_revision: number;
-    /**
-     * Cards can have multiple sentences; this marks the sentence that is being graded.
-     */
-    sentence_id: number;
+    attempt_token: string;
 };
 
 export type CheckResponse = CardReveal & {
@@ -468,13 +457,9 @@ export type ReviewHistoryExport = {
 };
 
 export type ReviewQueueCard = CardPrompt & {
-    content_revision: number;
+    attempt_token: string;
     difficulty?: number | null;
     guess_count: number;
-    /**
-     * Return unchanged when submitting an answer.
-     */
-    review_revision: number;
     wrong_guess_count: number;
 };
 
@@ -667,6 +652,14 @@ export type UserSettingsCore = {
 
 export type UserSettingsExport = UserSettingsCore & {
     fsrs_parameters?: string | null;
+};
+
+export type ValidateRequest = {
+    attempt_token: string;
+};
+
+export type ValidateResponse = {
+    valid: boolean;
 };
 
 export type WrongAnswerExport = {
@@ -1327,6 +1320,49 @@ export type ListSuppressedCardsResponses = {
 
 export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof ListSuppressedCardsResponses];
 
+export type ValidateCardAttemptData = {
+    body: ValidateRequest;
+    headers: {
+        /**
+         * Optional UUID echoed in state-changed SSE notifications for successful mutations; invalid UUIDs are ignored. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/cards/validate';
+};
+
+export type ValidateCardAttemptErrors = {
+    /**
+     * Malformed request body
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Operational failure
+     */
+    500: ErrorResponse;
+};
+
+export type ValidateCardAttemptError = ValidateCardAttemptErrors[keyof ValidateCardAttemptErrors];
+
+export type ValidateCardAttemptResponses = {
+    /**
+     * Whether the token still matches an available prompt
+     */
+    200: ValidateResponse;
+};
+
+export type ValidateCardAttemptResponse = ValidateCardAttemptResponses[keyof ValidateCardAttemptResponses];
+
 export type CheckAnswerData = {
     body: CheckRequest;
     headers: {
@@ -1351,13 +1387,17 @@ export type CheckAnswerData = {
 
 export type CheckAnswerErrors = {
     /**
-     * Invalid request, including missing sentence identity or revisions
+     * Invalid request or invalid, forged, wrong-user, or wrong-card attempt token
      */
     400: ErrorResponse;
     /**
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Card is suppressed
+     */
+    403: ErrorResponse;
     /**
      * Card doesn't exist
      */
