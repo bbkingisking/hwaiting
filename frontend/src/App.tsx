@@ -48,7 +48,7 @@ function AppContent() {
   const [staleReason, setStaleReason] = useState<string | null>(null)
   const currentCard = useRef(card)
   currentCard.current = card
-  const acceptedReview = useRef<{ cardId: number; revision: number } | null>(null)
+  const acceptedReview = useRef<CardPrompt | null>(null)
   const checkingRef = useRef(false)
   const submissionVersion = useRef(0)
   const allowCurrentCandidate = useRef(false)
@@ -103,15 +103,13 @@ function AppContent() {
 
   useEffect(() => subscribeReviewQueueChanges(handleQueueChanged), [])
 
-  // All content edits invalidate the same review projection, whether the
-  // write came from the review editor, Browse Cards, or another device.
-  // A local save reloads immediately; a remote edit leaves an in-progress
-  // answer visible but disables grading until the user continues.
+  // Refresh successors after every edit, but preserve submitted attempts.
+  // The HTTP response owns in-flight grading; accepted feedback is a snapshot.
   const invalidateCardContent = (cardId: number, local: boolean) => {
     setStatsKey(value => value + 1)
     cancelPrefetch()
     const active = currentCard.current
-    if (active?.card_id === cardId) {
+    if (active?.card_id === cardId && !checkingRef.current && acceptedReview.current !== active) {
       ++submissionVersion.current
       checkingRef.current = false
       setChecking(false)
@@ -149,12 +147,13 @@ function AppContent() {
     setStatsKey(value => value + 1)
     const active = currentCard.current
     cancelPrefetch()
+    if (active && (checkingRef.current || acceptedReview.current === active)) {
+      refillTask.current?.request()
+      return
+    }
     if (event.type === 'card-reviewed' && active?.card_id === event.card_id && event.review_revision > active.review_revision) {
-      const accepted = acceptedReview.current
-      if (!accepted || accepted.cardId !== active.card_id || accepted.revision < event.review_revision) {
-        discardReviewedCard()
-        return
-      }
+      discardReviewedCard()
+      return
     } else if (event.type === 'queue-changed' && event.suppressed && active?.card_id === event.card_id) {
       setStaleReason('This card was suppressed elsewhere. Continue to the next card.')
     } else if (event.type === 'resync-required' || event.type === 'state-reset') {
@@ -189,15 +188,16 @@ function AppContent() {
         if (!await loadCardCold()) throw new Error('Queue refresh failed')
         return
       }
+      if (acceptedReview.current === active) return
       if (checkingRef.current) throw new Error('Wait for pending review')
-      const reviewAtStart = acceptedReview.current
+      const submissionAtStart = submissionVersion.current
       const state = await getCardState(active.card_id)
       if (!current() || currentCard.current !== active) return
-      if (checkingRef.current || acceptedReview.current !== reviewAtStart) {
+      if (acceptedReview.current === active) return
+      if (checkingRef.current || submissionVersion.current !== submissionAtStart) {
         throw new Error('Local mutation superseded card-state read')
       }
-      const accepted = acceptedReview.current
-      const revision = accepted?.cardId === active.card_id ? Math.max(active.review_revision, accepted.revision) : active.review_revision
+      const revision = active.review_revision
       const contentRevision = active.content_revision
       if (state.review_revision > revision && state.exists && !state.suppressed && state.content_revision === contentRevision) {
         discardReviewedCard()
@@ -422,7 +422,7 @@ function AppContent() {
           refillTask.current?.request()
         }
       })
-      acceptedReview.current = { cardId, revision: card.review_revision + 1 }
+      acceptedReview.current = card
       setLastCheckMs(performance.now() - startedAt)
       // Refresh only after the committed response: check_answer is
       // what actually records the review server-side - firing this before
