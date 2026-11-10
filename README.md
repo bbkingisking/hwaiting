@@ -15,25 +15,29 @@ Assuming defaults (see Configuration below) don't clash with anything else on yo
 
 ## Configuration
 
-Every backend option is configurable from an env var `KEY_NAME` or a plain text file in `$CREDENTIALS_DIRECTORY/key-name`. For example, both `HWAITING_ADMIN_USERNAME=admin` and a file in `$CREDENTIALS_DIRECTORY/hwaiting-admin-username` containing the string `admin` accomplish the same thing. Env vars take precedence over plain text files.
+Every backend option is configurable from an env var `KEY_NAME` or a plain text file in `$CREDENTIALS_DIRECTORY/key-name`. For example, both `HWAITING_ADMIN_USERNAME=admin` and a file in `$CREDENTIALS_DIRECTORY/hwaiting-admin-username` containing the string `admin` accomplish the same thing. Env vars take precedence over plain text files. 
 
-| Variable | Credential file | Required | Default |
-| --- | --- | --- | --- |
-| `HWAITING_DATABASE_URL` | `hwaiting-database-url` | Only if `XDG_DATA_HOME`/`HOME` can't be resolved | `sqlite://$XDG_DATA_HOME/hwaiting/hwaiting.db` (or `~/.local/share/hwaiting/hwaiting.db`) |
-| `HWAITING_ADMIN_USERNAME` | `hwaiting-admin-username` | No | `admin` |
-| `HWAITING_ADMIN_PASSWORD` | `hwaiting-admin-password` | Yes | - |
-| `HWAITING_JWT_SECRET` | `hwaiting-jwt-secret` | Yes | - |
-| `HWAITING_RP_ID` | `hwaiting-rp-id` | Only if `HWAITING_RP_ORIGINS` is set | unset (with `HWAITING_RP_ORIGINS`) = passkey sign-in disabled |
-| `HWAITING_RP_ORIGINS` | `hwaiting-rp-origins` | Only if `HWAITING_RP_ID` is set | unset (with `HWAITING_RP_ID`) = passkey sign-in disabled |
-| `HWAITING_HOST` | `hwaiting-host` | Only if not using systemd socket activation or `HWAITING_UNIX_SOCKET` | `127.0.0.1` |
-| `HWAITING_PORT` | `hwaiting-port` | Only if not using systemd socket activation or `HWAITING_UNIX_SOCKET` | `3000` |
-| `HWAITING_UNIX_SOCKET` | `hwaiting-unix-socket` | No | unset (falls back to `HWAITING_HOST`/`HWAITING_PORT`) |
-| `HWAITING_COOKIE_SECURE` | `hwaiting-cookie-secure` | No | `false` (supports both HTTP and HTTPS); set `true` for HTTPS-only deployments |
-| `HWAITING_COOKIE_PARTITIONED` | `hwaiting-cookie-partitioned` | No | `false`; `true` requires Secure and enables CHIPS for cross-site deployments |
-| `HWAITING_COOKIE_SAME_SITE` | `hwaiting-cookie-same-site` | No | `lax`; also accepts `strict` or `none` (`none` requires Secure) |
-| `HWAITING_JWT_EXPIRY_SECONDS` | `hwaiting-jwt-expiry-seconds` | No | unset or `0` = tokens never expire |
-| `HWAITING_STATIC_DIR` | `hwaiting-static-dir` | No | unset = API-only mode, no static file serving |
-| `HWAITING_CORS_ALLOWED_ORIGINS` | `hwaiting-cors-allowed-origins` | No | unset = no CORS layer (same-origin only) |
+| Variable | Category | Description | Default |
+|---|---|---|---|
+| `HWAITING_JWT_SECRET` | Required | Secret used to sign auth JWTs | None (required) |
+| `HWAITING_ADMIN_PASSWORD` | Required | Password for the admin account | None (required) |
+| `HWAITING_ADMIN_USERNAME` | Optional | Admin account username | `admin` |
+| `HWAITING_HOST` | Optional | TCP bind host | `127.0.0.1` |
+| `HWAITING_PORT` | Optional | TCP bind port | `3000` |
+| `HWAITING_COOKIE_SECURE` | Optional | HTTPS-only cookies (keep false for mixed HTTP/HTTPS) | `false` |
+| `HWAITING_COOKIE_PARTITIONED` | Optional | Partition cookies by top-level site (requires Secure) | `false` |
+| `HWAITING_COOKIE_SAME_SITE` | Optional | `lax`, `strict`, or `none` (`none` requires Secure) | `lax` |
+| `HWAITING_DATABASE_URL` | Optional | sqlite:// URL | `$XDG_DATA_HOME/hwaiting/hwaiting.db`, or `$HOME/.local/share/hwaiting/hwaiting.db` |
+| `HWAITING_UNIX_SOCKET` | Optional (off if unset) | Bind a Unix socket at this path instead of TCP | Unset (off) |
+| `HWAITING_STATIC_DIR` | Optional (off if unset) | Serve a web frontend from this directory | Unset (off) |
+| `HWAITING_CORS_ALLOWED_ORIGINS` | Optional (off if unset) | Comma-separated list of allowed CORS origins | Unset (off) |
+| `HWAITING_RP_ID` | Optional (off if unset) | WebAuthn RP ID, enables passkey sign-in | Unset (off) |
+| `HWAITING_RP_ORIGINS` | Optional (off if unset) | WebAuthn allowed origin(s) for passkey sign-in | Unset (off) |
+| `HWAITING_JWT_EXPIRY_SECONDS` | Optional (off if unset) | Auth JWT lifetime in seconds | Unset (off) |
+| `CREDENTIALS_DIRECTORY` | Other | systemd credential directory (see note below) | N/A |
+| `LISTEN_PID`, `LISTEN_FDS` | Other | systemd socket activation. Takes priority over `HWAITING_UNIX_SOCKET` and `HWAITING_HOST`/`HWAITING_PORT` when both are set and `LISTEN_PID` matches this process | N/A |
+
+Every variable above can also be set via a systemd credential file at `$CREDENTIALS_DIRECTORY/<name, lowercased, underscores to dashes>` (e.g. `HWAITING_JWT_SECRET` → `hwaiting-jwt-secret`). The env var wins if both are set.
 
 ## Slow start
 
@@ -48,27 +52,6 @@ The backend can generate a complete OpenAPI contract if you run it with the `--p
 ### Data shape
 
 All data is stored in a single SQLite database. The shape of the data is highly domain-specific for Korean, and unlikely to be useful for any other language unless explicitly repurposed. A fresh backend run bootstraps the database with 50 cards, so you can inspect the standard/expected structure for the cards, how they appear in the frontend, and use that information to add your own cards. 
-
-### Auth
-
-Username/password (Argon2 hashes stored in the DB) and passkey sign-in both issue the same JWT in a host-only `hwaiting-auth` cookie (`HttpOnly`, `Path=/`, `SameSite=Lax` by default). The JSON response contains profile information only. Requests authenticate through that cookie; bearer headers are no longer accepted. The JWT signing secret and `HWAITING_JWT_EXPIRY_SECONDS` retain their existing meaning: tokens have no expiry by default. Cookie persistence follows a configured JWT lifetime, or defaults to 400 days when JWT expiry is disabled (browsers may impose their own storage limits).
-
-The same backend source supports both deployment layouts through configuration:
-
-| Deployment | `HWAITING_COOKIE_SECURE` | `HWAITING_COOKIE_SAME_SITE` | `HWAITING_COOKIE_PARTITIONED` |
-| --- | --- | --- | --- |
-| Production, with both HTTP LAN and HTTPS access | `false` | `lax` | `false` |
-| Demo, HTTPS frontend and API on different sites | `true` | `none` | `true` |
-
-The production row is the default and permits login over either protocol. `Secure=false` permits HTTPS as well as HTTP; it does not disable HTTPS. These flags are explicit because the backend may sit behind a TLS-terminating proxy.
-
-For the cross-site demo, also list the frontend's exact origin in `HWAITING_CORS_ALLOWED_ORIGINS`. The cookie is issued and cleared with `HttpOnly; Secure; SameSite=None; Partitioned`: CHIPS-capable browsers keep the API cookie in a separate partition for the frontend's top-level site, allowing authentication without unpartitioned third-party cookies. Visiting the API directly or from a different top-level site uses a different partition. Older browsers without CHIPS may still block cross-site authentication. Partitioning requires HTTPS and should be enabled only for the demo deployment, not the production HTTP/HTTPS deployment.
-
-Every state-changing API request (`POST`, `PUT`, `PATCH`, `DELETE`), including login, must carry `X-Requested-With: hwaiting`. This is a CSRF defense: HTML forms cannot set the header, and cross-origin JavaScript must pass a preflight against the explicit CORS allowlist. Both clients set it automatically. Read-only requests need no custom header, so native `EventSource` can authenticate with cookies.
-
-`POST /api/auth/logout` clears the cookie, including an expired or invalid one. As before, JWTs are stateless: clearing a client cookie does not revoke another copy of that JWT. Existing browser users and agent clients must sign in again after upgrading; browser local-storage tokens are removed and the agent removes its legacy token file after a successful login.
-
-In addition to that, the backend supports passkeys for identifier-less sign-up/sign-in flows. The passkey protocol requires an https:// context (or localhost). In order for it to work, the `HWAITING_RP_ID` and `HWAITING_RP_ORIGINS` should be set accordingly. With passkey auth, the only WebAuthn-specific data stored per passkey is the public key: `passkeys.public_key`, populated at sign-up time. At sign-in, *every* public key in the database is checked for signature verification, and the first matched one gets logged in. There is deliberately no credential_id or a user identifier blob stored for quicker matching, as I was experimenting with how minimal the webauthn protocol can be while still remaining functional. The drawbacks of storing a public key *only* lie strictly outside the cryptography: unable to verify signature provenance via device metadata (backup-able), unable to check sign-in counters, etc. 
 
 ### Deployment
 
