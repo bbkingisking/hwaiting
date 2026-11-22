@@ -40,7 +40,7 @@ pub struct CardFront {
     pub sentence_translation: String,
     #[serde(flatten)]
     pub inflection_hint: crate::inflection_hints::InflectionHint,
-    pub grammar_pattern: Option<String>,
+    pub grammar_pattern: Option<crate::cards::GrammarPattern>,
     pub hanja: Option<String>,
 }
 
@@ -206,6 +206,8 @@ async fn select_cards(
             sl.slug as speech_level, tn.slug as tense,
             tg.is_honorific, tg.is_humble,
             gp.slug as grammar_pattern,
+        (SELECT label FROM grammar_patterns_labels WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_name,
+        (SELECT tooltip FROM grammar_patterns_tooltips WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_explanation,
             c.frequency_rank, cs.due_at,
             EXISTS (SELECT 1 FROM review_history rh WHERE rh.card_id = c.id AND rh.user_id = ?) AS reviewed,
             cs.difficulty, cs.last_review, cs.stability,
@@ -357,7 +359,7 @@ async fn select_cards(
         let sentence_translation: String = row.get("sentence_translation");
         let target: String = row.get("target");
         let inflection_hint = crate::inflection_hints::InflectionHint::from_row(&row);
-        let grammar_pattern: Option<String> = row.get("grammar_pattern");
+        let grammar_pattern = crate::cards::GrammarPattern::from_row(&row);
 
         debug!("Selected card_id: {} ({})", card_id, word);
 

@@ -6,8 +6,8 @@
 
 pub(crate) mod attempt;
 mod check;
-mod field_values;
 mod fsrs_admin;
+mod grammar_patterns;
 mod hanja_drill;
 mod moderation;
 mod next;
@@ -25,8 +25,8 @@ mod time;
 // would hit.
 pub(crate) use attempt::*;
 pub(crate) use check::*;
-pub(crate) use field_values::*;
 pub(crate) use fsrs_admin::*;
+pub(crate) use grammar_patterns::*;
 pub(crate) use hanja_drill::*;
 pub(crate) use moderation::*;
 pub(crate) use next::*;
@@ -103,6 +103,9 @@ pub struct Card {
 pub struct CardInflection {
     pub form_slug: String,
     pub form: String,
+    pub ending: String,
+    pub tense: Option<String>,
+    pub speech_level: Option<String>,
 }
 
 /// This card's resolved `conjugation_matrix_cards` rows, joined out to the
@@ -126,11 +129,15 @@ where
 {
     Ok(sqlx::query(
         r#"
-        SELECT f.slug as form_slug, cmc.form
+        SELECT f.slug as form_slug, cmc.form, f.ending, tn.slug AS tense, sl.slug AS speech_level
         FROM conjugation_matrix_cards cmc
         JOIN conjugation_matrix_forms f ON cmc.form_id = f.id
+        JOIN cards c ON c.id = cmc.card_id
+        LEFT JOIN tenses tn ON tn.id = f.tense_id
+        LEFT JOIN speech_levels sl ON sl.id = f.speech_level_id
         WHERE cmc.card_id = ?
-        ORDER BY f.sort_order
+          AND (f.restricted_to_pos_id IS NULL OR f.restricted_to_pos_id = c.pos_id)
+        ORDER BY f.slug
         "#,
     )
     .bind(card_id)
@@ -140,6 +147,9 @@ where
     .map(|row| CardInflection {
         form_slug: row.get("form_slug"),
         form: row.get("form"),
+        ending: row.get("ending"),
+        tense: row.get("tense"),
+        speech_level: row.get("speech_level"),
     })
     .collect())
 }

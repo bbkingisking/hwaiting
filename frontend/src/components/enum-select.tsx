@@ -1,9 +1,9 @@
-import type { FieldValue } from '@/lib/api'
+import type { DisplayOption } from '@/lib/vocabulary'
 
 export function EnumSelect({ id, options, value, onChange, allowEmpty = true }: {
   allowEmpty?: boolean
   id?: string
-  options: Record<string, FieldValue>
+  options: Record<string, DisplayOption>
   value: string
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void
 }) {
@@ -17,7 +17,7 @@ export function EnumSelect({ id, options, value, onChange, allowEmpty = true }: 
       {allowEmpty && <option value=''>—</option>}
       {Object.values(options).map((o) => (
         <option key={o.slug} value={o.slug}>
-          {o.endings.length > 0 ? `${o.label} (${o.endings.join(', ')})` : o.label}
+          {o.endings && o.endings.length > 0 ? `${o.label} (${o.endings.join(', ')})` : o.label}
         </option>
       ))}
     </select>

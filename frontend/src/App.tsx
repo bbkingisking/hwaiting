@@ -7,7 +7,6 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { CardThemeProvider, useCardTheme } from '@/components/card-theme-provider'
-import { FieldValuesProvider } from '@/components/field-values-provider'
 import { SettingsProvider, useSettings } from '@/components/settings-provider'
 
 import { AuthProvider, useAuth } from '@/components/auth-provider'
@@ -520,9 +519,7 @@ function App() {
       <CardThemeProvider>
         <AuthProvider>
           <SettingsProvider>
-            <FieldValuesProvider>
-              <AppContent />
-            </FieldValuesProvider>
+            <AppContent />
           </SettingsProvider>
         </AuthProvider>
       </CardThemeProvider>

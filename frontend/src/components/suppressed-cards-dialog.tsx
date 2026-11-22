@@ -15,7 +15,7 @@ import {
   type SuppressedCard,
   ApiError
 } from '@/lib/api'
-import { useFieldValues } from '@/components/field-values-provider'
+import { pos as posLookup, grade as gradeLookup } from '@/lib/vocabulary'
 
 interface SuppressedCardsDialogProps {
   open: boolean
@@ -28,8 +28,6 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
   const [cards, setCards] = useState<SuppressedCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const { pos: posLookup, grade: gradeLookup } = useFieldValues()
 
   const loadCards = async () => {
     loadAbort.current?.abort()

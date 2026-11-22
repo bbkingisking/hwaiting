@@ -6,57 +6,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useFieldValues } from '@/components/field-values-provider'
+import { groupConjugations } from '@/lib/conjugation-presentation'
 
 interface InflectionsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   word: string
-  pos: string
   inflections: CardInflection[]
 }
 
-// Groups this card's resolved inflections by their catalog category
-// (present/past/future/...), in the catalog's own sort_order - both the
-// category order and the row order within it come from
-// inflectionForm/inflection_categories via useFieldValues, not from the
-// order `inflections` itself arrived in.
-function groupByCategory(
-  inflections: CardInflection[],
-  inflectionForm: ReturnType<typeof useFieldValues>['inflectionForm'],
-  pos: string,
-) {
-  const byCategory = new Map<string, { label: string; rows: { label: string; ending: string; form: string; sortOrder: number }[] }>()
-
-  for (const { form_slug, form } of inflections) {
-    const meta = inflectionForm[form_slug]
-    if (!meta) continue // catalog hasn't loaded yet, or slug is stale
-    if (meta.restricted_to_pos && meta.restricted_to_pos !== pos) continue
-
-    if (!byCategory.has(meta.category_slug)) {
-      byCategory.set(meta.category_slug, { label: meta.category_label_en, rows: [] })
-    }
-    byCategory.get(meta.category_slug)!.rows.push({
-      label: meta.label_en,
-      ending: meta.ending_ko,
-      form,
-      sortOrder: meta.sort_order,
-    })
-  }
-
-  for (const category of byCategory.values()) {
-    category.rows.sort((a, b) => a.sortOrder - b.sortOrder)
-  }
-
-  // Category insertion order already follows sort_order, since `inflections`
-  // itself arrives ordered by it (see check_answer's query) - Map preserves
-  // insertion order, so no extra sort is needed here.
-  return [...byCategory.values()]
-}
-
-export function InflectionsDialog({ open, onOpenChange, word, pos, inflections }: InflectionsDialogProps) {
-  const { inflectionForm } = useFieldValues()
-  const categories = groupByCategory(inflections, inflectionForm, pos)
+export function InflectionsDialog({ open, onOpenChange, word, inflections }: InflectionsDialogProps) {
+  const categories = groupConjugations(inflections)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,8 +38,8 @@ export function InflectionsDialog({ open, onOpenChange, word, pos, inflections }
                 <table className="w-full text-sm">
                   <tbody>
                     {category.rows.map((row) => (
-                      <tr key={row.label} className="border-t border-border/50 first:border-t-0">
-                        <td className="py-1 pr-3 text-muted-foreground whitespace-nowrap">{row.label}</td>
+                      <tr key={row.form_slug} className="border-t border-border/50 first:border-t-0">
+                        <td title={row.ending} className="py-1 pr-3 text-muted-foreground whitespace-nowrap">{row.label}</td>
                         <td className="py-1 font-medium">{row.form}</td>
                       </tr>
                     ))}

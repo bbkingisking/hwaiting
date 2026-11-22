@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/cards/queue", get(cards::get_review_queue))
         .route("/cards/validate", post(cards::validate_card_attempt))
-        .route("/cards/field-values", get(cards::list_field_values))
+        .route("/admin/grammar-patterns", get(cards::list_grammar_patterns))
         .route(
             "/cards/{card_id}/check",
             post(events::mutations::check_answer),

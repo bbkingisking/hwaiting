@@ -107,7 +107,7 @@ pub struct HistorySummary {
 
 #[derive(Serialize, ToSchema)]
 pub struct BreakdownRow {
-    label: String,
+    slug: String,
     reviews: i64,
     correct: i64,
     accuracy: f64,
@@ -485,31 +485,22 @@ async fn query_breakdown(
     pool: &SqlitePool,
     user_id: i64,
 ) -> Result<HistoryBreakdownResponse, AppError> {
-    // pop.slug/ot.slug are ascii identifiers as of migration 20240101000043
-    // (the human-readable text moved to parts_of_speech_labels/
-    // origin_types_labels), so the breakdown's `label` needs the same
-    // `_labels` join `field_values::fetch_field_values` uses, or this chart
-    // would start rendering `verb`/`native-korean` instead of readable text.
-    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
-
     // Breakdown by POS — only include rows where pos is not null/empty
     let pos_rows = sqlx::query(&format!(
         r#"
         SELECT
-            popl.label AS label,
+            pop.slug AS slug,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         JOIN parts_of_speech pop ON pop.id = c.pos_id
-        JOIN parts_of_speech_labels popl ON popl.pos_id = pop.id AND popl.language_id = ?
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-        GROUP BY popl.label
+        GROUP BY pop.slug
         ORDER BY reviews DESC
         "#,
     ))
-    .bind(eng_id)
     .bind(user_id)
     .fetch_all(pool)
     .await?;
@@ -525,7 +516,7 @@ async fn query_breakdown(
                 0.0
             };
             BreakdownRow {
-                label: row.get("label"),
+                slug: row.get("slug"),
                 reviews,
                 correct,
                 accuracy,
@@ -537,20 +528,18 @@ async fn query_breakdown(
     let origin_rows = sqlx::query(&format!(
         r#"
         SELECT
-            otl.label AS label,
+            ot.slug AS slug,
             COUNT(*) AS reviews,
             SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS correct
         FROM review_history rh
         JOIN cards c ON c.id = rh.card_id
         JOIN origin_types ot ON ot.id = c.origin_type_id
-        JOIN origin_types_labels otl ON otl.origin_type_id = ot.id AND otl.language_id = ?
         WHERE rh.user_id = ?
           AND {COUNTED_REVIEW_SQL}
-        GROUP BY otl.label
+        GROUP BY ot.slug
         ORDER BY reviews DESC
         "#,
     ))
-    .bind(eng_id)
     .bind(user_id)
     .fetch_all(pool)
     .await?;
@@ -566,7 +555,7 @@ async fn query_breakdown(
                 0.0
             };
             BreakdownRow {
-                label: row.get("label"),
+                slug: row.get("slug"),
                 reviews,
                 correct,
                 accuracy,

@@ -24,7 +24,7 @@ import {
 } from 'recharts'
 import { getHistory, type DayHistory, type HistorySummary, type BreakdownRow } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
-import { useFieldValues } from '@/components/field-values-provider'
+import { pos as posLookup, originType as originTypeLookup } from '@/lib/vocabulary'
 import { Percentage } from '@/components/percentage'
 
 interface ReviewHistoryDialogProps {
@@ -73,7 +73,7 @@ function SummaryStat({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-const PRIMARY_POS = ['Verb', 'Noun', 'Adjective', 'Adverb']
+const PRIMARY_POS = ['verb', 'noun', 'adjective', 'adverb']
 
 type BreakdownCategory = 'pos' | 'origin_type'
 
@@ -81,8 +81,8 @@ function BreakdownRowItem({ row, labelMap }: {
   row: BreakdownRow
   labelMap: Record<string, { label: string }>
 }) {
-  const english = labelMap[row.label]?.label ?? null
-  const display = english ? `${row.label} (${english})` : row.label
+  const english = labelMap[row.slug]?.label ?? null
+  const display = english ?? row.slug
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs flex-1 truncate" title={display}>
@@ -109,8 +109,8 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
   let primary: typeof rows = []
   let secondary: typeof rows = []
   if (isPos) {
-    primary = rows.filter(r => PRIMARY_POS.includes(r.label))
-    secondary = rows.filter(r => !PRIMARY_POS.includes(r.label))
+    primary = rows.filter(r => PRIMARY_POS.includes(r.slug))
+    secondary = rows.filter(r => !PRIMARY_POS.includes(r.slug))
   }
 
   return (
@@ -121,19 +121,19 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
       {isPos && primary.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
           <div className="flex flex-col gap-1.5">
-            {primary.map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
+            {primary.map(row => <BreakdownRowItem key={row.slug} row={row} labelMap={labelMap} />)}
           </div>
           <div className="flex flex-col gap-1.5">
-            {secondary.map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
+            {secondary.map(row => <BreakdownRowItem key={row.slug} row={row} labelMap={labelMap} />)}
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
           <div className="flex flex-col gap-1.5">
-            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
+            {rows.slice(0, Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.slug} row={row} labelMap={labelMap} />)}
           </div>
           <div className="flex flex-col gap-1.5">
-            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.label} row={row} labelMap={labelMap} />)}
+            {rows.slice(Math.ceil(rows.length / 2)).map(row => <BreakdownRowItem key={row.slug} row={row} labelMap={labelMap} />)}
           </div>
         </div>
       )}
@@ -143,7 +143,6 @@ function BreakdownSubsection({ title, rows, category, labelMap }: {
 
 export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogProps) {
   const { settings } = useSettings()
-  const { pos: posLookup, originType: originTypeLookup } = useFieldValues()
   const [days, setDays] = useState<DayHistory[]>([])
   const [summary, setSummary] = useState<HistorySummary | null>(null)
   const [breakdownPos, setBreakdownPos] = useState<BreakdownRow[]>([])
@@ -209,8 +208,8 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
         accuracy: Math.round(d.percentage),
       })),
       breakdown: {
-        by_pos: breakdownPos.map(r => ({ label: r.label, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
-        by_origin: breakdownOrigin.map(r => ({ label: r.label, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
+        by_pos: breakdownPos.map(r => ({ slug: r.slug, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
+        by_origin: breakdownOrigin.map(r => ({ slug: r.slug, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
       },
     }
     const text = JSON.stringify(payload, null, 2)

@@ -18,7 +18,7 @@ import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useFieldValues } from '@/components/field-values-provider'
+import { pos as posLookup, speechLevel as speechLevelLookup, tense as tenseLookup } from '@/lib/vocabulary'
 import { useCardTheme } from '@/components/card-theme-provider'
 import { CardThemeDecorationBefore, CardThemeDecorationAfter } from '@/components/card-theme-decorations'
 import { alignedAnswerCharacters } from '@/lib/answer-diff'
@@ -210,7 +210,6 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.review.attempt_token])
   useEffect(() => { if (staleReason) clearTimeout(autoProgressTimer.current) }, [staleReason])
 
-  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const showInfinitive = (answered || isAutoProgressing) && card.card.pos && (card.card.pos === 'verb' || card.card.pos === 'adjective')
 
   // `advancing` guards against a second click while a cold-path fetch for the
@@ -401,10 +400,10 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
               Humble
             </span>
           )}
-          {card.card.grammar_pattern && grammarPatterns[card.card.grammar_pattern] && (
+          {card.card.grammar_pattern && (
             <GrammarPatternPill
-              label={grammarPatterns[card.card.grammar_pattern].label}
-              tooltip={grammarPatterns[card.card.grammar_pattern].tooltip ?? ''}
+              label={card.card.grammar_pattern.name}
+              tooltip={card.card.grammar_pattern.explanation ?? ''}
               endings={reveal?.grammar_pattern_endings}
             />
           )}

@@ -347,3 +347,18 @@ async fn history_does_not_panic_for_a_user_with_cards_states_but_no_review_histo
     assert_eq!(history.summary.total_reviews, 0);
     assert_eq!(history.summary.total_accuracy, 0.0);
 }
+
+#[tokio::test]
+async fn history_breakdowns_return_slugs_without_label_tables() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    insert_review(&pool, user, 1, "good", "review", "2026-11-22T12:00:00Z").await;
+    sqlx::raw_sql("DROP TABLE parts_of_speech_labels; DROP TABLE origin_types_labels;")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let breakdown = serde_json::to_value(query_breakdown(&pool, user).await.unwrap()).unwrap();
+    assert_eq!(breakdown["by_pos"][0]["slug"], "bound-noun");
+    assert_eq!(breakdown["by_origin"][0]["slug"], "native-korean");
+    assert!(breakdown["by_pos"][0].get("label").is_none());
+}

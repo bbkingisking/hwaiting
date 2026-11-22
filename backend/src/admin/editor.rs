@@ -14,7 +14,7 @@ pub struct AdminTarget {
     pub alternatives: Vec<String>,
     #[serde(flatten)]
     pub hint: crate::inflection_hints::InflectionHint,
-    pub grammar_pattern: Option<String>,
+    pub grammar_pattern: Option<crate::cards::GrammarPattern>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -49,7 +49,7 @@ async fn load_admin_card(
         .bind(card_id).fetch_optional(&mut *connection).await?.ok_or(AppError::NotFound)?;
     let translations = sqlx::query("SELECT l.slug, ct.trans_word, ct.trans_dfn FROM cards_translations ct JOIN languages l ON l.id = ct.language_id WHERE ct.card_id = ? ORDER BY l.slug")
         .bind(card_id).fetch_all(&mut *connection).await?.into_iter().map(|r| (r.get("slug"), AdminTranslation { word: r.get("trans_word"), definition: r.get("trans_dfn") })).collect();
-    let r = sqlx::query("SELECT s.id, s.text, t.form, sl.slug AS speech_level, tn.slug AS tense, t.is_honorific, t.is_humble, gp.slug AS grammar_pattern FROM sentences s JOIN targets t ON t.sentence_id = s.id LEFT JOIN speech_levels sl ON sl.id = t.speech_level_id LEFT JOIN tenses tn ON tn.id = t.tense_id LEFT JOIN grammar_patterns gp ON gp.id = t.grammar_pattern_id WHERE s.card_id = ?")
+    let r = sqlx::query("SELECT s.id, s.text, t.form, sl.slug AS speech_level, tn.slug AS tense, t.is_honorific, t.is_humble, gp.slug AS grammar_pattern, (SELECT label FROM grammar_patterns_labels WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_name, (SELECT tooltip FROM grammar_patterns_tooltips WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_explanation FROM sentences s JOIN targets t ON t.sentence_id = s.id LEFT JOIN speech_levels sl ON sl.id = t.speech_level_id LEFT JOIN tenses tn ON tn.id = t.tense_id LEFT JOIN grammar_patterns gp ON gp.id = t.grammar_pattern_id WHERE s.card_id = ?")
         .bind(card_id).fetch_optional(&mut *connection).await?.ok_or(AppError::NotFound)?;
     let sentence_id = r.get("id");
     let alternatives = sqlx::query_scalar(
@@ -67,7 +67,7 @@ async fn load_admin_card(
             form: r.get("form"),
             alternatives,
             hint: crate::inflection_hints::InflectionHint::from_row(&r),
-            grammar_pattern: r.get("grammar_pattern"),
+            grammar_pattern: crate::cards::GrammarPattern::from_row(&r),
         },
         translations: sentence_translations,
     };

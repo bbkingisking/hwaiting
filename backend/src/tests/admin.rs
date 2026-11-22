@@ -369,6 +369,60 @@ async fn complete_editor_reads_all_translations_and_saves_atomically() {
 }
 
 #[tokio::test]
+async fn conjugations_are_self_contained_and_backend_filters_applicability() {
+    let pool = test_pool().await;
+    let admin = test_admin_user(&pool).await;
+    sqlx::raw_sql("UPDATE cards SET pos_id = 1 WHERE id = 1; INSERT INTO conjugation_matrix_cards (card_id, form_id, form) VALUES (1,1,'먹어요'),(1,26,'먹는'),(1,27,'먹은'); DROP TABLE conjugation_matrix_forms_labels; DROP TABLE conjugation_matrix_categories_labels; DROP TABLE parts_of_speech_labels;").execute(&pool).await.unwrap();
+    let response = get_card_inflections(AdminUser(admin), State(pool.clone()), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    let json = serde_json::to_value(response).unwrap();
+    let forms = json["inflections"].as_array().unwrap();
+    assert_eq!(forms.len(), 2);
+    let present = forms
+        .iter()
+        .find(|f| f["form_slug"] == "present_haeyo")
+        .unwrap();
+    assert_eq!(present["form"], "먹어요");
+    assert_eq!(present["ending"], "-아/어/여요");
+    assert_eq!(present["tense"], "present");
+    assert_eq!(present["speech_level"], "haeyo-che");
+    assert!(present.get("category").is_none());
+    assert!(present.get("label_en").is_none());
+    assert!(
+        forms
+            .iter()
+            .any(|f| f["form_slug"] == "adnominal_present_verb")
+    );
+    sqlx::query("UPDATE cards SET pos_id = 3 WHERE id = 1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let response = serde_json::to_value(
+        get_card_inflections(AdminUser(admin), State(pool.clone()), AppPath(1))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    assert!(
+        response["inflections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["form_slug"] == "adnominal_present_adj")
+    );
+    assert!(
+        !response["inflections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["form_slug"] == "adnominal_present_verb")
+    );
+}
+
+#[tokio::test]
 async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchanged() {
     let pool = test_pool().await;
     let admin = test_admin_user(&pool).await;

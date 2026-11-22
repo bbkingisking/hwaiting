@@ -113,7 +113,9 @@ const CARD_PROJECTION_SQL: &str = r#"
         st.translation as sentence_translation,
         sl.slug as speech_level, tn.slug as tense,
         tg.is_honorific, tg.is_humble,
-        gp.slug as grammar_pattern
+        gp.slug as grammar_pattern,
+        (SELECT label FROM grammar_patterns_labels WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_name,
+        (SELECT tooltip FROM grammar_patterns_tooltips WHERE grammar_pattern_id = gp.id AND language_id = (SELECT id FROM languages WHERE slug = 'eng')) AS grammar_pattern_explanation
     FROM cards c
     INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
     INNER JOIN sentences s ON c.id = s.card_id
@@ -147,7 +149,7 @@ fn project_card(row: SqliteRow, alternatives: Vec<String>) -> Card {
             sentence_after,
             sentence_translation: row.get("sentence_translation"),
             inflection_hint: crate::inflection_hints::InflectionHint::from_row(&row),
-            grammar_pattern: row.get("grammar_pattern"),
+            grammar_pattern: crate::cards::GrammarPattern::from_row(&row),
         },
         back: CardBack {
             word: row.get("word"),

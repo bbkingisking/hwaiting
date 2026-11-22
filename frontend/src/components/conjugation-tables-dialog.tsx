@@ -39,10 +39,6 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
   }, [open])
 
   const handleCardClick = (card: AdminCardSummary) => {
-    if (!card.pos) {
-      setError(`Card #${card.card_id} has no part of speech set`)
-      return
-    }
     setError(null)
     setSelectedCard(card)
     setInflectionsLoading(true)
@@ -133,12 +129,11 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
         </DialogContent>
       </Dialog>
 
-      {selectedCard && selectedCard.pos && (
+      {selectedCard && (
         <InflectionsDialog
           open={inflectionsOpen}
           onOpenChange={setInflectionsOpen}
           word={selectedCard.word}
-          pos={selectedCard.pos}
           inflections={inflections}
         />
       )}

@@ -49,7 +49,7 @@ export type AdminSentence = {
 export type AdminTarget = InflectionHint & {
     alternatives: Array<string>;
     form: string;
-    grammar_pattern?: string | null;
+    grammar_pattern?: null | GrammarPattern;
 };
 
 export type AdminTranslation = {
@@ -87,8 +87,8 @@ export type AvailableTranslationLanguage = {
 export type BreakdownRow = {
     accuracy: number;
     correct: number;
-    label: string;
     reviews: number;
+    slug: string;
 };
 
 /**
@@ -126,7 +126,7 @@ export type CardFront = InflectionHint & {
     card_id: number;
     content_revision: number;
     grade?: string | null;
-    grammar_pattern?: string | null;
+    grammar_pattern?: null | GrammarPattern;
     hanja?: string | null;
     /**
      * KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
@@ -159,8 +159,11 @@ export type CardFront = InflectionHint & {
  * grouping and ordering; the backend returns only forms applicable to the card.
  */
 export type CardInflection = {
+    ending: string;
     form: string;
     form_slug: string;
+    speech_level?: string | null;
+    tense?: string | null;
 };
 
 export type CardInflectionsResponse = {
@@ -247,35 +250,17 @@ export type ExportData = {
 };
 
 /**
- * The seven fields `FieldValues` can return values for, and the only legal
- * values for `?fields=`. Wire values are snake_case (`grammar_pattern`,
- * ...), matching the response's own field names - see
- * `deserialize_field_list`.
+ * The selected pattern's authored content. Literal endings belong to the
+ * answer reveal or the admin catalog, never to the pre-answer prompt.
  */
-export type FieldName = 'pos' | 'origin_type' | 'grade' | 'speech_level' | 'tense' | 'grammar_pattern' | 'inflection_form';
-
-export type FieldValue = {
-    /**
-     * A grammar pattern's literal conjugation endings (e.g. `["-네", "-네요",
-     * "-군", "-군요"]`), one entry per `grammar_patterns_endings` row -
-     * empty for every other field (which has no such concept at all) and
-     * for a grammar pattern with none recorded yet.
-     */
-    endings: Array<string>;
-    label: string;
-    rank?: number | null;
+export type GrammarPattern = {
+    explanation?: string | null;
+    name: string;
     slug: string;
-    tooltip?: string | null;
 };
 
-export type FieldValues = {
-    grade?: Array<FieldValue> | null;
-    grammar_pattern?: Array<FieldValue> | null;
-    inflection_form?: Array<InflectionFormValue> | null;
-    origin_type?: Array<FieldValue> | null;
-    pos?: Array<FieldValue> | null;
-    speech_level?: Array<FieldValue> | null;
-    tense?: Array<FieldValue> | null;
+export type GrammarPatternOption = GrammarPattern & {
+    endings: Array<string>;
 };
 
 export type HanjaDrill = {
@@ -345,34 +330,6 @@ export type ImportStats = {
     card_states_derived: number;
     reviews_imported: number;
     suppressed_cards_imported: number;
-};
-
-/**
- * The catalog of possible inflected forms (dictionary form, 해요체 present,
- * ...) grouped by category - non-spoiling, unlike the actual conjugated
- * forms for one card (see `CardReveal::inflections` in check.rs, which is
- * gated the same way `grammar_pattern_endings` is). Shaped for the review
- * UI to build a table directly: group by `category_slug` in `sort_order`,
- * skip a row whose `restricted_to_pos` doesn't match the card's own `pos`.
- */
-export type InflectionFormValue = {
-    category_label_en: string;
-    category_label_ko: string;
-    category_slug: string;
-    ending_ko: string;
-    label_en: string;
-    label_ko: string;
-    /**
-     * The `parts_of_speech` slug this form is restricted to (e.g. `"verb"`
-     * for `adnominal_present_verb`, `"adjective"` for
-     * `adnominal_present_adj`), or `None` if every part of speech gets this
-     * form - see migration 20240101000048, which replaced a single
-     * `verb_only` boolean with this fk once a form needed the opposite
-     * restriction direction.
-     */
-    restricted_to_pos?: string | null;
-    slug: string;
-    sort_order: number;
 };
 
 /**
@@ -794,6 +751,25 @@ export type GetCardInflectionsResponses = {
 
 export type GetCardInflectionsResponse = GetCardInflectionsResponses[keyof GetCardInflectionsResponses];
 
+export type ListGrammarPatternsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/grammar-patterns';
+};
+
+export type ListGrammarPatternsErrors = {
+    403: ErrorResponse;
+};
+
+export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
+
+export type ListGrammarPatternsResponses = {
+    200: Array<GrammarPatternOption>;
+};
+
+export type ListGrammarPatternsResponse = ListGrammarPatternsResponses[keyof ListGrammarPatternsResponses];
+
 export type ListUsersData = {
     body?: never;
     path?: never;
@@ -1094,41 +1070,6 @@ export type CapabilitiesResponses = {
 };
 
 export type CapabilitiesResponse = CapabilitiesResponses[keyof CapabilitiesResponses];
-
-export type ListFieldValuesData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Comma-separated subset of fields to return (e.g. `fields=pos,tense`).
-         * Omit entirely to get all six.
-         */
-        fields?: Array<FieldName>;
-    };
-    url: '/api/cards/field-values';
-};
-
-export type ListFieldValuesErrors = {
-    /**
-     * Unknown name in `?fields=`
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type ListFieldValuesError = ListFieldValuesErrors[keyof ListFieldValuesErrors];
-
-export type ListFieldValuesResponses = {
-    /**
-     * Lookup-table values for dropdowns/enum displays. Fields not requested via `?fields=` are omitted entirely rather than sent empty.
-     */
-    200: FieldValues;
-};
-
-export type ListFieldValuesResponse = ListFieldValuesResponses[keyof ListFieldValuesResponses];
 
 export type ResetFsrsParametersData = {
     body?: never;

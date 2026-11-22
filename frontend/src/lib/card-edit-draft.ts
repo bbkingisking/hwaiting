@@ -31,7 +31,7 @@ export function toFormState(card: AdminCard): FormState {
     tense: card.tense ?? '',
     is_honorific: card.is_honorific ?? false,
     is_humble: card.is_humble ?? false,
-    grammar_pattern: card.grammar_pattern ?? '',
+    grammar_pattern: card.grammar_pattern?.slug ?? '',
   }
 }
 

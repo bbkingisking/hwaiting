@@ -92,14 +92,9 @@ export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueR
   }
 }
 
-export type FieldValue = Schemas.FieldValue
-type FieldValues = Schemas.FieldValues
-export type InflectionFormValue = Schemas.InflectionFormValue
 export type CardInflection = Schemas.CardInflection
-
-export async function getFieldValues(): Promise<FieldValues> {
-  const url = `${apiBase()}/api/cards/field-values`
-  return fetchWithAuth(url)
+export async function getGrammarPatterns(signal?: AbortSignal): Promise<Schemas.GrammarPatternOption[]> {
+  return fetchWithAuth(`${apiBase()}/api/admin/grammar-patterns`, { signal })
 }
 
 // Grades `answer` against `cardId` server-side, records the FSRS review,

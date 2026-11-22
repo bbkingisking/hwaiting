@@ -33,6 +33,16 @@ test('drafts retain separate translations while sharing card and sentence facts'
   assert.ok(changes.every(c => !('expected_content_revision' in c)))
 })
 
+test('embedded grammar content is converted back to its slug for a write', () => {
+  const snapshot = { ...detail, sentence: { ...detail.sentence, target: { ...target, grammar_pattern: { slug: 'realization', name: 'Realization', explanation: 'An authored explanation.' } } } }
+  const views = adminCardViews(snapshot)
+  let drafts = initialDrafts(views)
+  assert.equal(drafts['10:eng'].grammar_pattern,'realization')
+  assert.deepEqual(draftChanges(views,drafts),[])
+  drafts = updateDrafts(drafts,'10:eng','grammar_pattern','contrast')
+  assert.ok(draftChanges(views,drafts).every(change=>change.grammar_pattern==='contrast'))
+})
+
 test('shared edits are sent once rather than repeated for each language', () => {
   const views = adminCardViews(detail)
   const drafts = updateDrafts(initialDrafts(views), '10:eng', 'hanja', '')

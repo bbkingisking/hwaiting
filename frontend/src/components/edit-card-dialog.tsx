@@ -3,10 +3,10 @@ import { Check, Copy } from 'lucide-react'
 import { type FormState } from '@/lib/card-edit-draft'
 import { adminCardViews, initialDrafts, updateDrafts, draftChanges, viewKey } from '@/lib/admin-card-draft'
 import { useEffect, useId, useState } from 'react'
-import { type AdminCardDetail, ApiError, getAdminCard, saveAdminCard } from '@/lib/api'
+import { type AdminCardDetail, ApiError, getAdminCard, saveAdminCard, getGrammarPatterns } from '@/lib/api'
 import { useSettings } from '@/components/settings-provider'
 import { krdictUrl } from '@/lib/utils'
-import { useFieldValues } from '@/components/field-values-provider'
+import { speechLevel, tense, type DisplayOption } from '@/lib/vocabulary'
 import { EnumSelect } from '@/components/enum-select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogPro
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const { speechLevel, tense, grammarPattern } = useFieldValues()
+  const [grammarPattern, setGrammarPattern] = useState<Record<string, DisplayOption>>({})
   const { settings: { translationLanguage } } = useSettings()
   const languageNames = new Intl.DisplayNames(document.documentElement.lang || 'en', { type: 'language', fallback: 'none' })
   const views = detail ? adminCardViews(detail) : {}
@@ -48,7 +48,9 @@ export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogPro
     setDrafts({})
     setError(null)
     setCopied(false)
-    getAdminCard(cardId, controller.signal).then(data => {
+    Promise.all([getAdminCard(cardId, controller.signal), getGrammarPatterns(controller.signal)]).then(([data, patterns]) => {
+      if (controller.signal.aborted) return
+      setGrammarPattern(Object.fromEntries(patterns.map(pattern => [pattern.slug, { slug: pattern.slug, label: pattern.name, endings: pattern.endings }])))
       if (controller.signal.aborted) return
       setDetail(data)
       setDrafts(initialDrafts(adminCardViews(data)))
