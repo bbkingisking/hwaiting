@@ -149,3 +149,50 @@ async fn existing_foreign_key_violations_block_startup() {
     assert!(error.contains("users_card_flags"), "{error}");
     assert!(error.contains("missing"), "{error}");
 }
+
+#[tokio::test]
+async fn card_translations_are_unique_per_card_and_language() {
+    let pool = test_pool().await;
+    let (card_id, language_id): (i64, i64) =
+        sqlx::query_as("SELECT card_id, language_id FROM cards_translations LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let duplicate = sqlx::query(
+        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'duplicate')",
+    )
+    .bind(card_id)
+    .bind(language_id)
+    .execute(&pool)
+    .await
+    .unwrap_err();
+    assert!(duplicate.as_database_error().unwrap().is_unique_violation());
+
+    let other_language: i64 =
+        sqlx::query_scalar("INSERT INTO languages (slug) VALUES ('fra') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'translation')",
+    )
+    .bind(card_id)
+    .bind(other_language)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let other_card: i64 =
+        sqlx::query_scalar("INSERT INTO cards (word) VALUES ('다른 단어') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'translation')",
+    )
+    .bind(other_card)
+    .bind(language_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+}
