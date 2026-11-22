@@ -65,6 +65,8 @@ pub struct UserSettingsCore {
     /// Saved IANA study timezone; null until a new account initializes it.
     #[serde(default)]
     pub study_timezone: Option<String>,
+    #[serde(default)]
+    pub translation_language: Option<String>,
     pub auto_progress_on_correct: bool,
     pub auto_progress_delay: i64,
     pub desired_retention: f64,
@@ -132,6 +134,8 @@ pub struct UpdateSettingsRequest {
     pub yellow_threshold: Option<i64>,
     pub day_boundary_hour: Option<i64>,
     pub study_timezone: Option<String>,
+    #[serde(default)]
+    pub translation_language: Option<String>,
     /// Browser default, applied only if no timezone has been saved yet.
     pub initial_study_timezone: Option<String>,
     pub auto_progress_on_correct: Option<bool>,
@@ -197,7 +201,7 @@ pub async fn get_settings(
 
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
-        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone, translation_language, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings
         WHERE user_id = ?
         "#
@@ -246,6 +250,7 @@ pub async fn update_settings(
         yellow_threshold,
         day_boundary_hour,
         study_timezone,
+        translation_language,
         initial_study_timezone,
         auto_progress_on_correct,
         auto_progress_delay,
@@ -256,6 +261,16 @@ pub async fn update_settings(
         history_threshold_lines,
     } = payload;
 
+    if let Some(code) = &translation_language {
+        if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
+            return Err(AppError::TranslationLanguage(
+                "invalid_translation_language",
+            ));
+        }
+        crate::translation_language::TranslationLanguage(code.clone())
+            .id(&pool)
+            .await?;
+    }
     validate_settings_values(
         day_boundary_hour,
         auto_progress_delay,
@@ -292,6 +307,9 @@ pub async fn update_settings(
     }
     if day_boundary_hour.is_some() {
         sets.push("day_boundary_hour = ?")
+    }
+    if translation_language.is_some() {
+        sets.push("translation_language = ?")
     }
     if study_timezone.is_some() {
         sets.push("study_timezone = ?")
@@ -336,6 +354,9 @@ pub async fn update_settings(
             q = q.bind(v)
         }
         if let Some(v) = day_boundary_hour {
+            q = q.bind(v)
+        }
+        if let Some(v) = translation_language {
             q = q.bind(v)
         }
         if let Some(v) = study_timezone.or(initial_study_timezone) {

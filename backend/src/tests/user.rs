@@ -119,3 +119,67 @@ async fn hanja_hint_preference_defaults_on_and_partial_updates_preserve_it() {
     assert!(restored.core.show_hanja_hints);
     assert!(restored.core.history_colored_dots);
 }
+
+#[tokio::test]
+async fn translation_language_is_explicit_persisted_and_validated() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    assert_eq!(
+        get_settings(State(pool.clone()), AuthUser(user_id))
+            .await
+            .unwrap()
+            .core
+            .translation_language,
+        None
+    );
+    for code in ["eng", "kor"] {
+        let payload =
+            serde_json::from_value(serde_json::json!({"translation_language": code})).unwrap();
+        let _ = update_settings(State(pool.clone()), AuthUser(user_id), AppJson(payload))
+            .await
+            .unwrap();
+        assert_eq!(
+            get_settings(State(pool.clone()), AuthUser(user_id))
+                .await
+                .unwrap()
+                .core
+                .translation_language
+                .as_deref(),
+            Some(code)
+        );
+    }
+    for code in ["en", "ENG", "", "zzz"] {
+        let payload =
+            serde_json::from_value(serde_json::json!({"translation_language": code})).unwrap();
+        assert!(
+            update_settings(State(pool.clone()), AuthUser(user_id), AppJson(payload))
+                .await
+                .is_err()
+        );
+    }
+    let payload = serde_json::from_value(serde_json::json!({"red_threshold": 75})).unwrap();
+    let _ = update_settings(State(pool.clone()), AuthUser(user_id), AppJson(payload))
+        .await
+        .unwrap();
+    assert_eq!(
+        get_settings(State(pool.clone()), AuthUser(user_id))
+            .await
+            .unwrap()
+            .core
+            .translation_language
+            .as_deref(),
+        Some("kor")
+    );
+    let error =
+        sqlx::query("UPDATE users_settings SET translation_language = 'zzz' WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+    assert!(
+        error
+            .as_database_error()
+            .unwrap()
+            .is_foreign_key_violation()
+    );
+}

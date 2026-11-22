@@ -92,6 +92,14 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
         Some(data.settings.core.daily_new_card_limit),
     )?;
     crate::user::parse_study_timezone(data.settings.core.study_timezone.as_deref())?;
+    if let Some(code) = &data.settings.core.translation_language {
+        if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
+            return Err(AppError::TranslationLanguage(
+                "invalid_translation_language",
+            ));
+        }
+    }
+
     // Construct the actual model; parsing the JSON alone does not establish
     // that its parameter count and values can schedule a card.
     crate::cards::scheduling::Scheduler::new(
@@ -271,6 +279,11 @@ pub async fn import_data(
     let data = payload.data;
 
     validate_import_data(&data)?;
+    if let Some(code) = &data.settings.core.translation_language {
+        crate::translation_language::TranslationLanguage(code.clone())
+            .id(&pool)
+            .await?;
+    }
 
     // Begin transaction
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -519,16 +532,17 @@ pub async fn import_data(
     sqlx::query(
         r#"
         INSERT INTO users_settings (user_id, show_hanja_hints, red_threshold, yellow_threshold,
-                                   day_boundary_hour, study_timezone, auto_progress_on_correct, auto_progress_delay,
+                                   day_boundary_hour, study_timezone, translation_language, auto_progress_on_correct, auto_progress_delay,
                                    desired_retention, daily_new_card_limit,
                                    history_colorized_area, history_colored_dots, history_threshold_lines)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             show_hanja_hints = excluded.show_hanja_hints,
             red_threshold = excluded.red_threshold,
             yellow_threshold = excluded.yellow_threshold,
             day_boundary_hour = excluded.day_boundary_hour,
             study_timezone = COALESCE(excluded.study_timezone, users_settings.study_timezone),
+            translation_language = COALESCE(excluded.translation_language, users_settings.translation_language),
             auto_progress_on_correct = excluded.auto_progress_on_correct,
             auto_progress_delay = excluded.auto_progress_delay,
             desired_retention = excluded.desired_retention,
@@ -544,6 +558,7 @@ pub async fn import_data(
     .bind(data.settings.core.yellow_threshold)
     .bind(data.settings.core.day_boundary_hour)
     .bind(&data.settings.core.study_timezone)
+    .bind(&data.settings.core.translation_language)
     .bind(data.settings.core.auto_progress_on_correct)
     .bind(data.settings.core.auto_progress_delay)
     .bind(data.settings.core.desired_retention)
@@ -592,7 +607,7 @@ async fn get_user_settings(
 
     let core = sqlx::query_as::<_, crate::user::UserSettingsCore>(
         r#"
-        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone,
+        SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone, translation_language,
                auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit,
                history_colorized_area, history_colored_dots, history_threshold_lines
         FROM users_settings

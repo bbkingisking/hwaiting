@@ -601,6 +601,7 @@ export type UpdateSettingsRequest = {
     red_threshold?: number | null;
     show_hanja_hints?: boolean | null;
     study_timezone?: string | null;
+    translation_language?: string | null;
     yellow_threshold?: number | null;
 };
 
@@ -665,6 +666,7 @@ export type UserSettingsCore = {
      * Saved IANA study timezone; null until a new account initializes it.
      */
     study_timezone?: string | null;
+    translation_language?: string | null;
     yellow_threshold: number;
 };
 

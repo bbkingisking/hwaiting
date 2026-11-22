@@ -626,6 +626,7 @@ async fn unknown_card_ids_are_skipped_and_counted_correctly() {
         exported_at: chrono::Utc::now().to_rfc3339(),
         settings: UserSettingsExport {
             core: crate::user::UserSettingsCore {
+                translation_language: None,
                 show_hanja_hints: true,
                 red_threshold: 50,
                 yellow_threshold: 70,
@@ -748,4 +749,65 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
     )
     .await;
     assert!(matches!(stale, Err(AppError::StaleReview)));
+}
+
+#[tokio::test]
+async fn translation_language_round_trips_and_old_backups_preserve_saved_choice() {
+    let pool = test_pool().await;
+    let source = test_user(&pool).await;
+    crate::user::ensure_settings_row(&pool, source)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users_settings SET translation_language = 'eng' WHERE user_id = ?")
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let exported = export_data(State(pool.clone()), AuthUser(source))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        exported.settings.core.translation_language.as_deref(),
+        Some("eng")
+    );
+    let mut old_backup = serde_json::to_value(&exported).unwrap();
+    old_backup["settings"]
+        .as_object_mut()
+        .unwrap()
+        .remove("translation_language");
+    let destination = test_user(&pool).await;
+    let _ = import_data(
+        State(pool.clone()),
+        AuthUser(destination),
+        AppJson(ImportDataRequest {
+            data: exported,
+            overwrite: false,
+        }),
+    )
+    .await
+    .unwrap();
+    let settings = crate::user::get_settings(State(pool.clone()), AuthUser(destination))
+        .await
+        .unwrap();
+    assert_eq!(settings.core.translation_language.as_deref(), Some("eng"));
+    sqlx::query("UPDATE users_settings SET translation_language = 'kor' WHERE user_id = ?")
+        .bind(destination)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let _ = import_data(
+        State(pool.clone()),
+        AuthUser(destination),
+        AppJson(ImportDataRequest {
+            data: serde_json::from_value(old_backup).unwrap(),
+            overwrite: true,
+        }),
+    )
+    .await
+    .unwrap();
+    let settings = crate::user::get_settings(State(pool), AuthUser(destination))
+        .await
+        .unwrap();
+    assert_eq!(settings.core.translation_language.as_deref(), Some("kor"));
 }
