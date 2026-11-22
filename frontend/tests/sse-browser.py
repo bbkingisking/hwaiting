@@ -28,6 +28,7 @@ for name in ('CREDENTIALS_DIRECTORY', 'HWAITING_UNIX_SOCKET', 'LISTEN_PID', 'LIS
 env.update({
     'HWAITING_DATABASE_URL': f'sqlite://{work}/test.db',
     'HWAITING_JWT_SECRET': key,
+    'HWAITING_SIGNUPS_ENABLED': 'true',
     'HWAITING_ADMIN_PASSWORD': 'cookie-test-password',
     'HWAITING_ADMIN_USERNAME': 'cookie-test-admin',
     'HWAITING_HOST': '127.0.0.1', 'HWAITING_PORT': str(port),

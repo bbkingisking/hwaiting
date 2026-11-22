@@ -6,6 +6,7 @@ async fn labels_are_owner_scoped_validated_and_can_be_cleared() {
     let owner = crate::test_support::test_user(&pool).await;
     let other = crate::test_support::test_user(&pool).await;
     let state = AppState {
+        signups_enabled: true,
         events: crate::events::EventHub::default(),
         pool: pool.clone(),
         webauthn: None,
@@ -192,6 +193,7 @@ async fn registration_ceremonies_are_bound_to_their_endpoint_and_account() {
     let owner = crate::test_support::test_user(&pool).await;
     let other = crate::test_support::test_user(&pool).await;
     let state = AppState {
+        signups_enabled: true,
         events: crate::events::EventHub::default(),
         pool: pool.clone(),
         webauthn: Some(Arc::new(WebauthnConfig {
@@ -294,6 +296,7 @@ async fn concurrent_deletions_preserve_a_passwordless_sign_in_method() {
     .await
     .unwrap();
     let state = AppState {
+        signups_enabled: true,
         events: crate::events::EventHub::default(),
         pool: pool.clone(),
         webauthn: None,
@@ -407,4 +410,62 @@ fn does_not_lowercase_the_host() {
         parse_origin("https://HWaiting.Example.com").unwrap(),
         "https://HWaiting.Example.com"
     );
+}
+
+#[tokio::test]
+async fn closed_signups_preserve_existing_account_authentication() {
+    use axum::response::IntoResponse;
+
+    let pool = crate::test_support::test_pool().await;
+    let mut state = AppState {
+        signups_enabled: false,
+        events: crate::events::EventHub::default(),
+        pool: pool.clone(),
+        webauthn: Some(Arc::new(WebauthnConfig {
+            rp_id: RpId::Domain(AsciiDomain::try_from("localhost".to_string()).unwrap()),
+            origins: vec!["http://localhost".to_string()],
+        })),
+        ceremonies: Arc::new(Mutex::new(HashMap::new())),
+    };
+    let reported = capabilities(State(state.clone())).await.0;
+    assert!(!reported.signups_enabled);
+    assert!(reported.passkeys_enabled);
+    let signup = |state| {
+        crate::auth::signup(
+            State(state),
+            AppJson(crate::auth::SignupRequest {
+                username: "new-user".to_string(),
+                password: "password".to_string(),
+            }),
+        )
+    };
+    let error = signup(state.clone()).await.unwrap_err();
+    assert!(matches!(error, AppError::SignupsDisabled));
+    assert_eq!(error.into_response().status(), StatusCode::FORBIDDEN);
+    assert!(matches!(
+        register_start(State(state.clone())).await,
+        Err(AppError::SignupsDisabled)
+    ));
+    assert!(state.ceremonies.lock().unwrap().is_empty());
+    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(users, 0);
+
+    let owner = crate::test_support::test_user(&pool).await;
+    assert!(
+        add_passkey_start(State(state.clone()), AuthUser(owner))
+            .await
+            .is_ok()
+    );
+    assert!(login_start(State(state.clone())).await.is_ok());
+    state.signups_enabled = true;
+    assert!(capabilities(State(state.clone())).await.0.signups_enabled);
+    assert!(register_start(State(state.clone())).await.is_ok());
+    sqlx::query("INSERT INTO users (username) VALUES ('new-user')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(signup(state).await, Err(AppError::UsernameExists)));
 }

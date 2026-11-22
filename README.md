@@ -31,6 +31,7 @@ Every backend option is configurable from an env var `KEY_NAME` or a plain text 
 | `HWAITING_UNIX_SOCKET` | Optional (off if unset) | Bind a Unix socket at this path instead of TCP | Unset (off) |
 | `HWAITING_STATIC_DIR` | Optional (off if unset) | Serve a web frontend from this directory | Unset (off) |
 | `HWAITING_CORS_ALLOWED_ORIGINS` | Optional (off if unset) | Comma-separated list of allowed CORS origins | Unset (off) |
+| `HWAITING_SIGNUPS_ENABLED` | Optional | Allow public password and passkey account creation (`true` or `false`); existing accounts can still sign in when disabled | `false` |
 | `HWAITING_RP_ID` | Optional (off if unset) | WebAuthn RP ID, enables passkey sign-in | Unset (off) |
 | `HWAITING_RP_ORIGINS` | Optional (off if unset) | WebAuthn allowed origin(s) for passkey sign-in | Unset (off) |
 | `HWAITING_JWT_EXPIRY_SECONDS` | Optional (off if unset) | Auth JWT lifetime in seconds | Unset (off) |

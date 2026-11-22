@@ -415,6 +415,7 @@ ENVIRONMENT VARIABLES:
         HWAITING_UNIX_SOCKET            Bind a Unix socket at this path instead of TCP
         HWAITING_STATIC_DIR             Serve the frontend SPA from this directory
         HWAITING_CORS_ALLOWED_ORIGINS   Comma-separated list of allowed CORS origins
+        HWAITING_SIGNUPS_ENABLED        Allow public account creation (true/false; default false)
         HWAITING_RP_ID                  WebAuthn RP ID - enables passkey sign-in
         HWAITING_RP_ORIGINS             WebAuthn allowed origin(s) for passkey sign-in
         HWAITING_JWT_EXPIRY_SECONDS     Auth JWT lifetime in seconds

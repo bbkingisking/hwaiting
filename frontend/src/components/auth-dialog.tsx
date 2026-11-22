@@ -18,7 +18,7 @@ import { useAuth } from '@/components/auth-provider'
 type Method = 'password' | 'passkey'
 
 export function AuthDialog() {
-  const { isAuthenticated, login, signup, passkeyLogin, passkeyRegister, passkeysEnabled } = useAuth()
+  const { isAuthenticated, login, signup, passkeyLogin, passkeyRegister, passkeysEnabled, signupsEnabled } = useAuth()
 
   // Defaults to 'passkey' only when the server actually offers it - safe to
   // read passkeysEnabled here (rather than force 'password' and flip it in
@@ -128,11 +128,11 @@ export function AuthDialog() {
         <DialogHeader>
           <DialogTitle>Welcome</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue="signup" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue={signupsEnabled ? "signup" : "login"} className="w-full">
+          {signupsEnabled && <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
-          </TabsList>
+          </TabsList>}
 
           <TabsContent value="login" className="space-y-4">
             {methodToggle}
@@ -183,7 +183,7 @@ export function AuthDialog() {
             )}
           </TabsContent>
 
-          <TabsContent value="signup" className="space-y-4">
+          {signupsEnabled && <TabsContent value="signup" className="space-y-4">
             {methodToggle}
             {!showPasskey ? (
               <form onSubmit={handleSignupSubmit} className="space-y-4">
@@ -234,7 +234,7 @@ export function AuthDialog() {
                 </Button>
               </div>
             )}
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </DialogContent>
     </Dialog>

@@ -84,6 +84,9 @@ pub enum AppError {
     #[error("Passkey sign-in is not configured on this server")]
     PasskeysDisabled,
 
+    #[error("Sign-ups are disabled on this server")]
+    SignupsDisabled,
+
     #[error("Username already exists")]
     UsernameExists,
 
@@ -197,6 +200,10 @@ impl IntoResponse for AppError {
             AppError::UsernameExists => {
                 (StatusCode::CONFLICT, "Username already exists".to_string())
             }
+            AppError::SignupsDisabled => (
+                StatusCode::FORBIDDEN,
+                "Sign-ups are disabled on this server".to_string(),
+            ),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "Not found".to_string()),
             AppError::BadRequest(ref msg) => (StatusCode::BAD_REQUEST, msg.clone()),

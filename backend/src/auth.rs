@@ -107,15 +107,18 @@ pub async fn login(
     request_body = SignupRequest,
     responses(
         (status = 201, description = "Account created", body = AuthResponse),
+        (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
         (status = 409, description = "Username already exists", body = crate::error::ErrorResponse),
     ),
     tag = "auth"
 )]
 pub async fn signup(
-    State(pool): State<SqlitePool>,
+    State(state): State<crate::passkey::AppState>,
     AppJson(payload): AppJson<SignupRequest>,
 ) -> Result<(StatusCode, Response), AppError> {
+    state.require_signups_enabled()?;
+    let pool = &state.pool;
     let username = payload.username.trim();
     let password = payload.password.trim();
 

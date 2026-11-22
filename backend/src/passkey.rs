@@ -266,6 +266,7 @@ impl WebauthnConfig {
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
+    pub signups_enabled: bool,
     pub events: crate::events::EventHub,
     /// `None` when `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS` aren't configured - passkey sign-in
     /// is an optional feature, not a required one, see `build_webauthn_config`.
@@ -277,6 +278,7 @@ impl AppState {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
+            signups_enabled: crate::credentials::signups_enabled(),
             events: crate::events::EventHub::default(),
             webauthn: build_webauthn_config().map(Arc::new),
             ceremonies: Arc::new(Mutex::new(HashMap::new())),
@@ -296,6 +298,14 @@ impl AppState {
     /// it ever tries a ceremony, not just get told so after the fact.
     fn passkeys_enabled(&self) -> bool {
         self.webauthn.is_some()
+    }
+
+    pub fn require_signups_enabled(&self) -> Result<(), AppError> {
+        if self.signups_enabled {
+            Ok(())
+        } else {
+            Err(AppError::SignupsDisabled)
+        }
     }
 
     fn store_ceremony(&self, ceremony: Ceremony) -> Uuid {
@@ -456,12 +466,10 @@ pub struct ListPasskeysResponse {
     pub passkeys: Vec<PasskeySummary>,
 }
 
-/// Which optional features this deployment has turned on. Just the one
-/// field today - passkeys is the only config-gated optional feature that
-/// matters to the frontend - but this is the endpoint any future one would
-/// join, rather than each growing its own ad hoc discovery mechanism.
+/// Which optional features this deployment has turned on.
 #[derive(Serialize, ToSchema)]
 pub struct Capabilities {
+    pub signups_enabled: bool,
     pub passkeys_enabled: bool,
 }
 
@@ -477,6 +485,7 @@ pub struct Capabilities {
 )]
 pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
     Json(Capabilities {
+        signups_enabled: state.signups_enabled,
         passkeys_enabled: state.passkeys_enabled(),
     })
 }
@@ -634,6 +643,7 @@ async fn finish_registration(
     post,
     path = "/api/auth/passkey/register/start",
     responses(
+        (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 200, description = "WebAuthn creation options for a new passkey account. \
             Opaque to OpenAPI - pass straight to navigator.credentials.create() after \
             base64url-decoding challenge/user.id."),
@@ -643,6 +653,7 @@ async fn finish_registration(
 pub async fn register_start(
     State(state): State<AppState>,
 ) -> Result<Json<StartResponse>, AppError> {
+    state.require_signups_enabled()?;
     let (ceremony_id, options) = start_registration(&state, RegistrationPurpose::NewAccount)?;
     info!("passkey register/start: ceremony={ceremony_id}");
     Ok(Json(StartResponse {
@@ -655,6 +666,7 @@ pub async fn register_start(
     post,
     path = "/api/auth/passkey/register/finish",
     responses(
+        (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 201, description = "Account created from the verified passkey", body = AuthResponse),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
@@ -667,6 +679,7 @@ pub async fn register_finish(
         FinishRequest<webauthn_rp::response::register::ser_relaxed::RegistrationRelaxed>,
     >,
 ) -> Result<(StatusCode, axum::response::Response), AppError> {
+    state.require_signups_enabled()?;
     let (user_id, _) = finish_registration(
         &state,
         req.ceremony_id,

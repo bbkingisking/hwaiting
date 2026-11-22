@@ -39,13 +39,11 @@ export type BreakdownRow = {
 };
 
 /**
- * Which optional features this deployment has turned on. Just the one
- * field today - passkeys is the only config-gated optional feature that
- * matters to the frontend - but this is the endpoint any future one would
- * join, rather than each growing its own ad hoc discovery mechanism.
+ * Which optional features this deployment has turned on.
  */
 export type Capabilities = {
     passkeys_enabled: boolean;
+    signups_enabled: boolean;
 };
 
 /**
@@ -1044,6 +1042,10 @@ export type RegisterFinishErrors = {
      */
     400: ErrorResponse;
     /**
+     * Sign-ups are disabled
+     */
+    403: ErrorResponse;
+    /**
      * Ceremony expired
      */
     410: ErrorResponse;
@@ -1077,6 +1079,15 @@ export type RegisterStartData = {
     url: '/api/auth/passkey/register/start';
 };
 
+export type RegisterStartErrors = {
+    /**
+     * Sign-ups are disabled
+     */
+    403: ErrorResponse;
+};
+
+export type RegisterStartError = RegisterStartErrors[keyof RegisterStartErrors];
+
 export type RegisterStartResponses = {
     /**
      * WebAuthn creation options for a new passkey account. Opaque to OpenAPI - pass straight to navigator.credentials.create() after base64url-decoding challenge/user.id.
@@ -1106,6 +1117,10 @@ export type SignupErrors = {
      * Malformed request body
      */
     400: ErrorResponse;
+    /**
+     * Sign-ups are disabled
+     */
+    403: ErrorResponse;
     /**
      * Username already exists
      */

@@ -122,6 +122,15 @@ pub fn admin_username() -> String {
     config_or("HWAITING_ADMIN_USERNAME", "admin")
 }
 
+/// Public account creation is opt-in, independently of authentication methods.
+pub fn signups_enabled() -> bool {
+    match read_config("HWAITING_SIGNUPS_ENABLED").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => panic!("HWAITING_SIGNUPS_ENABLED must be true or false"),
+    }
+}
+
 /// No default, and deliberately not derived from `host()`/`port()` either:
 /// those name the internal socket this binary listens on, which in
 /// production sits behind a TLS-terminating proxy and is never what the

@@ -10,6 +10,7 @@ interface AuthContextType {
   // configured - see GET /api/capabilities. False (not "unknown") until
   // that fetch resolves, since AuthProvider withholds `children` until
   // `loading` clears anyway - nothing ever reads this before it's settled.
+  signupsEnabled: boolean
   passkeysEnabled: boolean
   // Username/password login against an existing account.
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
@@ -42,10 +43,11 @@ function requireWebAuthnSupport() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [signupsEnabled, setSignupsEnabled] = useState(false)
   const [passkeysEnabled, setPasskeysEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Check the cookie-backed session and the server's passkey capability,
+  // Check the cookie-backed session and the server's deployment capabilities,
   // in parallel on mount - `loading` (and so `children`, see the provider
   // below) waits on both, so nothing ever renders with a stale/unknown
   // passkeysEnabled the way a component-local fetch could.
@@ -70,12 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const loadCapabilities = async () => {
       try {
-        const { passkeys_enabled } = await getCapabilities()
+        const { passkeys_enabled, signups_enabled } = await getCapabilities()
         setPasskeysEnabled(passkeys_enabled)
+        setSignupsEnabled(signups_enabled)
       } catch {
         // Couldn't even reach the capabilities check - fail closed rather
-        // than offer passkey UI that might 501.
+        // than offer registration or passkey UI that the server may reject.
         setPasskeysEnabled(false)
+        setSignupsEnabled(false)
       }
     }
 
@@ -231,6 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         isAdmin,
         passkeysEnabled,
+        signupsEnabled,
         login,
         signup,
         passkeyLogin,

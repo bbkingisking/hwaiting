@@ -171,7 +171,7 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "auth", description = "Open sign-up and login, via either username/password \
+        (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password \
             or passkey (WebAuthn) - two independent ways to reach the same JWT"),
         (name = "cards", description = "Review flow, FSRS scheduling, stats"),
         (name = "user", description = "Profile, settings, data export/import"),
