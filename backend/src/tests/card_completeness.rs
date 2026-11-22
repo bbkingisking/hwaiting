@@ -20,12 +20,12 @@ const SECOND_SENTENCE: &str = r#"
         VALUES (200002, 100001, 1, 'The water is cold.');
 "#;
 
-const FRENCH_SECOND_SENTENCE: &str = r#"
+const FRENCH_TRANSLATION: &str = r#"
     INSERT INTO languages (id, slug) VALUES (3, 'fra');
     INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id)
-        VALUES (100001, 3, 'eau', 200002);
+        VALUES (100001, 3, 'eau', 200001);
     INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation)
-        VALUES (200002, 100001, 3, 'L’eau est froide.');
+        VALUES (200001, 100001, 3, 'Je bois de l’eau.');
 "#;
 
 async fn empty_pool() -> SqlitePool {
@@ -119,13 +119,12 @@ async fn each_required_part_is_checked_at_commit() {
 async fn language_registration_requires_no_content_and_coverage_can_differ() {
     let pool = empty_pool().await;
     commit_sql(&pool, COMPLETE_CARD).await;
-    commit_sql(&pool, SECOND_SENTENCE).await;
     commit_sql(&pool, "INSERT INTO languages (id, slug) VALUES (4, 'deu')").await;
-    commit_sql(&pool, FRENCH_SECOND_SENTENCE).await;
+    commit_sql(&pool, FRENCH_TRANSLATION).await;
     let coverage: Vec<(String, i64)> = sqlx::query_as(
         "SELECT l.slug, count(*) FROM sentences_translations st JOIN languages l ON l.id = st.language_id GROUP BY l.slug ORDER BY l.slug",
     ).fetch_all(&pool).await.unwrap();
-    assert_eq!(coverage, vec![("eng".into(), 2), ("fra".into(), 1)]);
+    assert_eq!(coverage, vec![("eng".into(), 1), ("fra".into(), 1)]);
 }
 
 #[tokio::test]
@@ -138,22 +137,36 @@ async fn neither_translation_half_can_be_added_alone() {
 }
 
 #[tokio::test]
-async fn every_additional_sentence_needs_a_target_and_a_translation() {
+async fn a_card_cannot_have_a_second_sentence() {
     let pool = empty_pool().await;
     commit_sql(&pool, COMPLETE_CARD).await;
-    for missing_table in ["targets", "sentences_translations"] {
-        let incomplete = SECOND_SENTENCE
-            .split(';')
-            .filter(|statement| !statement.trim().is_empty())
-            .filter(|statement| {
-                !statement
-                    .trim()
-                    .starts_with(&format!("INSERT INTO {missing_table} ("))
-            })
-            .map(|statement| format!("{statement};"))
-            .collect::<String>();
-        reject_commit(&pool, &incomplete).await;
-    }
+    let error = sqlx::raw_sql(SECOND_SENTENCE)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(error.as_database_error().unwrap().is_unique_violation());
+}
+
+#[tokio::test]
+async fn dictionary_entries_are_unique_but_homonyms_and_manual_cards_are_allowed() {
+    let pool = empty_pool().await;
+    commit_sql(&pool, COMPLETE_CARD).await;
+    let homonym = COMPLETE_CARD
+        .replace("100001", "100002")
+        .replace("200001", "200002");
+    commit_sql(&pool, &homonym).await;
+    commit_sql(&pool, "UPDATE cards SET krdict_id = id").await;
+    let error = sqlx::query("UPDATE cards SET krdict_id = 100001 WHERE id = 100002")
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(error.as_database_error().unwrap().is_unique_violation());
+    commit_sql(&pool, "UPDATE cards SET krdict_id = NULL").await;
+    let words: Vec<String> = sqlx::query_scalar("SELECT word FROM cards")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(words, vec!["물", "물"]);
 }
 
 #[tokio::test]
@@ -168,7 +181,6 @@ async fn witnesses_cannot_borrow_another_cards_content_or_language() {
         "UPDATE cards SET required_sentence_id = 200003 WHERE id = 100001",
         "UPDATE cards_translations SET required_sentence_id = 200003 WHERE card_id = 100001",
         "UPDATE sentences_translations SET card_id = 100002 WHERE sentence_id = 200001",
-        "UPDATE sentences SET card_id = 100002 WHERE id = 200001",
         "UPDATE sentences SET required_language_id = 2 WHERE id = 200001",
         "UPDATE cards_translations SET language_id = 2 WHERE card_id = 100001",
         "UPDATE sentences_translations SET language_id = 2 WHERE sentence_id = 200001",
@@ -206,19 +218,19 @@ async fn deletion_cannot_leave_incomplete_content() {
 }
 
 #[tokio::test]
-async fn witnesses_can_be_repointed_when_removing_a_sentence_or_language() {
+async fn language_witness_can_be_repointed_when_removing_a_translation() {
     let pool = empty_pool().await;
     commit_sql(&pool, COMPLETE_CARD).await;
-    commit_sql(&pool, SECOND_SENTENCE).await;
-    commit_sql(&pool, FRENCH_SECOND_SENTENCE).await;
-    commit_sql(&pool, r#"
-        UPDATE cards SET required_sentence_id = 200002 WHERE id = 100001;
-        UPDATE cards_translations SET required_sentence_id = 200002 WHERE card_id = 100001 AND language_id = 1;
-        DELETE FROM sentences WHERE id = 200001;
-        UPDATE sentences SET required_language_id = 3 WHERE id = 200002;
+    commit_sql(&pool, FRENCH_TRANSLATION).await;
+    commit_sql(
+        &pool,
+        r#"
+        UPDATE sentences SET required_language_id = 3 WHERE id = 200001;
         DELETE FROM cards_translations WHERE card_id = 100001 AND language_id = 1;
         DELETE FROM sentences_translations WHERE card_id = 100001 AND language_id = 1;
-    "#).await;
+    "#,
+    )
+    .await;
     let languages: Vec<i64> = sqlx::query_scalar("SELECT language_id FROM cards_translations")
         .fetch_all(&pool)
         .await
@@ -322,12 +334,10 @@ async fn upgrade_preserves_content_and_adds_matching_witnesses() {
         &old_pool,
         r#"
         INSERT INTO languages (id, slug) VALUES (3, 'fra');
-        INSERT INTO sentences (id, card_id, text) VALUES (200002, 100001, '물이 차가워요.');
-        INSERT INTO targets (sentence_id, form) VALUES (200002, '물이');
         INSERT INTO cards_translations (id, card_id, language_id, trans_word)
             VALUES (300002, 100001, 3, 'eau');
         INSERT INTO sentences_translations (id, sentence_id, language_id, translation)
-            VALUES (400002, 200002, 3, 'L’eau est froide.');
+            VALUES (400002, 200001, 3, 'L’eau est froide.');
     "#,
     )
     .await;
@@ -343,7 +353,7 @@ async fn upgrade_preserves_content_and_adds_matching_witnesses() {
         words,
         vec![
             (300001, "water".into(), 200001),
-            (300002, "eau".into(), 200002)
+            (300002, "eau".into(), 200001)
         ]
     );
     let sentences: Vec<(i64, i64)> =
@@ -351,7 +361,7 @@ async fn upgrade_preserves_content_and_adds_matching_witnesses() {
             .fetch_all(&pool)
             .await
             .unwrap();
-    assert_eq!(sentences, vec![(200001, 1), (200002, 3)]);
+    assert_eq!(sentences, vec![(200001, 1)]);
     let translations: Vec<(i64, i64, String)> =
         sqlx::query_as("SELECT id, card_id, translation FROM sentences_translations ORDER BY id")
             .fetch_all(&pool)

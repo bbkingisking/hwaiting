@@ -66,35 +66,3 @@ pub(crate) async fn test_admin_user(pool: &SqlitePool) -> i64 {
 #[cfg(test)]
 #[path = "test_support.rs"]
 mod tests;
-
-/// Add a complete prompt atomically; a sentence without a target or a translation-language
-/// translation cannot be committed under the content schema.
-pub(crate) async fn translated_sentence(
-    pool: &SqlitePool,
-    card_id: i64,
-    text: &str,
-    target: &str,
-    translation: &str,
-) -> i64 {
-    let mut tx = pool.begin().await.unwrap();
-    let language_id = crate::enum_lookup::eng_language_id(&mut *tx).await.unwrap();
-    let sentence_id =
-        sqlx::query("INSERT INTO sentences (card_id, text, required_language_id) VALUES (?, ?, ?)")
-            .bind(card_id)
-            .bind(text)
-            .bind(language_id)
-            .execute(&mut *tx)
-            .await
-            .unwrap()
-            .last_insert_rowid();
-    sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, ?)")
-        .bind(sentence_id)
-        .bind(target)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (?, ?, ?, ?)")
-        .bind(sentence_id).bind(card_id).bind(language_id).bind(translation).execute(&mut *tx).await.unwrap();
-    tx.commit().await.unwrap();
-    sentence_id
-}

@@ -228,52 +228,6 @@ async fn editing_a_nonexistent_card_is_not_found() {
     assert!(matches!(result, Err(AppError::NotFound)));
 }
 
-#[tokio::test]
-async fn editing_a_second_sentence_does_not_change_the_first() {
-    let pool = test_pool().await;
-    let admin_id = test_admin_user(&pool).await;
-    let first: (i64, String) = sqlx::query_as("SELECT id, text FROM sentences WHERE card_id = 1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let second =
-        crate::test_support::translated_sentence(&pool, 1, "새 답입니다.", "답", "A new answer.")
-            .await;
-    let _ = edit_card(
-        AdminUser(admin_id),
-        State(pool.clone()),
-        AppPath(1),
-        AppJson(UpdateCardRequest {
-            sentence_id: second,
-            sentence: Some("새 답도 있습니다.".into()),
-            ..Default::default()
-        }),
-        crate::translation_language::TranslationLanguage("eng".into()),
-    )
-    .await
-    .unwrap();
-    let rows: Vec<(i64, String)> =
-        sqlx::query_as("SELECT id, text FROM sentences WHERE card_id = 1 ORDER BY id")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-    assert_eq!(rows, vec![first, (second, "새 답도 있습니다.".into())]);
-
-    let result = edit_card(
-        AdminUser(admin_id),
-        State(pool.clone()),
-        AppPath(2),
-        AppJson(UpdateCardRequest {
-            sentence_id: second,
-            word: Some("wrong card".into()),
-            ..Default::default()
-        }),
-        crate::translation_language::TranslationLanguage("eng".into()),
-    )
-    .await;
-    assert!(matches!(result, Err(AppError::NotFound)));
-}
-
 #[test]
 fn edit_requires_content_revision() {
     assert!(serde_json::from_str::<UpdateCardRequest>(r#"{"sentence_id":1}"#).is_err());

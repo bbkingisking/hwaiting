@@ -365,15 +365,12 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
 async fn grading_rejects_a_sentence_the_backend_did_not_select() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
-    let unselected_sentence =
-        crate::test_support::translated_sentence(&pool, 1, "새 답입니다.", "답", "A new answer.")
-            .await;
     let other_sentence: i64 =
         sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = 2 ORDER BY id LIMIT 1")
             .fetch_one(&pool)
             .await
             .unwrap();
-    for sentence_id in [unselected_sentence, other_sentence] {
+    for sentence_id in [-999, other_sentence] {
         let result = check_answer(
             State(pool.clone()),
             AppPath(1),

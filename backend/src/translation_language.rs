@@ -159,22 +159,6 @@ mod tests {
             vec!["eng"]
         );
         assert_eq!(languages[0].card_count, 50);
-        crate::test_support::translated_sentence(
-            &pool,
-            1,
-            "새 답입니다.",
-            "답",
-            "Another sentence.",
-        )
-        .await;
-        let counts = available_translation_languages(State(pool.clone()), AuthUser(user))
-            .await
-            .unwrap()
-            .0;
-        assert_eq!(
-            counts[0].card_count, 50,
-            "extra sentences must not inflate the card count"
-        );
         let queue = crate::cards::get_review_queue(
             State(pool),
             AuthUser(user),
@@ -197,26 +181,26 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         sqlx::raw_sql(r#"
             INSERT INTO languages (id, slug) VALUES (100, 'fra');
-            INSERT INTO sentences (id, card_id, text, required_language_id) VALUES (-1, 1, '새 답입니다.', 100);
-            INSERT INTO targets (sentence_id, form) VALUES (-1, '답');
-            INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (1, 100, 'réponse', -1);
-            INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (-1, 1, 100, 'Une réponse.');
+            UPDATE sentences SET text = '새 답입니다.' WHERE id = 1;
+            UPDATE targets SET form = '답' WHERE sentence_id = 1;
+            INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (1, 100, 'réponse', 1);
+            INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (1, 1, 100, 'Une réponse.');
         "#).execute(&mut *tx).await.unwrap();
         tx.commit().await.unwrap();
         let views = crate::admin::get_sentence_translations(
             crate::auth::AdminUser(admin),
             State(pool.clone()),
-            AppPath((1, -1)),
+            AppPath((1, 1)),
         )
         .await
         .unwrap()
         .0;
-        assert_eq!(views.len(), 1);
-        assert_eq!(views[0].translation_language, "fra");
+        assert_eq!(views.len(), 2);
+        assert!(views.iter().any(|view| view.translation_language == "fra"));
         let absent = crate::admin::get_sentence_translations(
             crate::auth::AdminUser(admin),
             State(pool.clone()),
-            AppPath((2, -1)),
+            AppPath((2, 1)),
         )
         .await;
         assert!(matches!(absent, Err(AppError::NotFound)));
@@ -244,7 +228,7 @@ mod tests {
         let queue = serde_json::to_value(queue).unwrap();
         assert_eq!(queue["translation_language"], "fra");
         assert_eq!(queue["cards"].as_array().unwrap().len(), 1);
-        assert_eq!(queue["cards"][0]["sentence_id"], -1);
+        assert_eq!(queue["cards"][0]["sentence_id"], 1);
         assert_eq!(queue["cards"][0]["trans_word"], "réponse");
         let token = queue["cards"][0]["attempt_token"].as_str().unwrap();
         let mut tx = pool.begin().await.unwrap();
@@ -281,7 +265,7 @@ mod tests {
         .await
         .unwrap();
         let patch = crate::admin::UpdateCardRequest {
-            sentence_id: -1,
+            sentence_id: 1,
             expected_content_revision: 0,
             trans_word: Some("nouvelle réponse".into()),
             ..Default::default()
@@ -310,16 +294,16 @@ mod tests {
         .unwrap();
         assert_eq!(french, "nouvelle réponse");
         let absent = crate::admin::UpdateCardRequest {
-            sentence_id: -1,
-            expected_content_revision: 1,
+            sentence_id: 2,
+            expected_content_revision: 0,
             ..Default::default()
         };
         let missing = crate::admin::edit_card(
             crate::auth::AdminUser(admin),
             State(pool.clone()),
-            AppPath(1),
+            AppPath(2),
             AppJson(absent),
-            TranslationLanguage("eng".into()),
+            TranslationLanguage("fra".into()),
         )
         .await;
         assert!(matches!(missing, Err(AppError::NotFound)));

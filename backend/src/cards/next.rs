@@ -226,18 +226,7 @@ async fn select_cards(
             c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision
         FROM cards c
         INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
-        INNER JOIN sentences s ON s.id = (
-            SELECT s2.id FROM sentences s2
-            INNER JOIN targets t2 ON t2.sentence_id = s2.id
-            WHERE s2.card_id = c.id
-              AND EXISTS (SELECT 1 FROM sentences_translations st2
-                          WHERE st2.sentence_id = s2.id AND st2.language_id = ct.language_id)
-            ORDER BY COALESCE((
-                SELECT MAX(rh.id) FROM review_history rh
-                WHERE rh.user_id = ? AND rh.sentence_id = s2.id
-            ), 0), s2.id
-            LIMIT 1
-        )
+        INNER JOIN sentences s ON s.card_id = c.id
         INNER JOIN targets tg ON tg.sentence_id = s.id
         INNER JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
@@ -270,7 +259,6 @@ async fn select_cards(
     let query_builder = sqlx::query(&query)
         .bind(user_id)
         .bind(language_id)
-        .bind(user_id)
         .bind(language_id)
         .bind(user_id)
         .bind(user_id);

@@ -12,7 +12,7 @@ pub(crate) struct AttemptClaims {
     pub translation_language: String,
     pub user_id: i64,
     pub card_id: i64,
-    // Cards can have multiple sentences; this identifies the sentence being graded.
+    // Pin the sentence being graded, including when content is replaced.
     pub sentence_id: i64,
     // Version of this user's review state; rejects stale submissions after another client reviews.
     pub review_revision: i64,
@@ -98,12 +98,10 @@ pub(crate) async fn validate_attempt(
            AND EXISTS (SELECT 1 FROM sentences_translations st
                        JOIN languages l ON l.id = st.language_id
                        WHERE st.sentence_id = s.id AND l.slug = ?)
-         ORDER BY COALESCE((SELECT MAX(rh.id) FROM review_history rh
-                            WHERE rh.user_id = ? AND rh.sentence_id = s.id), 0), s.id LIMIT 1",
+",
     )
     .bind(claims.card_id)
     .bind(&claims.translation_language)
-    .bind(user_id)
     .fetch_optional(&mut *connection)
     .await?;
     if selected != Some(claims.sentence_id) {
