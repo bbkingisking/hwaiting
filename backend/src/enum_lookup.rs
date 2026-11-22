@@ -2,16 +2,9 @@ use sqlx::{Sqlite, Transaction};
 
 use crate::error::AppError;
 
-/// Process-lifetime cache of `languages.id`, per slug. `languages` is
-/// seeded once by migration and never changes at runtime, so there's
-/// nothing to invalidate - every caller that used to hardcode
-/// `language_tag = 'en'` (before migration 20240101000045) binds
-/// `eng_language_id` instead. `kor_language_id` exists alongside it only for
-/// the one place a Korean label ships next to its English one on purpose
-/// (`InflectionFormValue`, see field_values.rs) - everywhere else stays
-/// hardcoded to `eng`, matching the app's current all-English status quo.
-/// Also the one place a future real per-request language selector would
-/// plug in.
+/// Cached language IDs for interface labels and bilingual grammar tables.
+/// Content language is resolved per request by `translation_language::TranslationLanguage`, independently of
+/// these interface-language helpers.
 static ENG_LANGUAGE_ID: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
 static KOR_LANGUAGE_ID: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
 

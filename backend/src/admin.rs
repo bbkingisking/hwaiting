@@ -179,7 +179,9 @@ pub async fn search_cards(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     AppQuery(params): AppQuery<SearchCardsQuery>,
+    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<SearchCardsResponse>, AppError> {
+    let language_id = translation_language.id(&pool).await?;
     let q = params.q.trim();
     if q.is_empty() {
         return Ok(Json(SearchCardsResponse { cards: Vec::new() }));
@@ -194,15 +196,14 @@ pub async fn search_cards(
             .replace('_', "\\_")
     );
     let card_id: Option<i64> = q.parse().ok();
-    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
 
     let search_sql = format!(
         "{CARD_PROJECTION_SQL} WHERE tg.form LIKE ? ESCAPE '\\' OR c.id = ? \
          ORDER BY length(tg.form) ASC, tg.form ASC LIMIT 50"
     );
     let rows = sqlx::query(&search_sql)
-        .bind(eng_id)
-        .bind(eng_id)
+        .bind(language_id)
+        .bind(language_id)
         .bind(&pattern)
         .bind(card_id)
         .fetch_all(&pool)
@@ -351,6 +352,7 @@ pub async fn edit_card(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
     AppJson(payload): AppJson<UpdateCardRequest>,
+    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<EditCardResponse>, AppError> {
     info!("Admin editing card {}", card_id);
 
@@ -405,15 +407,16 @@ pub async fn edit_card(
     }
 
     // Compare inside the writer transaction, before any updates or enum resolution.
-    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+    let language_id = translation_language.id(&mut *tx).await?;
     let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
     let current = sqlx::query(&projection_sql)
-        .bind(eng_id)
-        .bind(eng_id)
+        .bind(language_id)
+        .bind(language_id)
         .bind(card_id)
         .bind(sentence_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(AppError::NotFound)?;
     let current_alternatives: Vec<String> = sqlx::query_scalar(
         "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ? ORDER BY id",
     )
@@ -553,7 +556,7 @@ pub async fn edit_card(
         }
     }
 
-    // Update cards_translations (first English row)
+    // Update the selected word translation
     {
         let mut sets: Vec<&str> = Vec::new();
         if trans_word.is_some() {
@@ -564,12 +567,12 @@ pub async fn edit_card(
         }
 
         if !sets.is_empty() {
-            let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+            let language_id = translation_language.id(&mut *tx).await?;
             let ct_exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM cards_translations WHERE card_id = ? AND language_id = ?)"
             )
             .bind(card_id)
-            .bind(eng_id)
+            .bind(language_id)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -585,7 +588,7 @@ pub async fn edit_card(
                 if let Some(ref v) = trans_dfn {
                     q = q.bind(v.as_deref())
                 }
-                q.bind(card_id).bind(eng_id).execute(&mut *tx).await?;
+                q.bind(card_id).bind(language_id).execute(&mut *tx).await?;
             }
         }
     }
@@ -638,14 +641,14 @@ pub async fn edit_card(
         if let Some(ref st) = sentence_translation {
             // sentences_translations widened to one row per (sentence_id,
             // language_id) as of migration 20240101000045 - pin the update
-            // to the eng row explicitly, since an unqualified
+            // to the selected translation-language row explicitly, since an unqualified
             // `WHERE sentence_id = ?` would now touch every language's row
             // for this sentence at once.
-            let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+            let language_id = translation_language.id(&mut *tx).await?;
             sqlx::query("UPDATE sentences_translations SET translation = ? WHERE sentence_id = ? AND language_id = ?")
                 .bind(st.as_str())
                 .bind(sid)
-                .bind(eng_id)
+                .bind(language_id)
                 .execute(&mut *tx)
                 .await?;
         }
@@ -736,11 +739,11 @@ pub async fn edit_card(
         .fetch_one(&mut *tx)
         .await?;
 
-    let eng_id = crate::enum_lookup::eng_language_id(&mut *tx).await?;
+    let language_id = translation_language.id(&mut *tx).await?;
     let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
     let row = sqlx::query(&projection_sql)
-        .bind(eng_id)
-        .bind(eng_id)
+        .bind(language_id)
+        .bind(language_id)
         .bind(card_id)
         .bind(sentence_id)
         .fetch_one(&mut *tx)
@@ -753,7 +756,6 @@ pub async fn edit_card(
     let card = project_card(row, alternatives);
 
     tx.commit().await?;
-
     info!("Card {} updated successfully", card_id);
     Ok(Json(EditCardResponse {
         success: true,
@@ -766,3 +768,52 @@ pub async fn edit_card(
 #[cfg(test)]
 #[path = "tests/admin.rs"]
 mod tests;
+
+#[derive(Serialize, ToSchema)]
+pub struct CardTranslationView {
+    pub translation_language: String,
+    pub card: Card,
+}
+
+#[utoipa::path(get, path = "/api/admin/cards/{card_id}/sentences/{sentence_id}/translations",
+    params(("card_id" = i64, Path), ("sentence_id" = i64, Path)),
+    responses((status = 200, body = Vec<CardTranslationView>), (status = 404, body = crate::error::ErrorResponse)),
+    security(("cookie_auth" = [])), tag = "admin")]
+pub async fn get_sentence_translations(
+    _admin: AdminUser,
+    State(pool): State<SqlitePool>,
+    AppPath((card_id, sentence_id)): AppPath<(i64, i64)>,
+) -> Result<Json<Vec<CardTranslationView>>, AppError> {
+    let mut tx = pool.begin().await?;
+    let languages: Vec<String> = sqlx::query_scalar("SELECT l.slug FROM sentences_translations st JOIN languages l ON l.id = st.language_id WHERE st.card_id = ? AND st.sentence_id = ? ORDER BY l.slug")
+        .bind(card_id).bind(sentence_id).fetch_all(&mut *tx).await?;
+    if languages.is_empty() {
+        return Err(AppError::NotFound);
+    }
+    let alternatives: Vec<String> = sqlx::query_scalar(
+        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ? ORDER BY id",
+    )
+    .bind(sentence_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let query = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
+    let mut views = Vec::new();
+    for code in languages {
+        let language_id = crate::translation_language::TranslationLanguage(code.clone())
+            .id(&mut *tx)
+            .await?;
+        let row = sqlx::query(&query)
+            .bind(language_id)
+            .bind(language_id)
+            .bind(card_id)
+            .bind(sentence_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        views.push(CardTranslationView {
+            translation_language: code,
+            card: project_card(row, alternatives.clone()),
+        });
+    }
+    tx.commit().await?;
+    Ok(Json(views))
+}

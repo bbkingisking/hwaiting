@@ -47,7 +47,7 @@ export type Capabilities = {
  * `CardReveal` disclose between them minus the two fields that are
  * review-flow state rather than properties of the card itself
  * (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
- * review history, see `hanja_hints_for`).
+ * review history, see `hanja_hints_on_connection`).
  *
  * Flattening the same two structs the review flow already produces, rather
  * than hand-declaring their union a third time, is what keeps this
@@ -154,7 +154,7 @@ export type CardInflectionsResponse = {
  * Everything the client may see before it has attempted an answer:
  * `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
  * review-flow-specific rather than a property of the card itself - it
- * depends on the requesting user's review history (see `hanja_hints_for`),
+ * depends on the requesting user's review history (see `hanja_hints_on_connection`),
  * so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
  */
 export type CardPrompt = CardFront & {
@@ -171,7 +171,7 @@ export type CardPrompt = CardFront & {
  * Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
  * `CardBack` plus the fields that are genuinely review-flow-specific
  * rather than properties of the card itself - `hanja_hints` depends on the
- * requesting user's review history (see `hanja_hints_for`), and
+ * requesting user's review history (see `hanja_hints_on_connection`), and
  * `grammar_pattern_endings`/`inflections` belong to rows referencing this
  * card rather than the card itself - so none has a place on
  * `CardBack`/`Card`.
@@ -203,6 +203,11 @@ export type CardState = {
     exists: boolean;
     review_revision: number;
     suppressed: boolean;
+};
+
+export type CardTranslationView = {
+    card: Card;
+    translation_language: string;
 };
 
 export type CheckRequest = {
@@ -481,6 +486,7 @@ export type ReviewQueueResponse = {
      * Refresh before promoting buffered cards after this deadline.
      */
     refresh_at: string;
+    translation_language: string;
 };
 
 export type ReviewResponse = {
@@ -684,6 +690,10 @@ export type SearchCardsData = {
     path?: never;
     query: {
         q: string;
+        /**
+         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
+         */
+        translation_language: string;
     };
     url: '/api/admin/cards/search';
 };
@@ -732,7 +742,12 @@ export type EditCardData = {
          */
         card_id: number;
     };
-    query?: never;
+    query: {
+        /**
+         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
+         */
+        translation_language: string;
+    };
     url: '/api/admin/cards/{card_id}';
 };
 
@@ -807,6 +822,28 @@ export type GetCardInflectionsResponses = {
 };
 
 export type GetCardInflectionsResponse = GetCardInflectionsResponses[keyof GetCardInflectionsResponses];
+
+export type GetSentenceTranslationsData = {
+    body?: never;
+    path: {
+        card_id: number;
+        sentence_id: number;
+    };
+    query?: never;
+    url: '/api/admin/cards/{card_id}/sentences/{sentence_id}/translations';
+};
+
+export type GetSentenceTranslationsErrors = {
+    404: ErrorResponse;
+};
+
+export type GetSentenceTranslationsError = GetSentenceTranslationsErrors[keyof GetSentenceTranslationsErrors];
+
+export type GetSentenceTranslationsResponses = {
+    200: Array<CardTranslationView>;
+};
+
+export type GetSentenceTranslationsResponse = GetSentenceTranslationsResponses[keyof GetSentenceTranslationsResponses];
 
 export type ListUsersData = {
     body?: never;
@@ -1204,7 +1241,12 @@ export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResp
 export type GetHanjaDrillData = {
     body?: never;
     path?: never;
-    query?: never;
+    query: {
+        /**
+         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
+         */
+        translation_language: string;
+    };
     url: '/api/cards/hanja-drill';
 };
 
@@ -1254,12 +1296,16 @@ export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
 export type GetReviewQueueData = {
     body?: never;
     path?: never;
-    query?: {
+    query: {
         /**
          * Maximum number of cards. Omit to return the full currently eligible queue.
          * The daily new-card allowance applies independently of this response limit.
          */
         limit?: number;
+        /**
+         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
+         */
+        translation_language: string;
     };
     url: '/api/cards/queue';
 };
@@ -1314,7 +1360,12 @@ export type GetStatsResponse = GetStatsResponses[keyof GetStatsResponses];
 export type ListSuppressedCardsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query: {
+        /**
+         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
+         */
+        translation_language: string;
+    };
     url: '/api/cards/suppressed';
 };
 
@@ -1335,6 +1386,19 @@ export type ListSuppressedCardsResponses = {
 };
 
 export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof ListSuppressedCardsResponses];
+
+export type AvailableTranslationLanguagesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/cards/translation-languages';
+};
+
+export type AvailableTranslationLanguagesResponses = {
+    200: Array<string>;
+};
+
+export type AvailableTranslationLanguagesResponse = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];
 
 export type ValidateCardAttemptData = {
     body: ValidateRequest;

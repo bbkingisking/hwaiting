@@ -44,9 +44,10 @@ pub struct HanjaDrillResponse {
 pub async fn get_hanja_drill(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
+    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<HanjaDrillResponse>, AppError> {
     let user_id = auth.0;
-    let eng_id = crate::enum_lookup::eng_language_id(&pool).await?;
+    let language_id = translation_language.id(&pool).await?;
 
     let row = sqlx::query(
         r#"
@@ -63,7 +64,7 @@ pub async fn get_hanja_drill(
     )
     .bind(user_id)
     .bind(MASTERED_STATE)
-    .bind(eng_id)
+    .bind(language_id)
     .bind(user_id)
     .fetch_optional(&pool)
     .await?;

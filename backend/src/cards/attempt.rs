@@ -9,6 +9,7 @@ use crate::error::{AppError, AppJson};
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct AttemptClaims {
     pub version: u8,
+    pub translation_language: String,
     pub user_id: i64,
     pub card_id: i64,
     // Cards can have multiple sentences; this identifies the sentence being graded.
@@ -29,12 +30,14 @@ pub(crate) fn issue_attempt_token(
     sentence_id: i64,
     review_revision: i64,
     content_revision: i64,
+    translation_language: &str,
 ) -> Result<String, AppError> {
     // No timestamps or randomness: identical prompt state produces identical readable tokens.
     encode(
         &Header::new(Algorithm::HS256),
         &AttemptClaims {
-            version: 1,
+            version: 2,
+            translation_language: translation_language.into(),
             user_id,
             card_id,
             sentence_id,
@@ -63,7 +66,7 @@ pub(crate) async fn validate_attempt(
     )
     .map_err(|_| invalid())?
     .claims;
-    if claims.version != 1
+    if claims.version != 2
         || claims.user_id != user_id
         || card_id.is_some_and(|id| id != claims.card_id)
     {
@@ -94,11 +97,12 @@ pub(crate) async fn validate_attempt(
          WHERE s.card_id = ?
            AND EXISTS (SELECT 1 FROM sentences_translations st
                        JOIN languages l ON l.id = st.language_id
-                       WHERE st.sentence_id = s.id AND l.slug = 'eng')
+                       WHERE st.sentence_id = s.id AND l.slug = ?)
          ORDER BY COALESCE((SELECT MAX(rh.id) FROM review_history rh
                             WHERE rh.user_id = ? AND rh.sentence_id = s.id), 0), s.id LIMIT 1",
     )
     .bind(claims.card_id)
+    .bind(&claims.translation_language)
     .bind(user_id)
     .fetch_optional(&mut *connection)
     .await?;

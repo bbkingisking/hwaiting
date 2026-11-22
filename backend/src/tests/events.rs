@@ -112,7 +112,7 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
         HeaderMap::new(),
         AppJson(crate::cards::CheckRequest {
             answer: answer.clone(),
-            attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await
@@ -140,7 +140,7 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
             HeaderMap::new(),
             AppJson(crate::cards::CheckRequest {
                 answer,
-                attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0).unwrap(),
+                attempt_token: crate::cards::issue_attempt_token(user, 1, 1, 0, 0, "eng").unwrap(),
             })
         )
         .await
@@ -250,6 +250,7 @@ async fn shared_edit_advances_content_revision_and_notifies_other_users() {
         State(state),
         AppPath(1),
         HeaderMap::new(),
+        crate::translation_language::TranslationLanguage("eng".into()),
         AppJson(payload),
     )
     .await

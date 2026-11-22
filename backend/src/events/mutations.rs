@@ -80,10 +80,18 @@ pub async fn edit_card(
     State(state): State<AppState>,
     path: AppPath<i64>,
     headers: HeaderMap,
+    translation_language: crate::translation_language::TranslationLanguage,
     payload: AppJson<admin::UpdateCardRequest>,
 ) -> Result<Json<admin::EditCardResponse>, AppError> {
     let card_id = path.0;
-    let response = admin::edit_card(admin, State(state.pool), path, payload).await?;
+    let response = admin::edit_card(
+        admin,
+        State(state.pool),
+        path,
+        payload,
+        translation_language,
+    )
+    .await?;
     if response.changed {
         state.events.publish(None, Some(card_id), &headers);
     }

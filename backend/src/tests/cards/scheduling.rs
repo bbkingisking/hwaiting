@@ -98,6 +98,7 @@ async fn next(pool: &SqlitePool, uid: i64) -> Value {
             State(pool.clone()),
             AuthUser(uid),
             AppQuery(Default::default()),
+            crate::translation_language::TranslationLanguage("eng".into()),
         )
         .await
         .unwrap()
@@ -123,7 +124,8 @@ async fn review(pool: &SqlitePool, uid: i64, answer: &str, revision: i64) {
         AuthUser(uid),
         AppJson(cards::CheckRequest {
             answer: answer.into(),
-            attempt_token: crate::cards::issue_attempt_token(uid, 1, 1, revision, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(uid, 1, 1, revision, 0, "eng")
+                .unwrap(),
         }),
     )
     .await

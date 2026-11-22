@@ -53,6 +53,7 @@ async fn queue(pool: &SqlitePool, user_id: i64, limit: i64) -> ReviewQueueRespon
         State(pool.clone()),
         AuthUser(user_id),
         AppQuery(ReviewQueueQuery { limit: Some(limit) }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -108,6 +109,7 @@ async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
         State(pool.clone()),
         AuthUser(user),
         AppQuery(ReviewQueueQuery::default()),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -202,7 +204,8 @@ async fn batch_size_is_validated_and_zero_daily_limit_is_empty() {
             get_review_queue(
                 State(pool.clone()),
                 AuthUser(user),
-                AppQuery(ReviewQueueQuery { limit: Some(limit) })
+                AppQuery(ReviewQueueQuery { limit: Some(limit) }),
+                crate::translation_language::TranslationLanguage("eng".into())
             )
             .await,
             Err(AppError::BadRequest(_))
@@ -348,12 +351,14 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
             State(pool.clone()),
             AuthUser(user_id),
             AppQuery(ReviewQueueQuery::default()),
+            crate::translation_language::TranslationLanguage("eng".into()),
         )
     };
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
     assert_eq!(
         card.attempt_token,
-        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 0, 0).unwrap()
+        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 0, 0, "eng")
+            .unwrap()
     );
     assert_eq!(
         fetch()
@@ -365,7 +370,7 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
             .next()
             .unwrap()
             .attempt_token,
-        crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap()
+        crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap()
     );
     let answer: String = sqlx::query_scalar("SELECT tg.form FROM sentences s JOIN targets tg ON tg.sentence_id = s.id WHERE s.card_id = 1")
         .fetch_one(&pool).await.unwrap();
@@ -375,7 +380,7 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer: answer.clone(),
-            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await
@@ -385,7 +390,8 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
     assert_eq!(
         card.attempt_token,
-        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 1, 0).unwrap()
+        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 1, 0, "eng")
+            .unwrap()
     );
     let _ = super::super::check::check_answer(
         State(pool.clone()),
@@ -422,6 +428,7 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
             State(pool.clone()),
             AuthUser(user_id),
             AppQuery(ReviewQueueQuery::default()),
+            crate::translation_language::TranslationLanguage("eng".into()),
         )
     };
 
@@ -435,7 +442,7 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
         assert_eq!(card.prompt.front.sentence_id, expected_id);
         assert_eq!(
             card.attempt_token,
-            crate::cards::issue_attempt_token(user_id, 1, expected_id, revision, 0).unwrap()
+            crate::cards::issue_attempt_token(user_id, 1, expected_id, revision, 0, "eng").unwrap()
         );
         let result = super::super::check::check_answer(
             State(pool.clone()),
@@ -449,6 +456,7 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
                     expected_id,
                     revision,
                     0,
+                    "eng",
                 )
                 .unwrap(),
             }),
@@ -490,6 +498,7 @@ async fn queue_and_validation_skip_sentences_without_the_requested_translation()
         State(pool.clone()),
         AuthUser(user_id),
         AppQuery(ReviewQueueQuery::default()),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()

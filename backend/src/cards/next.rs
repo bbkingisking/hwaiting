@@ -104,6 +104,7 @@ pub struct ReviewQueueCard {
 /// A fresh ordered snapshot; fetching does not consume an allowance.
 #[derive(Serialize, ToSchema)]
 pub struct ReviewQueueResponse {
+    pub translation_language: String,
     pub cards: Vec<ReviewQueueCard>,
     pub next_due_at: Option<String>,
     /// Refresh before promoting buffered cards after this deadline.
@@ -131,19 +132,23 @@ pub async fn get_review_queue(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
     AppQuery(params): AppQuery<ReviewQueueQuery>,
+    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<ReviewQueueResponse>, AppError> {
     if params.limit.is_some_and(|limit| limit <= 0) {
         return Err(AppError::BadRequest("limit must be positive".into()));
     }
-    Ok(Json(select_cards(&pool, auth.0, params.limit).await?))
+    Ok(Json(
+        select_cards(&pool, auth.0, params.limit, &translation_language).await?,
+    ))
 }
 
 async fn select_cards(
     pool: &SqlitePool,
     user_id: i64,
     limit: Option<i64>,
+    translation_language: &crate::translation_language::TranslationLanguage,
 ) -> Result<ReviewQueueResponse, AppError> {
-    let eng_id = crate::enum_lookup::eng_language_id(pool).await?;
+    let language_id = translation_language.id(pool).await?;
     let mut tx = pool.begin().await?;
 
     info!("Getting review queue for user_id: {}", user_id);
@@ -264,9 +269,9 @@ async fn select_cards(
 
     let query_builder = sqlx::query(&query)
         .bind(user_id)
-        .bind(eng_id)
+        .bind(language_id)
         .bind(user_id)
-        .bind(eng_id)
+        .bind(language_id)
         .bind(user_id)
         .bind(user_id);
 
@@ -357,6 +362,7 @@ async fn select_cards(
             .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
         return Ok(ReviewQueueResponse {
+            translation_language: translation_language.0.clone(),
             cards: vec![],
             next_due_at,
             refresh_at,
@@ -414,7 +420,8 @@ async fn select_cards(
         // recomputes the full hints once the card is graded rather than us
         // shipping them now.
         let hanja_hints =
-            super::hanja_hints_on_connection(&mut tx, eng_id, user_id, card_id, &hanja).await?;
+            super::hanja_hints_on_connection(&mut tx, language_id, user_id, card_id, &hanja)
+                .await?;
         let hanja_hint_words: Vec<String> = hanja_hints.into_iter().map(|h| h.hanja).collect();
 
         let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
@@ -446,6 +453,7 @@ async fn select_cards(
                 row.get("sentence_id"),
                 row.get("review_revision"),
                 row.get("content_revision"),
+                &translation_language.0,
             )?,
             difficulty,
             guess_count,
@@ -453,6 +461,7 @@ async fn select_cards(
         });
     }
     Ok(ReviewQueueResponse {
+        translation_language: translation_language.0.clone(),
         cards,
         next_due_at: None,
         refresh_at,

@@ -36,7 +36,7 @@ fn key_with_value_is_some_some() {
 // serde with no custom code of ours behind it - neither would exercise
 // anything the three cases above don't already cover.
 
-// --- edit_card (handler-level, in-process SQLite) -------------------------
+// --- edit_card (handler-level, in-process SQLite,crate::translation_language::TranslationLanguage("eng".into())) -------------------------
 
 use crate::test_support::{test_admin_user, test_pool};
 
@@ -65,6 +65,7 @@ async fn target_not_in_existing_sentence_is_rejected() {
             target: Some("절대로존재하지않는단어".to_string()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
 
@@ -86,6 +87,7 @@ async fn new_sentence_missing_the_existing_target_is_rejected() {
             sentence: Some("이 문장에는 정답이 전혀 없습니다".to_string()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
 
@@ -109,6 +111,7 @@ async fn sentence_update_is_validated_against_the_unchanged_target() {
             sentence: Some(new_sentence.clone()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
     let result = result.unwrap().0;
@@ -142,6 +145,7 @@ async fn edit_returns_the_same_canonical_projection_as_search() {
             is_humble: Some(Some(true)),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -154,6 +158,7 @@ async fn edit_returns_the_same_canonical_projection_as_search() {
         AdminUser(admin_id),
         State(pool),
         AppQuery(SearchCardsQuery { q: "1".into() }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -186,6 +191,7 @@ async fn alternatives_are_trimmed_and_blanks_dropped() {
             ]),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
     assert!(result.is_ok());
@@ -215,6 +221,7 @@ async fn editing_a_nonexistent_card_is_not_found() {
             word: Some("x".to_string()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
 
@@ -241,6 +248,7 @@ async fn editing_a_second_sentence_does_not_change_the_first() {
             sentence: Some("새 답도 있습니다.".into()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap();
@@ -260,6 +268,7 @@ async fn editing_a_second_sentence_does_not_change_the_first() {
             word: Some("wrong card".into()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
     assert!(matches!(result, Err(AppError::NotFound)));
@@ -283,6 +292,7 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
             hanja: Some(Some("first editor".into())),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -299,6 +309,7 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
             grammar_pattern: Some(Some("must not create an enum".into())),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await;
     assert!(matches!(stale, Err(AppError::StaleContent)));
@@ -306,6 +317,7 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
         AdminUser(admin_id),
         State(pool.clone()),
         AppQuery(SearchCardsQuery { q: "1".into() }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -324,6 +336,7 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
             trans_word: Some("second editor".into()),
             ..Default::default()
         }),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()

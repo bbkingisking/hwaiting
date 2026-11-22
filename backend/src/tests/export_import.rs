@@ -743,7 +743,7 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
         AuthUser(dest_id),
         AppJson(crate::cards::CheckRequest {
             answer: "test".into(),
-            attempt_token: crate::cards::issue_attempt_token(dest_id, 10, 10, 7, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(dest_id, 10, 10, 7, 0, "eng").unwrap(),
         }),
     )
     .await;

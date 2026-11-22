@@ -81,10 +81,16 @@ export async function getCapabilities(): Promise<Capabilities> {
 export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 
 // The browser buffers one successor and refreshes after each answer.
-export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
+// The UI currently selects English; content requests always send it explicitly.
+// These parameters allow a future translation-language selector without changing the API contract.
+export async function getAvailableTranslationLanguages(): Promise<string[]> {
+  return fetchWithAuth(`${apiBase()}/api/cards/translation-languages`)
+}
+
+export async function getReviewQueue(signal?: AbortSignal, translationLanguage = 'eng'): Promise<ReviewQueueResponse> {
   while (true) {
     const revision = reviewQueueRevision
-    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2`, { signal })
+    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2&translation_language=${encodeURIComponent(translationLanguage)}`, { signal })
     if (revision === reviewQueueRevision) return result
   }
 }
@@ -131,8 +137,8 @@ export async function suppressCard(cardId: number): Promise<ReviewResponse> {
 type SuppressedCard = Schemas.SuppressedCard
 type SuppressedCardsResponse = Schemas.SuppressedCardsResponse
 
-export async function listSuppressedCards(): Promise<SuppressedCardsResponse> {
-  const url = `${apiBase()}/api/cards/suppressed`
+export async function listSuppressedCards(translationLanguage = 'eng'): Promise<SuppressedCardsResponse> {
+  const url = `${apiBase()}/api/cards/suppressed?translation_language=${encodeURIComponent(translationLanguage)}`
   return fetchWithAuth(url)
 }
 
@@ -151,8 +157,8 @@ type HanjaDrillResponse = Schemas.HanjaDrillResponse
 // Not part of the review flow: a random hanja from a card the user has
 // already mastered, for free-form recall practice. Never grades the answer
 // and never touches FSRS state - see backend cards/hanja_drill.rs.
-export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillResponse> {
-  const url = `${apiBase()}/api/cards/hanja-drill`
+export async function getHanjaDrill(signal?: AbortSignal, translationLanguage = 'eng'): Promise<HanjaDrillResponse> {
+  const url = `${apiBase()}/api/cards/hanja-drill?translation_language=${encodeURIComponent(translationLanguage)}`
   return fetchWithAuth(url, { signal })
 }
 
@@ -313,13 +319,17 @@ export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => vo
 
 type SearchCardsResponse = Schemas.SearchCardsResponse
 
-export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
-  const url = `${apiBase()}/api/admin/cards/search?q=${encodeURIComponent(query)}`
+export async function getSentenceTranslations(cardId: number, sentenceId: number, signal?: AbortSignal): Promise<Schemas.CardTranslationView[]> {
+  return fetchWithAuth(`${apiBase()}/api/admin/cards/${cardId}/sentences/${sentenceId}/translations`, { signal })
+}
+
+export async function searchCardsByTarget(query: string, signal?: AbortSignal, translationLanguage = 'eng'): Promise<SearchCardsResponse> {
+  const url = `${apiBase()}/api/admin/cards/search?translation_language=${encodeURIComponent(translationLanguage)}&q=${encodeURIComponent(query)}`
   return fetchWithAuth(url, { signal })
 }
 
-export async function editCard(cardId: number, updates: EditCardRequest): Promise<EditCardResponse> {
-  const url = `${apiBase()}/api/admin/cards/${cardId}`
+export async function editCard(cardId: number, updates: EditCardRequest, translationLanguage = 'eng'): Promise<EditCardResponse> {
+  const url = `${apiBase()}/api/admin/cards/${cardId}?translation_language=${encodeURIComponent(translationLanguage)}`
   const result: EditCardResponse = await fetchWithAuth(url, {
     method: 'PATCH',
     body: JSON.stringify(updates),

@@ -140,7 +140,14 @@ pub async fn check_answer(
 
     // Build the response before committing, so a failed reveal also rolls
     // back the review. Every helper borrows this transaction's connection.
-    let reveal = assemble_reveal(&mut tx, user_id, card_id, content).await?;
+    let reveal = assemble_reveal(
+        &mut tx,
+        user_id,
+        card_id,
+        content,
+        &claims.translation_language,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(Json(CheckResponse { correct, reveal }))
@@ -380,6 +387,7 @@ async fn assemble_reveal(
     user_id: i64,
     card_id: i64,
     content: AnswerContent,
+    translation_language: &str,
 ) -> Result<CardReveal, AppError> {
     let AnswerContent {
         back,
@@ -388,7 +396,9 @@ async fn assemble_reveal(
     } = content;
     // Keep hint reads on the writer's connection: acquiring another pool
     // connection here can deadlock with writers waiting for this transaction.
-    let eng_id = crate::enum_lookup::eng_language_id(&mut *connection).await?;
+    let eng_id = crate::translation_language::TranslationLanguage(translation_language.into())
+        .id(&mut *connection)
+        .await?;
     let hanja_hints =
         hanja_hints_on_connection(&mut *connection, eng_id, user_id, card_id, &hanja).await?;
 

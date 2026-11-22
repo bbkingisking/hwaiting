@@ -67,7 +67,7 @@ pub(crate) async fn test_admin_user(pool: &SqlitePool) -> i64 {
 #[path = "test_support.rs"]
 mod tests;
 
-/// Add a complete prompt atomically; a sentence without a target or an L1
+/// Add a complete prompt atomically; a sentence without a target or a translation-language
 /// translation cannot be committed under the content schema.
 pub(crate) async fn translated_sentence(
     pool: &SqlitePool,

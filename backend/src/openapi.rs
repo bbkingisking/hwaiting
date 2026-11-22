@@ -20,6 +20,24 @@ impl Modify for SecurityAddon {
                 ))),
             );
         }
+        for (name, path) in &mut openapi.paths.paths {
+            let operation = match name.as_str() {
+                "/api/cards/queue"
+                | "/api/cards/suppressed"
+                | "/api/cards/hanja-drill"
+                | "/api/admin/cards/search" => path.get.as_mut(),
+                "/api/admin/cards/{card_id}" => path.patch.as_mut(),
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                operation.parameters.get_or_insert_with(Vec::new).push(
+                    ParameterBuilder::new().name("translation_language").parameter_in(ParameterIn::Query)
+                        .required(Required::True)
+                        .description(Some("Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback."))
+                        .schema(Some(ObjectBuilder::new().schema_type(Type::String))).build()
+                );
+            }
+        }
         // Keep the write requirement executable in Swagger UI and visible
         // to generated clients, including unauthenticated login endpoints.
         for path in openapi.paths.paths.values_mut() {
@@ -81,6 +99,7 @@ impl Modify for SecurityAddon {
         crate::passkey::delete_passkey,
         crate::passkey::update_passkey,
         crate::cards::get_review_queue,
+        crate::translation_language::available_translation_languages,
         crate::cards::list_field_values,
         crate::cards::check_answer,
         crate::cards::validate_card_attempt,
@@ -100,6 +119,7 @@ impl Modify for SecurityAddon {
         crate::export_import::import_data,
         crate::admin::list_users,
         crate::admin::search_cards,
+        crate::admin::get_sentence_translations,
         crate::admin::get_card_inflections,
         crate::admin::edit_card,
         crate::health_check,

@@ -28,6 +28,8 @@ pub struct StaleAnswerResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("Invalid translation-language selection: {0}")]
+    TranslationLanguage(&'static str),
     #[error("Card review state has changed")]
     StaleReview,
 
@@ -106,7 +108,22 @@ impl From<argon2::password_hash::Error> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if let AppError::TranslationLanguage(code) = &self {
+            let message = match *code {
+                "missing_translation_language" => {
+                    "The translation_language query parameter is required"
+                }
+                "unknown_translation_language" => "Unknown translation-language code",
+                _ => "Expected exactly one lowercase three-letter translation_language code",
+            };
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": message, "code": code})),
+            )
+                .into_response();
+        }
         let (status, message) = match self {
+            AppError::TranslationLanguage(_) => unreachable!(),
             AppError::StaleReview => {
                 return (
                     StatusCode::CONFLICT,

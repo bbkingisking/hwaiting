@@ -32,6 +32,7 @@ mod passkey;
 #[cfg(test)]
 #[path = "tests/support.rs"]
 mod test_support;
+mod translation_language;
 mod user;
 
 #[tokio::main]
@@ -105,6 +106,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/auth/passkey/login/start", post(passkey::login_start))
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
+        .route(
+            "/cards/translation-languages",
+            get(translation_language::available_translation_languages),
+        )
         .route("/cards/queue", get(cards::get_review_queue))
         .route("/cards/validate", post(cards::validate_card_attempt))
         .route("/cards/field-values", get(cards::list_field_values))
@@ -158,6 +163,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/users", get(admin::list_users))
         .route("/admin/cards/search", get(admin::search_cards))
+        .route(
+            "/admin/cards/{card_id}/sentences/{sentence_id}/translations",
+            get(admin::get_sentence_translations),
+        )
         .route(
             "/admin/cards/{card_id}",
             patch(events::mutations::edit_card),

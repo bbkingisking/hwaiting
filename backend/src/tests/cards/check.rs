@@ -88,7 +88,8 @@ async fn new_card_graded_correct_becomes_learning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0, "eng")
+                .unwrap(),
         }),
     )
     .await
@@ -133,7 +134,8 @@ async fn new_card_graded_wrong_is_incorrect_but_still_learning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
-            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0, "eng")
+                .unwrap(),
         }),
     )
     .await
@@ -162,7 +164,8 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0, "eng")
+                .unwrap(),
         }),
     )
     .await
@@ -176,7 +179,8 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
-            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 1, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 1, 0, "eng")
+                .unwrap(),
         }),
     )
     .await
@@ -227,7 +231,8 @@ async fn existing_row_with_no_last_review_is_treated_as_a_new_card() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
-            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, card_id, 1, 0, 0, "eng")
+                .unwrap(),
         }),
     )
     .await
@@ -260,7 +265,7 @@ async fn stale_answer_preserves_state_and_history() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer,
-            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await
@@ -272,7 +277,7 @@ async fn stale_answer_preserves_state_and_history() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "wrong".into(),
-            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await;
@@ -301,6 +306,7 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
         State(pool.clone()),
         AppPath(1),
         AppJson(edit),
+        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap();
@@ -312,7 +318,7 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: old_answer,
-            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await;
@@ -344,6 +350,7 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
                 1,
                 0,
                 edited.0.content_revision,
+                "eng",
             )
             .unwrap(),
         }),
@@ -373,8 +380,15 @@ async fn grading_rejects_a_sentence_the_backend_did_not_select() {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "anything".into(),
-                attempt_token: crate::cards::issue_attempt_token(user_id, 1, sentence_id, 0, 0)
-                    .unwrap(),
+                attempt_token: crate::cards::issue_attempt_token(
+                    user_id,
+                    1,
+                    sentence_id,
+                    0,
+                    0,
+                    "eng",
+                )
+                .unwrap(),
             }),
         )
         .await;
@@ -402,8 +416,10 @@ async fn simultaneous_answers_only_record_one_review_per_revision() {
                 AuthUser(user_id),
                 AppJson(CheckRequest {
                     answer: answer.clone(),
-                    attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, revision, 0)
-                        .unwrap(),
+                    attempt_token: crate::cards::issue_attempt_token(
+                        user_id, 1, 1, revision, 0, "eng",
+                    )
+                    .unwrap(),
                 }),
             )
         };
@@ -497,7 +513,8 @@ async fn answer_with_hanja_hints_needs_only_one_available_connection() {
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer,
-                attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+                attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng")
+                    .unwrap(),
             }),
         ),
     )
@@ -516,7 +533,7 @@ async fn answer_with_hanja_hints_needs_only_one_available_connection() {
 async fn reveal_failure_rolls_back_review_and_allows_retry() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
-    let token = crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap();
+    let token = crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap();
     // Make the reveal-only inflection query fail after grading has written
     // scheduling state, review history, and the incorrect answer.
     sqlx::query("ALTER TABLE conjugation_matrix_cards RENAME TO unavailable_inflections")
@@ -573,7 +590,7 @@ async fn decomposed_correct_answer_records_a_good_review() {
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: decomposed,
-            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0).unwrap(),
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
         }),
     )
     .await
