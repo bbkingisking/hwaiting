@@ -62,7 +62,7 @@ fn login_persists_private_scoped_cookies_for_the_next_process() {
                 assert!(request.contains("x-requested-with: hwaiting"));
                 r#"{"username":"test","is_admin":false}"#
             } else {
-                assert!(request.starts_with("get /api/cards/field-values?"));
+                assert!(request.starts_with("get /api/admin/grammar-patterns "));
                 assert!(request.contains("cookie: hwaiting-auth=test-jwt"));
                 "{}"
             };
@@ -102,7 +102,7 @@ fn login_persists_private_scoped_cookies_for_the_next_process() {
         0o600
     );
 
-    let fields = run("field-values", &base_url);
+    let fields = run("grammar-patterns", &base_url);
     assert!(
         fields.status.success(),
         "{}",
@@ -110,7 +110,7 @@ fn login_persists_private_scoped_cookies_for_the_next_process() {
     );
     server.join().unwrap();
 
-    let different_server = run("field-values", "http://127.0.0.1:1");
+    let different_server = run("grammar-patterns", "http://127.0.0.1:1");
     assert!(!different_server.status.success());
     assert!(String::from_utf8_lossy(&different_server.stderr).contains("different API URL"));
     fs::remove_dir_all(directory).unwrap();

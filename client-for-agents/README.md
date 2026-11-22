@@ -6,7 +6,7 @@ The `krdict` command is unrelated to the review flow above: it takes a KRDICT ta
 
 Going through the content in the same way as a user would (one card at a time) results, I found, in much more useful feedback, compared to just dumping the database and asking the agent to spot what's wrong in it. To that end, `answer` suppresses the card it just graded, right or wrong - the agent isn't here to learn Korean via spaced repetition, so once a card has been seen, it drops out of rotation and the next `review` call surfaces a fresh one. Point the agent at a fresh user made for this purpose (see the `daily_new_card_limit` trick below) so it works through the deck exactly once.
 
-Pass the sentence ID and both revisions from the `review` response when answering: `hwaiting-agent answer CARD_ID ANSWER SENTENCE_ID REVIEW_REVISION CONTENT_REVISION`. If another review or an edit changed the card, the server rejects the stale answer without grading it; run `review` again for a fresh prompt.
+Pass the signed token from `review.attempt_token` when answering: `hwaiting-agent answer CARD_ID ANSWER ATTEMPT_TOKEN`. Set the account’s preferred L1 in its settings before reviewing. If another review or an edit changed the card, the server rejects the stale answer without grading it; run `review` again for a fresh prompt.
 
 Some useful SQL commands to set up a workflow:
 
@@ -20,3 +20,5 @@ UPDATE user_settings SET daily_new_card_limit = 1578 WHERE user_id = 3; -- or ho
 
 
 Authentication uses the backend's JWT cookie. Run `login` with `HWAITING_USERNAME` and `HWAITING_PASSWORD` set. The client receives the HttpOnly cookie from `Set-Cookie` and persists its cookie jar privately in `$XDG_CONFIG_HOME/hwaiting-agent/cookies.json` (or `~/.config/hwaiting-agent/cookies.json`), with mode 0600. Subsequent commands load it, respect cookie scope and expiry, and send the CSRF header on writes. Saved credentials are bound to the configured `HWAITING_API_URL`; changing that URL requires signing in again. After upgrading from bearer authentication, run `login` again; a successful login removes the old `token` file. Authentication secrets are never printed to stdout.
+
+The `grammar-patterns` command fetches the authored admin grammar catalog. Fixed vocabulary labels are client-owned; review responses already embed the selected pattern’s name and explanation.

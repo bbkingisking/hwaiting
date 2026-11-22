@@ -26,14 +26,12 @@ enum Command {
     Answer {
         card_id: String,
         answer: String,
-        sentence_id: i64,
-        review_revision: i64,
-        content_revision: i64,
+        attempt_token: String,
     },
     /// Record a content-review note against a card.
     Comment { card_id: String, text: String },
-    /// Fetch the pos/speech_level/tense/grammar_pattern lookup tables.
-    FieldValues,
+    /// Fetch authored grammar patterns for editing (requires an admin account).
+    GrammarPatterns,
     /// Look up a card's target word in the official KRDict API.
     Krdict {
         /// The KRDICT target code to look up.
@@ -50,18 +48,10 @@ fn main() -> ExitCode {
         Command::Answer {
             card_id,
             answer,
-            sentence_id,
-            review_revision,
-            content_revision,
-        } => http::answer(
-            &card_id,
-            &answer,
-            sentence_id,
-            review_revision,
-            content_revision,
-        ),
+            attempt_token,
+        } => http::answer(&card_id, &answer, &attempt_token),
         Command::Comment { card_id, text } => http::comment(&card_id, &text),
-        Command::FieldValues => http::field_values(),
+        Command::GrammarPatterns => http::grammar_patterns(),
         Command::Krdict { word_id } => lookup::lookup(word_id),
     };
 

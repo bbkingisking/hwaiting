@@ -1,6 +1,6 @@
 //! Talks to the hwaiting review API. Every function here returns the
 //! server's JSON response as a `serde_json::Value`, trimmed of fields this
-//! review flow has no use for (`review`, `answer`, `field_values` each
+//! review flow has no use for (`review`, `answer`, `grammar_patterns` each
 //! note their own) but otherwise untouched - nothing here interprets card
 //! content, that's the skill's job, not this binary's.
 
@@ -145,121 +145,58 @@ pub fn login(username: &str, password: &str) -> Result<Value, AppError> {
     }))
 }
 
-/// Bounds the claim-retry loop in `review`. Each attempt means the server
-/// handed back a card that got claimed out from under us between our
-/// `live_leases` read and our own `claim_card` call - a genuine race, not
-/// the "server doesn't know what's taken" case `live_leases` already
-/// prevents. This many losses in a row means either an unreasonable number
-/// of agents are running, or something is stuck holding leases past their
-/// TTL.
-const MAX_CLAIM_ATTEMPTS: usize = 50;
-
-/// `card` fields the review UI needs but this flow doesn't - dropped to
-/// keep the object flat and small, same spirit as `FIELD_VALUES_FIELDS`.
-const CARD_FIELDS_TO_DROP: &[&str] = &[
-    "difficulty",
-    "grade",
-    "guess_count",
-    "hanja_hint_words",
-    "origin_type",
-    "wrong_guess_count",
-];
-
-/// Fetches the next due card. Sends every card id this process can see
-/// leased by a sibling `hwaiting-agent review` (same account, different
-/// process - see README) as `exclude`, so the server filters them out
-/// itself rather than us discovering collisions one at a time - see
-/// `config::live_leases` for why that matters at more than a handful of
-/// concurrent agents. The retry loop below only has to cover the narrower
-/// race where two processes' `live_leases` reads both miss each other and
-/// target the same still-unclaimed card. The envelope is trimmed
-/// (`CARD_FIELDS_TO_DROP`, plus the top-level `next_due_at` this flow never
-/// uses) before it's handed back, rather than passed through verbatim.
+/// Fetch one available review entry using the account's saved L1. Local leases
+/// keep sibling agents from selecting the same card; the signed attempt token
+/// must be returned unchanged when answering.
 pub fn review() -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-
-    for _ in 0..MAX_CLAIM_ATTEMPTS {
-        let exclude = config::live_leases()
-            .map_err(|e| AppError::Message(format!("could not read local leases: {e}")))?;
-        let path = if exclude.is_empty() {
-            "/api/cards/next".to_string()
-        } else {
-            let ids = exclude
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("/api/cards/next?exclude={ids}")
+    let leased = config::live_leases()
+        .map_err(|e| AppError::Message(format!("could not read local leases: {e}")))?;
+    let envelope = parse(&get("/api/cards/queue", &client)?)?;
+    for entry in envelope
+        .get("cards")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(card_id) = entry["card"]["card_id"].as_i64() else {
+            continue;
         };
-        let mut envelope = parse(&get(&path, &client)?)?;
-        if let Some(obj) = envelope.as_object_mut() {
-            obj.remove("next_due_at");
-            if let Some(card) = obj.get_mut("card").and_then(Value::as_object_mut) {
-                for key in CARD_FIELDS_TO_DROP {
-                    card.remove(*key);
-                }
-            }
+        if leased.contains(&card_id) {
+            continue;
         }
-
-        let card_id = envelope
-            .get("card")
-            .filter(|c| !c.is_null())
-            .and_then(|c| c.get("card_id"))
-            .and_then(Value::as_i64);
-        let Some(card_id) = card_id else {
-            // Nothing due at all - not a lease collision, so stop rather
-            // than retry.
-            return Ok(envelope);
-        };
-
         if config::claim_card(card_id)
             .map_err(|e| AppError::Message(format!("could not claim card {card_id}: {e}")))?
         {
-            return Ok(envelope);
+            let mut entry = entry.clone();
+            if let Some(review) = entry.get_mut("review").and_then(Value::as_object_mut) {
+                review.remove("hanja_hint_words");
+            }
+            return Ok(entry);
         }
-        // Someone claimed it between our `live_leases` read and this
-        // attempt - loop and re-read leases, which will now include it.
     }
-
-    Err(AppError::Message(format!(
-        "gave up after {MAX_CLAIM_ATTEMPTS} attempts - every due card seems to already be leased by another agent"
-    )))
+    // Nothing available to this process; preserve the server's refresh metadata.
+    Ok(json!({"card": null, "review": null,
+        "next_due_at": envelope["next_due_at"], "refresh_at": envelope["refresh_at"]}))
 }
 
 /// Submits a guess for the given card and returns the graded result
-/// (CheckResponse: correct + the CardReveal fields, minus `inflections` and
-/// `hanja_hints` - see below). Then suppresses the card so it never comes up
+/// (CheckResponse: correct + the CardReveal fields, minus personalized
+/// `hanja_hints`). Then suppresses the card so it never comes up
 /// again for this user - right or wrong, the agent has now seen it once, and
 /// the point is coverage of the deck rather than mastering it via spaced
 /// repetition.
-pub fn answer(
-    card_id: &str,
-    guess: &str,
-    sentence_id: i64,
-    review_revision: i64,
-    content_revision: i64,
-) -> Result<Value, AppError> {
+pub fn answer(card_id: &str, guess: &str, attempt_token: &str) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let body = json!({ "answer": guess, "sentence_id": sentence_id, "review_revision": review_revision, "content_revision": content_revision });
+    let body = json!({ "answer": guess, "attempt_token": attempt_token });
     let mut result = parse(&post_json(
         &format!("/api/cards/{card_id}/check"),
         &client,
         &body,
     )?)?;
 
-    // The backend's reveal always resolves this card's `card_inflections`
-    // rows (joined out to `inflection_forms`) and ships them as
-    // `inflections`, with no request-side opt-out - see
-    // `backend/src/cards/check.rs`. That catalog isn't part of what this
-    // review flow works with (see `field_values`, which likewise never
-    // requests `inflection_form`), so drop it here rather than passing it
-    // through verbatim. `hanja_hints` is dropped for the same reason
-    // `hanja_hint_words` is dropped from `review`'s envelope
-    // (`CARD_FIELDS_TO_DROP`): it's the requesting user's own review-history
-    // scaffolding (see `hanja_hints_for`), not a property of the card, and
-    // this flow has no use for it.
+    // Personalized review assistance is not needed for this content-review flow.
     if let Some(obj) = result.as_object_mut() {
-        obj.remove("inflections");
         obj.remove("hanja_hints");
     }
 
@@ -287,40 +224,9 @@ pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
     )?)
 }
 
-/// Fields not requested via `?fields=` because this review flow has no use
-/// for them - see `field_values`. `inflection_form` would also pull the
-/// backend into joining `inflection_forms`/`inflection_categories` in (see
-/// `answer`, which strips the matching `inflections` rows out of the
-/// reveal for the same reason).
-const FIELD_VALUES_FIELDS: &str = "pos,speech_level,tense,grammar_pattern";
-
-/// Fetches the current pos/speech_level/tense/grammar_pattern tables live,
-/// so the caller never has to keep a hardcoded copy in sync by hand (see
-/// `FIELD_VALUES_FIELDS` for what's deliberately left out). Each entry's
-/// `rank` is dropped when null rather than shipped as a no-op line - most
-/// of these fields don't use it at all.
-pub fn field_values() -> Result<Value, AppError> {
+/// Authored grammar catalog for admin editing. Fixed vocabulary labels are
+/// client presentation resources; selected grammar content already rides on cards.
+pub fn grammar_patterns() -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let path = format!("/api/cards/field-values?fields={FIELD_VALUES_FIELDS}");
-    let mut value = parse(&get(&path, &client)?)?;
-    strip_null_rank(&mut value);
-    Ok(value)
-}
-
-/// Recursively drops any `"rank": null` entry from a JSON value - `rank` is
-/// `Option<i64>` on `FieldValue` and usually absent, so a `null` line for
-/// every entry that doesn't use it is just noise.
-fn strip_null_rank(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            if matches!(map.get("rank"), Some(Value::Null)) {
-                map.remove("rank");
-            }
-            for v in map.values_mut() {
-                strip_null_rank(v);
-            }
-        }
-        Value::Array(arr) => arr.iter_mut().for_each(strip_null_rank),
-        _ => {}
-    }
+    parse(&get("/api/admin/grammar-patterns", &client)?)
 }
