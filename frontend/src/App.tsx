@@ -7,7 +7,7 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { CardThemeProvider, useCardTheme } from '@/components/card-theme-provider'
-import { SettingsProvider } from '@/components/settings-provider'
+import { SettingsProvider, useSettings } from '@/components/settings-provider'
 import { FieldValuesProvider } from '@/components/field-values-provider'
 
 import { AuthProvider, useAuth } from '@/components/auth-provider'
@@ -58,6 +58,7 @@ function AppContent() {
   }, [card?.attempt_token])
 
   const { isAuthenticated } = useAuth()
+  const { settings: { translationLanguage } } = useSettings()
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
@@ -87,7 +88,7 @@ function AppContent() {
       acceptedToken.current = null
       cancelPrefetch()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, translationLanguage])
 
   const handleQueueChanged = useEffectEvent((change: ReviewQueueChange) => {
     if (isAuthenticated) refreshAfterChange(undefined, change === 'import')
@@ -126,7 +127,7 @@ function AppContent() {
     })
     refillTask.current = task
     return () => { task.dispose(); refillTask.current = null }
-  }, [isAuthenticated])
+  }, [isAuthenticated, translationLanguage])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -152,7 +153,7 @@ function AppContent() {
     })
     validationTask.current = task
     return () => { task.dispose(); validationTask.current = null }
-  }, [isAuthenticated])
+  }, [isAuthenticated, translationLanguage])
 
   const refreshAfterChange = (cardId?: number, resync = false) => {
     cancelPrefetch()
@@ -217,7 +218,7 @@ function AppContent() {
 
     slot.promise = (async () => {
       try {
-        const envelope = await getReviewQueue(controller.signal)
+        const envelope = await getReviewQueue(controller.signal, translationLanguage!)
         if (prefetchRef.current === slot && generation === queueGeneration.current) {
           slot.result = envelope
           installQueue(envelope)
@@ -253,7 +254,7 @@ function AppContent() {
     setLoading(true)
     setError(null)
     try {
-      const envelope = await getReviewQueue()
+      const envelope = await getReviewQueue(undefined, translationLanguage!)
       if (requestId !== cardRequestId.current) return true
       const first = envelope.cards[0]
       if (first) {
@@ -303,7 +304,7 @@ function AppContent() {
         if (pending) await pending.promise
         if (requestId !== cardRequestId.current) return
         if (!buffer.current.length) {
-          const envelope = await getReviewQueue()
+          const envelope = await getReviewQueue(undefined, translationLanguage!)
           if (requestId !== cardRequestId.current || generation !== queueGeneration.current) {
             if (requestId === cardRequestId.current) await advanceToNextCard()
             return

@@ -2,6 +2,7 @@ import type * as Api from './api-generated/types.gen'
 
 // Settings types
 export interface Settings {
+  translationLanguage: string | null
   showHanjaHints: boolean
   redThreshold: number
   yellowThreshold: number

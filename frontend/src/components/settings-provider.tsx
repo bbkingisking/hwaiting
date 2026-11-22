@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Settings } from '@/lib/types'
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/lib/constants'
 import { getUserSettings, subscribeReviewQueueChanges, updateUserSettings } from '@/lib/api'
+import { TranslationLanguageOnboarding } from '@/components/translation-language-onboarding'
 import { useAuth } from '@/components/auth-provider'
 
 type SettingsChange = Partial<Omit<Settings, 'hasFsrsParameters'>>
@@ -19,6 +20,7 @@ interface SettingsContextType {
 }
 
 const defaultSettings: Settings = {
+  translationLanguage: null,
   showHanjaHints: DEFAULT_SETTINGS.SHOW_HANJA_HINTS,
   redThreshold: DEFAULT_SETTINGS.RED_THRESHOLD,
   yellowThreshold: DEFAULT_SETTINGS.YELLOW_THRESHOLD,
@@ -76,6 +78,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setReady(true)
       setLoadError(false)
       setSettings({
+        translationLanguage: remote.translation_language ?? null,
         showHanjaHints: remote.show_hanja_hints,
         redThreshold: remote.red_threshold,
         yellowThreshold: remote.yellow_threshold,
@@ -113,6 +116,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     try {
       if (hasServerChanges) {
         const result = await updateUserSettings({
+          translation_language: serverChanges.translationLanguage ?? undefined,
           show_hanja_hints: serverChanges.showHanjaHints,
           red_threshold: serverChanges.redThreshold,
           yellow_threshold: serverChanges.yellowThreshold,
@@ -164,6 +168,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             </div>
           ) : 'Loading study settings…'}
         </div>
+      ) : isAuthenticated && settings.translationLanguage === null ? (
+        <TranslationLanguageOnboarding saving={saveStatus === 'saving'} saveError={saveError}
+          onSelect={translationLanguage => saveSettings({ translationLanguage })} />
       ) : children}
     </SettingsContext.Provider>
   )

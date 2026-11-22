@@ -1,3 +1,4 @@
+import { useSettings } from '@/components/settings-provider'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,6 +23,7 @@ interface SuppressedCardsDialogProps {
 }
 
 export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDialogProps) {
+  const { settings: { translationLanguage } } = useSettings()
   const [cards, setCards] = useState<SuppressedCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +33,7 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
     setIsLoading(true)
     setError(null)
     try {
-      const response = await listSuppressedCards()
+      const response = await listSuppressedCards(translationLanguage!)
       setCards(response.cards)
     } catch (err) {
       console.error('Failed to load suppressed cards:', err)

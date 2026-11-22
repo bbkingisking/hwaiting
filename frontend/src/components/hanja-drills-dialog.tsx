@@ -1,3 +1,4 @@
+import { useSettings } from '@/components/settings-provider'
 import { useState, useLayoutEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +22,7 @@ interface HanjaDrillsDialogProps {
 // here - typing anything and submitting reveals the word/meaning, so
 // `answer` and `revealed` only ever drive what's shown, never a request.
 export function HanjaDrillsDialog({ open, onOpenChange }: HanjaDrillsDialogProps) {
+  const { settings: { translationLanguage } } = useSettings()
   const [drill, setDrill] = useState<HanjaDrill | null>(null)
   const [answer, setAnswer] = useState('')
   const [revealed, setRevealed] = useState(false)
@@ -38,7 +40,7 @@ export function HanjaDrillsDialog({ open, onOpenChange }: HanjaDrillsDialogProps
     setAnswer('')
     setRevealed(false)
 
-    getHanjaDrill(controller.signal)
+    getHanjaDrill(controller.signal, translationLanguage!)
       .then(response => {
         if (controller.signal.aborted) return
         setDrill(response.drill ?? null)
@@ -51,7 +53,7 @@ export function HanjaDrillsDialog({ open, onOpenChange }: HanjaDrillsDialogProps
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false)
       })
-  }, [])
+  }, [translationLanguage])
 
   // useLayoutEffect, not useEffect: the reset needs to land before the
   // browser paints the reopened dialog, or the previous drill's reveal (or a
