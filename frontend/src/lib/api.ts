@@ -301,7 +301,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest, signal
 // review card only ever holds the CardPrompt/CardReveal split (see
 // lib/types.ts), which withholds `target` et al. pre-answer on purpose, so
 // opening the editor there requires an adapter (toAdminCard in
-// flashcard.tsx) rather than passing the review card straight through.
+// card-json.ts) rather than passing the review card straight through.
 type AdminCard = Schemas.Card
 export type CardEdit = { card: AdminCard }
 const cardEdits = new EventTarget()
@@ -311,15 +311,6 @@ export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => vo
   return () => cardEdits.removeEventListener('edit', onEdit)
 }
 
-// The subset of AdminCard's fields that CardReveal actually has - i.e. the
-// half of a `Card` row the server withholds from `GET /api/cards/queue` and
-// only discloses once `POST /api/cards/{id}/check` grades an attempt (see
-// CardPrompt/CardReveal in lib/types.ts). Every other AdminCard field is
-// CardPrompt's. This is the same split toAdminCard (flashcard.tsx) merges
-// back together, kept here as the single source of truth both that adapter
-// and EditCardDialog's "front"/"back" JSON views read from, rather than each
-// hand-maintaining its own copy that could silently drift from the other.
-export const CARD_BACK_FIELDS = new Set(['word', 'definition', 'sentence', 'target', 'alternatives'])
 type SearchCardsResponse = Schemas.SearchCardsResponse
 
 export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {

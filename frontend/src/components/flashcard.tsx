@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { CardPrompt, CardReveal, HanjaHint } from '@/lib/types'
+import { toCardFront, toAdminCard } from '@/lib/card-json'
+import { copyJson } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
 import { cn, krdictUrl } from '@/lib/utils'
@@ -12,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical } from 'lucide-react'
-import { suppressCard, type AdminCard } from '@/lib/api'
+import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { InflectionsDialog } from '@/components/inflections-dialog'
@@ -45,37 +47,6 @@ interface FlashcardProps {
 function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHint[] {
   if (reveal) return reveal.hanja_hints
   return (card.hanja_hint_words ?? []).map((hanja) => ({ hanja, word: '', trans_word: null }))
-}
-
-// EditCardDialog edits the backend's canonical full-card shape (see its doc
-// comment in lib/api.ts), not the review card's CardPrompt/CardReveal split.
-// Only called once `reveal` is set (see the "Edit card" menu item below).
-function toAdminCard(card: CardPrompt, reveal: CardReveal): AdminCard {
-  return {
-    card_id: card.card_id,
-    content_revision: card.content_revision,
-    sentence_id: card.sentence_id,
-    krdict_id: card.krdict_id,
-    word: reveal.word,
-    definition: reveal.definition,
-    pos: card.pos,
-    origin_type: card.origin_type,
-    hanja: card.hanja,
-    grade: card.grade,
-    trans_word: card.trans_word,
-    trans_dfn: card.trans_dfn,
-    sentence: reveal.sentence,
-    sentence_before: card.sentence_before,
-    sentence_after: card.sentence_after,
-    sentence_translation: card.sentence_translation,
-    target: reveal.target,
-    alternatives: reveal.alternatives,
-    speech_level: card.speech_level,
-    tense: card.tense,
-    is_honorific: card.is_honorific,
-    is_humble: card.is_humble,
-    grammar_pattern: card.grammar_pattern,
-  }
 }
 
 function isHanja(char: string): boolean {
@@ -353,21 +324,9 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   }
 
   const handleCopyJson = () => {
-    const text = JSON.stringify(reveal ? { ...card, ...reveal } : card, null, 2)
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch((err) => {
-        console.error('Error copying card JSON:', err)
-      })
-    } else {
-      const el = document.createElement('textarea')
-      el.value = text
-      el.style.cssText = 'position:fixed;opacity:0'
-      document.body.appendChild(el)
-      el.focus()
-      el.select()
-      document.execCommand('copy')
-      document.body.removeChild(el)
-    }
+    copyJson(reveal ? toAdminCard(card, reveal) : toCardFront(card)).catch((err) => {
+      console.error('Error copying card JSON:', err)
+    })
   }
 
   const handleSuppress = async () => {
@@ -501,7 +460,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={handleCopyJson}>
-                Copy card as JSON
+                {reveal ? 'Copy full card as JSON' : 'Copy card hint as JSON'}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleSuppress}
