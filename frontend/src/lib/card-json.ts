@@ -2,7 +2,7 @@ import type { Card as AdminCard, CardFront, CardBack } from './api-generated/typ
 
 // Project review data onto the canonical card fields so copying and editing
 // use the same shapes as Browse cards, without attempt or hint metadata.
-export function toCardFront(card: CardFront): CardFront {
+function toCardFront(card: CardFront): CardFront {
   return {
     card_id: card.card_id,
     content_revision: card.content_revision,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { CardPrompt, CardReveal, HanjaHint } from '@/lib/types'
-import { toCardFront, toAdminCard } from '@/lib/card-json'
+import { toAdminCard } from '@/lib/card-json'
 import { copyJson } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
@@ -324,7 +324,8 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   }
 
   const handleCopyJson = () => {
-    copyJson(reveal ? toAdminCard(card, reveal) : toCardFront(card)).catch((err) => {
+    if (!reveal) return
+    copyJson(toAdminCard(card, reveal)).catch((err) => {
       console.error('Error copying card JSON:', err)
     })
   }
@@ -459,9 +460,11 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
                   Look up in KRDICT
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={handleCopyJson}>
-                {reveal ? 'Copy full card as JSON' : 'Copy card hint as JSON'}
-              </DropdownMenuItem>
+              {reveal && (
+                <DropdownMenuItem onClick={handleCopyJson}>
+                  Copy full card as JSON
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={handleSuppress}
                 disabled={suppressing}
