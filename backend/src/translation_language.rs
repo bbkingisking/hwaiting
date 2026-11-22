@@ -53,13 +53,29 @@ impl TranslationLanguage {
     }
 }
 
-#[utoipa::path(get, path = "/api/cards/translation-languages", responses((status = 200, body = Vec<String>)), security(("cookie_auth" = [])), tag = "cards")]
+#[derive(serde::Serialize, utoipa::ToSchema, sqlx::FromRow, Debug)]
+pub struct AvailableTranslationLanguage {
+    pub code: String,
+    /// Distinct cards with at least one complete sentence in this language.
+    pub card_count: i64,
+}
+
+#[utoipa::path(get, path = "/api/cards/translation-languages", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
 pub async fn available_translation_languages(
     State(pool): State<SqlitePool>,
     _auth: AuthUser,
-) -> Result<Json<Vec<String>>, AppError> {
-    Ok(Json(sqlx::query_scalar("SELECT l.slug FROM languages l WHERE EXISTS (SELECT 1 FROM cards_translations ct JOIN sentences_translations st ON st.card_id = ct.card_id AND st.language_id = ct.language_id WHERE ct.language_id = l.id) ORDER BY l.slug")
-        .fetch_all(&pool).await?))
+) -> Result<Json<Vec<AvailableTranslationLanguage>>, AppError> {
+    Ok(Json(
+        sqlx::query_as(
+            "SELECT l.slug AS code, COUNT(DISTINCT ct.card_id) AS card_count
+         FROM languages l
+         JOIN cards_translations ct ON ct.language_id = l.id
+         JOIN sentences_translations st ON st.card_id = ct.card_id AND st.language_id = l.id
+         GROUP BY l.id, l.slug ORDER BY l.slug",
+        )
+        .fetch_all(&pool)
+        .await?,
+    ))
 }
 
 #[cfg(test)]
@@ -135,7 +151,30 @@ mod tests {
             .await
             .unwrap()
             .0;
-        assert_eq!(languages, vec!["eng"]);
+        assert_eq!(
+            languages
+                .iter()
+                .map(|language| language.code.as_str())
+                .collect::<Vec<_>>(),
+            vec!["eng"]
+        );
+        assert_eq!(languages[0].card_count, 50);
+        crate::test_support::translated_sentence(
+            &pool,
+            1,
+            "새 답입니다.",
+            "답",
+            "Another sentence.",
+        )
+        .await;
+        let counts = available_translation_languages(State(pool.clone()), AuthUser(user))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(
+            counts[0].card_count, 50,
+            "extra sentences must not inflate the card count"
+        );
         let queue = crate::cards::get_review_queue(
             State(pool),
             AuthUser(user),
@@ -185,7 +224,14 @@ mod tests {
             .await
             .unwrap()
             .0;
-        assert_eq!(languages, vec!["eng", "fra"]);
+        assert_eq!(
+            languages
+                .iter()
+                .map(|language| language.code.as_str())
+                .collect::<Vec<_>>(),
+            vec!["eng", "fra"]
+        );
+        assert_eq!(languages[1].card_count, 1);
         let queue = crate::cards::get_review_queue(
             State(pool.clone()),
             AuthUser(admin),

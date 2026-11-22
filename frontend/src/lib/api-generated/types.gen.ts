@@ -23,6 +23,14 @@ export type AuthResponse = {
     username?: string | null;
 };
 
+export type AvailableTranslationLanguage = {
+    /**
+     * Distinct cards with at least one complete sentence in this language.
+     */
+    card_count: number;
+    code: string;
+};
+
 export type BreakdownRow = {
     accuracy: number;
     correct: number;
@@ -1397,7 +1405,7 @@ export type AvailableTranslationLanguagesData = {
 };
 
 export type AvailableTranslationLanguagesResponses = {
-    200: Array<string>;
+    200: Array<AvailableTranslationLanguage>;
 };
 
 export type AvailableTranslationLanguagesResponse = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];

@@ -81,10 +81,10 @@ export async function getCapabilities(): Promise<Capabilities> {
 export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 
 // The browser buffers one successor and refreshes after each answer.
-// The UI currently selects English; content requests always send it explicitly.
-// These parameters allow a future translation-language selector without changing the API contract.
-export async function getAvailableTranslationLanguages(): Promise<string[]> {
-  return fetchWithAuth(`${apiBase()}/api/cards/translation-languages`)
+// Review content requests send the account’s saved translation language explicitly.
+// Admin browsing and editing choose their translation language independently.
+export async function getAvailableTranslationLanguages(signal?: AbortSignal): Promise<Schemas.AvailableTranslationLanguage[]> {
+  return fetchWithAuth(`${apiBase()}/api/cards/translation-languages`, { signal })
 }
 
 export async function getReviewQueue(signal?: AbortSignal, translationLanguage = 'eng'): Promise<ReviewQueueResponse> {
