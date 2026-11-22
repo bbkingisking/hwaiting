@@ -74,3 +74,8 @@ coverage/
 
 # misc
 *.pem
+
+# Local database snapshots used for migration checks and previews.
+/hwaiting.sqlite3
+/hwaiting.sqlite3-wal
+/hwaiting.sqlite3-shm
