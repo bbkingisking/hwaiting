@@ -87,10 +87,10 @@ export async function getAvailableTranslationLanguages(signal?: AbortSignal): Pr
   return fetchWithAuth(`${apiBase()}/api/cards/translation-languages`, { signal })
 }
 
-export async function getReviewQueue(signal?: AbortSignal, translationLanguage = 'eng'): Promise<ReviewQueueResponse> {
+export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
   while (true) {
     const revision = reviewQueueRevision
-    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2&translation_language=${encodeURIComponent(translationLanguage)}`, { signal })
+    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2`, { signal })
     if (revision === reviewQueueRevision) return result
   }
 }
@@ -137,9 +137,9 @@ export async function suppressCard(cardId: number): Promise<ReviewResponse> {
 type SuppressedCard = Schemas.SuppressedCard
 type SuppressedCardsResponse = Schemas.SuppressedCardsResponse
 
-export async function listSuppressedCards(translationLanguage = 'eng'): Promise<SuppressedCardsResponse> {
-  const url = `${apiBase()}/api/cards/suppressed?translation_language=${encodeURIComponent(translationLanguage)}`
-  return fetchWithAuth(url)
+export async function listSuppressedCards(signal?: AbortSignal): Promise<SuppressedCardsResponse> {
+  const url = `${apiBase()}/api/cards/suppressed`
+  return fetchWithAuth(url, { signal })
 }
 
 export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
@@ -157,8 +157,8 @@ type HanjaDrillResponse = Schemas.HanjaDrillResponse
 // Not part of the review flow: a random hanja from a card the user has
 // already mastered, for free-form recall practice. Never grades the answer
 // and never touches FSRS state - see backend cards/hanja_drill.rs.
-export async function getHanjaDrill(signal?: AbortSignal, translationLanguage = 'eng'): Promise<HanjaDrillResponse> {
-  const url = `${apiBase()}/api/cards/hanja-drill?translation_language=${encodeURIComponent(translationLanguage)}`
+export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillResponse> {
+  const url = `${apiBase()}/api/cards/hanja-drill`
   return fetchWithAuth(url, { signal })
 }
 
@@ -293,7 +293,7 @@ export async function updateUserSettings(settings: UpdateSettingsRequest, signal
     body: JSON.stringify(settings),
     signal,
   })
-  if (settings.study_timezone != null || settings.initial_study_timezone != null || settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
+  if (settings.translation_language != null || settings.show_hanja_hints != null || settings.study_timezone != null || settings.initial_study_timezone != null || settings.daily_new_card_limit != null || settings.day_boundary_hour != null || settings.desired_retention != null) {
     notifyReviewQueueChanged('availability')
   }
   return result

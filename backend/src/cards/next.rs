@@ -1,5 +1,5 @@
 //! `GET /api/cards/queue` - selects the next due/new card and shapes it into
-//! the pre-answer [`CardPrompt`], withholding everything [`super::CardReveal`]
+//! the pre-answer [`ReviewQueueCard`], withholding everything [`super::CardReveal`]
 //! would give away.
 
 use axum::{Json, extract::State};
@@ -13,20 +13,10 @@ use crate::error::{AppError, AppQuery};
 use super::ReviewPrefs;
 use super::time::{logical_day_start, sqlite_datetime};
 
-/// The card fields visible before an answer is checked, shared with the
-/// admin-editing shape - see `cards::Card`'s doc comment - and with
-/// `CardBack` (check.rs) for the withheld half. Split out from `CardPrompt`
-/// (below) so `Card` can flatten this struct instead of hand-declaring the
-/// same 13 fields a third time: `Card` used to be its own standing struct
-/// that merely happened to agree with `CardPrompt`'s, the exact
-/// silent-drift risk `Card`'s doc comment already flags from its earlier
-/// history with the admin struct it replaced.
-///
-/// `definition` and the unsliced `sentence` are withheld too, even though
-/// neither is rendered by the review UI at all pre- or post-answer - they're
-/// authoring fields, not review-flow fields. `CardBack` carries them anyway,
-/// purely so an admin editing a card mid-review has a correct, non-blank
-/// baseline to save over.
+/// Card content visible before answering, shared with the full admin card.
+/// Per-user state and assistance live separately in `ReviewContext`.
+/// Answer fields are withheld in `CardBack`, including the complete sentence
+/// and target; only the text surrounding the blank is exposed here.
 #[derive(Serialize, ToSchema)]
 pub struct CardFront {
     pub content_revision: i64,
@@ -54,22 +44,6 @@ pub struct CardFront {
     pub hanja: Option<String>,
 }
 
-/// Everything the client may see before it has attempted an answer:
-/// `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
-/// review-flow-specific rather than a property of the card itself - it
-/// depends on the requesting user's review history (see `hanja_hints_on_connection`),
-/// so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
-#[derive(Serialize, ToSchema)]
-pub struct CardPrompt {
-    #[serde(flatten)]
-    pub front: CardFront,
-    /// Hanja characters for the pre-answer hint span. The reading and each
-    /// hint's gloss give the answer away - the reading is `CardBack::word`
-    /// itself (Korean orthography is phonetic, so a word's spelling and its
-    /// hanja's reading are the same fact) - see also `HanjaHint::trans_word`.
-    pub hanja_hint_words: Vec<String>,
-}
-
 /// Split `sentence` into the text before and after `target`, so callers can
 /// render the sentence with `target` blanked out without needing to know
 /// where it sits. This is the one place that does that search: every render
@@ -90,21 +64,28 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
     }
 }
 
+/// Per-user state and assistance for this review attempt, separate from card content.
 #[derive(Serialize, ToSchema)]
-pub struct ReviewQueueCard {
-    #[serde(flatten)]
-    prompt: CardPrompt,
-    // Return unchanged when submitting an answer.
+pub struct ReviewContext {
+    /// Return unchanged when submitting an answer.
     attempt_token: String,
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
+    /// Hanja characters from previously reviewed words, without their readings/glosses.
+    /// Null when hints are disabled; empty when enabled but no hints are available.
+    hanja_hint_words: Option<Vec<String>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ReviewQueueCard {
+    card: CardFront,
+    review: ReviewContext,
 }
 
 /// A fresh ordered snapshot; fetching does not consume an allowance.
 #[derive(Serialize, ToSchema)]
 pub struct ReviewQueueResponse {
-    pub translation_language: String,
     pub cards: Vec<ReviewQueueCard>,
     pub next_due_at: Option<String>,
     /// Refresh before promoting buffered cards after this deadline.
@@ -123,7 +104,7 @@ pub struct ReviewQueueQuery {
     get, path = "/api/cards/queue", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
-        (status = 400, description = "Invalid batch size", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid batch size or preferred translation language not configured", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse)
     ),
     security(("cookie_auth" = [])), tag = "cards"
@@ -132,24 +113,22 @@ pub async fn get_review_queue(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
     AppQuery(params): AppQuery<ReviewQueueQuery>,
-    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<ReviewQueueResponse>, AppError> {
     if params.limit.is_some_and(|limit| limit <= 0) {
         return Err(AppError::BadRequest("limit must be positive".into()));
     }
-    Ok(Json(
-        select_cards(&pool, auth.0, params.limit, &translation_language).await?,
-    ))
+    Ok(Json(select_cards(&pool, auth.0, params.limit).await?))
 }
 
 async fn select_cards(
     pool: &SqlitePool,
     user_id: i64,
     limit: Option<i64>,
-    translation_language: &crate::translation_language::TranslationLanguage,
 ) -> Result<ReviewQueueResponse, AppError> {
-    let language_id = translation_language.id(pool).await?;
     let mut tx = pool.begin().await?;
+    let translation_language =
+        crate::translation_language::TranslationLanguage::for_user(&mut *tx, user_id).await?;
+    let language_id = translation_language.id(&mut *tx).await?;
 
     info!("Getting review queue for user_id: {}", user_id);
 
@@ -169,6 +148,13 @@ async fn select_cards(
         day_boundary_hour: 4,
         daily_new_card_limit: 20,
     });
+
+    let show_hanja_hints: bool =
+        sqlx::query_scalar("SELECT show_hanja_hints FROM users_settings WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(true);
 
     let zone = crate::user::parse_study_timezone(study_timezone.as_deref())?;
     let now = chrono::Utc::now().with_timezone(&zone);
@@ -350,7 +336,6 @@ async fn select_cards(
             .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
         return Ok(ReviewQueueResponse {
-            translation_language: translation_language.0.clone(),
             cards: vec![],
             next_due_at,
             refresh_at,
@@ -403,53 +388,59 @@ async fn select_cards(
         };
 
         // Pre-answer, only the hanja characters themselves are shown (see
-        // CardPrompt::hanja_hint_words) - the reading/gloss on each hint is
+        // ReviewContext::hanja_hint_words) - the reading/gloss on each hint is
         // withheld the same as the card's own `target`, so `check_answer` below
         // recomputes the full hints once the card is graded rather than us
         // shipping them now.
-        let hanja_hints =
-            super::hanja_hints_on_connection(&mut tx, language_id, user_id, card_id, &hanja)
-                .await?;
-        let hanja_hint_words: Vec<String> = hanja_hints.into_iter().map(|h| h.hanja).collect();
+        let hanja_hint_words = if show_hanja_hints {
+            Some(
+                super::hanja_hints_on_connection(&mut tx, language_id, user_id, card_id, &hanja)
+                    .await?
+                    .into_iter()
+                    .map(|h| h.hanja)
+                    .collect(),
+            )
+        } else {
+            None
+        };
 
         let (sentence_before, sentence_after) = split_sentence(&sentence, &target);
 
         cards.push(ReviewQueueCard {
-            prompt: CardPrompt {
-                front: CardFront {
-                    card_id,
-                    content_revision: row.get("content_revision"),
-                    sentence_id: row.get("sentence_id"),
-                    krdict_id,
-                    pos,
-                    origin_type,
-                    grade,
-                    trans_word,
-                    trans_dfn,
-                    sentence_before,
-                    sentence_after,
-                    sentence_translation,
-                    inflection_hint,
-                    grammar_pattern,
-                    hanja,
-                },
-                hanja_hint_words,
-            },
-            attempt_token: super::attempt::issue_attempt_token(
-                user_id,
+            card: CardFront {
                 card_id,
-                row.get("sentence_id"),
-                row.get("review_revision"),
-                row.get("content_revision"),
-                &translation_language.0,
-            )?,
-            difficulty,
-            guess_count,
-            wrong_guess_count,
+                content_revision: row.get("content_revision"),
+                sentence_id: row.get("sentence_id"),
+                krdict_id,
+                pos,
+                origin_type,
+                grade,
+                trans_word,
+                trans_dfn,
+                sentence_before,
+                sentence_after,
+                sentence_translation,
+                inflection_hint,
+                grammar_pattern,
+                hanja,
+            },
+            review: ReviewContext {
+                hanja_hint_words,
+                attempt_token: super::attempt::issue_attempt_token(
+                    user_id,
+                    card_id,
+                    row.get("sentence_id"),
+                    row.get("review_revision"),
+                    row.get("content_revision"),
+                    &translation_language.0,
+                )?,
+                difficulty,
+                guess_count,
+                wrong_guess_count,
+            },
         });
     }
     Ok(ReviewQueueResponse {
-        translation_language: translation_language.0.clone(),
         cards,
         next_due_at: None,
         refresh_at,

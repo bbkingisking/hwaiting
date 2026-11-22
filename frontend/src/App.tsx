@@ -1,4 +1,4 @@
-import { reconcileQueue } from '@/lib/review-queue'
+import { reconcileQueue, sameReviewAttempt } from '@/lib/review-queue'
 import { scheduleReviewRefresh } from '@/lib/review-timing'
 import { subscribeLiveEvents, type ReceivedEvent } from '@/lib/live-events'
 import { createRefreshTask } from '@/lib/refresh-task'
@@ -7,8 +7,8 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { Flashcard } from '@/components/flashcard'
 import { ThemeProvider } from '@/components/theme-provider'
 import { CardThemeProvider, useCardTheme } from '@/components/card-theme-provider'
-import { SettingsProvider, useSettings } from '@/components/settings-provider'
 import { FieldValuesProvider } from '@/components/field-values-provider'
+import { SettingsProvider, useSettings } from '@/components/settings-provider'
 
 import { AuthProvider, useAuth } from '@/components/auth-provider'
 import { AuthDialog } from '@/components/auth-dialog'
@@ -17,7 +17,7 @@ import { StatusIndicator } from '@/components/status-indicator'
 import { DebugStatusBar } from '@/components/debug-status-bar'
 import { getReviewQueue, checkAnswer, validateAttempt, subscribeReviewQueueChanges, subscribeCardEdits, ApiError } from '@/lib/api'
 import type { ReviewQueueResponse, ReviewQueueChange, CardEdit } from '@/lib/api'
-import type { CardPrompt, CardReveal } from '@/lib/types'
+import type { ReviewQueueCard, CardReveal } from '@/lib/types'
 import { NextDueCountdown } from '@/components/next-due-countdown'
 
 // Tracks one background queue refresh.
@@ -28,7 +28,7 @@ type PrefetchSlot = {
 }
 
 function AppContent() {
-  const [card, setCard] = useState<CardPrompt | null>(null)
+  const [card, setCard] = useState<ReviewQueueCard | null>(null)
   const [loading, setLoading] = useState(false)
   // Fetch failures and answer-check failures are different concerns with
   // different lifetimes: advanceToNextCard clears the fetch error as it starts
@@ -55,20 +55,28 @@ function AppContent() {
   const refillTask = useRef<ReturnType<typeof createRefreshTask> | null>(null)
   useEffect(() => {
     setStaleReason(null)
-  }, [card?.attempt_token])
+  }, [card?.review.attempt_token])
 
   const { isAuthenticated } = useAuth()
   const { settings: { translationLanguage } } = useSettings()
   const { cardThemeId } = useCardTheme()
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
-  const buffer = useRef<CardPrompt[]>([])
+  const buffer = useRef<ReviewQueueCard[]>([])
   const refreshAt = useRef(0)
   const [queueDeadline, setQueueDeadline] = useState<string | null>(null)
   const queueGeneration = useRef(0)
 
   const installQueue = (result: ReviewQueueResponse) => {
     const active = currentCard.current
+    // Refresh assistance for the same attempt without replacing its card or reveal.
+    const refreshed = active && result.cards.find(entry =>
+      entry.review.attempt_token === active.review.attempt_token)
+    if (refreshed) {
+      const updated = { ...active, review: refreshed.review }
+      currentCard.current = updated
+      setCard(updated)
+    }
     buffer.current = reconcileQueue(result.cards, active)
     refreshAt.current = Date.parse(result.refresh_at)
     setQueueDeadline(result.refresh_at)
@@ -137,14 +145,14 @@ function AppContent() {
         if (!await loadCardCold()) throw new Error('Queue refresh failed')
         return
       }
-      if (acceptedToken.current === active.attempt_token) return
+      if (acceptedToken.current === active.review.attempt_token) return
       if (checkingRef.current) throw new Error('Wait for pending submission')
       const submission = submissionVersion.current
       const navigation = cardRequestId.current
-      const valid = await validateAttempt(active.attempt_token)
+      const valid = await validateAttempt(active.review.attempt_token)
       // Validation only owns the still-unanswered attempt it started against.
-      if (!current() || currentCard.current !== active || checkingRef.current ||
-        acceptedToken.current === active.attempt_token ||
+      if (!current() || !sameReviewAttempt(currentCard.current, active) || checkingRef.current ||
+        acceptedToken.current === active.review.attempt_token ||
         submissionVersion.current !== submission || cardRequestId.current !== navigation) return
       if (!valid) {
         cancelPrefetch()
@@ -164,8 +172,8 @@ function AppContent() {
       return
     }
     refillTask.current?.request()
-    if ((resync || active.card_id === cardId) && !checkingRef.current &&
-      acceptedToken.current !== active.attempt_token) validationTask.current?.request()
+    if ((resync || active.card.card_id === cardId) && !checkingRef.current &&
+      acceptedToken.current !== active.review.attempt_token) validationTask.current?.request()
   }
 
   const handleLiveEvent = useEffectEvent((event: ReceivedEvent) => {
@@ -218,7 +226,7 @@ function AppContent() {
 
     slot.promise = (async () => {
       try {
-        const envelope = await getReviewQueue(controller.signal, translationLanguage!)
+        const envelope = await getReviewQueue(controller.signal)
         if (prefetchRef.current === slot && generation === queueGeneration.current) {
           slot.result = envelope
           installQueue(envelope)
@@ -254,7 +262,7 @@ function AppContent() {
     setLoading(true)
     setError(null)
     try {
-      const envelope = await getReviewQueue(undefined, translationLanguage!)
+      const envelope = await getReviewQueue()
       if (requestId !== cardRequestId.current) return true
       const first = envelope.cards[0]
       if (first) {
@@ -304,7 +312,7 @@ function AppContent() {
         if (pending) await pending.promise
         if (requestId !== cardRequestId.current) return
         if (!buffer.current.length) {
-          const envelope = await getReviewQueue(undefined, translationLanguage!)
+          const envelope = await getReviewQueue()
           if (requestId !== cardRequestId.current || generation !== queueGeneration.current) {
             if (requestId === cardRequestId.current) await advanceToNextCard()
             return
@@ -350,7 +358,7 @@ function AppContent() {
   const handleCheck = async (answer: string): Promise<{ correct: boolean; reveal: CardReveal } | null> => {
     if (!card) throw new Error('No card to check')
     if (staleReason) return null
-    const cardId = card.card_id
+    const cardId = card.card.card_id
     const submission = ++submissionVersion.current
 
     setSubmitError(null)
@@ -361,13 +369,13 @@ function AppContent() {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
-      const { correct, ...reveal } = await checkAnswer(cardId, card.attempt_token, answer)
+      const { correct, ...reveal } = await checkAnswer(cardId, card.review.attempt_token, answer)
       if (submission !== submissionVersion.current) return null
-      acceptedToken.current = card.attempt_token
+      acceptedToken.current = card.review.attempt_token
       ++queueGeneration.current
       prefetchRef.current?.abort.abort()
       prefetchRef.current = null
-      buffer.current = buffer.current.filter(candidate => candidate.card_id !== cardId)
+      buffer.current = buffer.current.filter(candidate => candidate.card.card_id !== cardId)
       void startPrefetch().promise.then(result => {
         if (!result) {
           // The refresh task owns backoff after this immediate post-review read.
@@ -494,7 +502,7 @@ function AppContent() {
       </main>
       {isAuthenticated && (
         <div className="fixed inset-x-4 bottom-4 grid justify-items-center gap-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end">
-          <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card_id ?? null} />
+          <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card.card_id ?? null} />
           <StatusIndicator
             refreshKey={statsKey}
             nextCardDueAt={noCards ? nextDueAt : null}

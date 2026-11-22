@@ -22,10 +22,7 @@ impl Modify for SecurityAddon {
         }
         for (name, path) in &mut openapi.paths.paths {
             let operation = match name.as_str() {
-                "/api/cards/queue"
-                | "/api/cards/suppressed"
-                | "/api/cards/hanja-drill"
-                | "/api/admin/cards/search" => path.get.as_mut(),
+                "/api/admin/cards/search" => path.get.as_mut(),
                 "/api/admin/cards/{card_id}" => path.patch.as_mut(),
                 _ => None,
             };

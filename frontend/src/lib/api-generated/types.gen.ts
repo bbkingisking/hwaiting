@@ -47,31 +47,9 @@ export type Capabilities = {
 };
 
 /**
- * The canonical full-card shape: a `cards` row joined with its English
- * translation and primary example sentence - exactly `CardFront` (next.rs)
- * plus `CardBack` (check.rs), i.e. exactly what `CardPrompt` and
- * `CardReveal` disclose between them minus the two fields that are
- * review-flow state rather than properties of the card itself
- * (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
- * review history, see `hanja_hints_on_connection`).
- *
- * Flattening the same two structs the review flow already produces, rather
- * than hand-declaring their union a third time, is what keeps this
- * in sync with them: `Card` used to be its own independently-declared
- * 20-field struct that merely happened to agree with `CardPrompt`/
- * `CardReveal` - previously it was also independent of `admin::AdminCard`,
- * which had the exact same problem in miniature (agreeing on 14 of its own
- * fields) until both admin structs were unified into this one. Nothing
- * enforced this wider agreement in the same way; the frontend's
- * `toAdminCard`/`CARD_BACK_FIELDS` (lib/api.ts) had to hand-encode the
- * front/back split from the outside, reconstructing in TypeScript what the
- * Rust types could just express directly.
- *
- * Shared verbatim by admin search (`admin::search_cards`) and edit
- * (`admin::edit_card`). Not used by the review flow itself, which needs
- * `CardPrompt`/`CardReveal` proper, extra per-user fields included -
- * admin editing isn't gated by the same secrecy concerns, so it gets the
- * whole row upfront.
+ * Localized card projection used internally by the scoped edit writer.
+ * Public admin reads use AdminCardDetail, which contains the sentence
+ * and all translations rather than selecting one language.
  */
 export type Card = CardFront & CardBack;
 
@@ -93,20 +71,10 @@ export type CardBack = {
 };
 
 /**
- * The card fields visible before an answer is checked, shared with the
- * admin-editing shape - see `cards::Card`'s doc comment - and with
- * `CardBack` (check.rs) for the withheld half. Split out from `CardPrompt`
- * (below) so `Card` can flatten this struct instead of hand-declaring the
- * same 13 fields a third time: `Card` used to be its own standing struct
- * that merely happened to agree with `CardPrompt`'s, the exact
- * silent-drift risk `Card`'s doc comment already flags from its earlier
- * history with the admin struct it replaced.
- *
- * `definition` and the unsliced `sentence` are withheld too, even though
- * neither is rendered by the review UI at all pre- or post-answer - they're
- * authoring fields, not review-flow fields. `CardBack` carries them anyway,
- * purely so an admin editing a card mid-review has a correct, non-blank
- * baseline to save over.
+ * Card content visible before answering, shared with the full admin card.
+ * Per-user state and assistance live separately in `ReviewContext`.
+ * Answer fields are withheld in `CardBack`, including the complete sentence
+ * and target; only the text surrounding the blank is exposed here.
  */
 export type CardFront = InflectionHint & {
     card_id: number;
@@ -141,11 +109,8 @@ export type CardFront = InflectionHint & {
 };
 
 /**
- * One resolved row from `conjugation_matrix_cards`, joined out to the
- * catalog's `slug` rather than repeating its label/category (those are
- * non-spoiling and already available from
- * `list_field_values(fields=inflection_form)` - see `InflectionFormValue`).
- * Only the conjugated `form` itself gives the answer away.
+ * A resolved conjugation with its grammatical facts. Clients own labels,
+ * grouping and ordering; the backend returns only forms applicable to the card.
  */
 export type CardInflection = {
     form: string;
@@ -157,28 +122,11 @@ export type CardInflectionsResponse = {
 };
 
 /**
- * Everything the client may see before it has attempted an answer:
- * `CardFront` plus `hanja_hint_words`, the one field here that's genuinely
- * review-flow-specific rather than a property of the card itself - it
- * depends on the requesting user's review history (see `hanja_hints_on_connection`),
- * so it has no place on `CardFront`/`Card`. Served by `GET /api/cards/queue`.
- */
-export type CardPrompt = CardFront & {
-    /**
-     * Hanja characters for the pre-answer hint span. The reading and each
-     * hint's gloss give the answer away - the reading is `CardBack::word`
-     * itself (Korean orthography is phonetic, so a word's spelling and its
-     * hanja's reading are the same fact) - see also `HanjaHint::trans_word`.
-     */
-    hanja_hint_words: Array<string>;
-};
-
-/**
  * Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
  * `CardBack` plus the fields that are genuinely review-flow-specific
  * rather than properties of the card itself - `hanja_hints` depends on the
  * requesting user's review history (see `hanja_hints_on_connection`), and
- * `grammar_pattern_endings`/`inflections` belong to rows referencing this
+ * `grammar_pattern_endings` belongs to rows referencing this
  * card rather than the card itself - so none has a place on
  * `CardBack`/`Card`.
  */
@@ -188,20 +136,15 @@ export type CardReveal = CardBack & {
      * the referenced `grammar_patterns` row, not of this card, but exactly
      * as spoiling as `target` for any card that uses the pattern, so it
      * travels with the reveal rather than in the pattern's public
-     * label/tooltip (see `list_field_values`, which admin/authoring
-     * surfaces still fetch endings from - that's a legitimately public use,
-     * picking a pattern rather than guessing one card's answer). Empty if
+     * name/explanation. The admin grammar catalog also includes endings
+     * for authoring. Empty if
      * the card has no grammar pattern.
      */
     grammar_pattern_endings: Array<string>;
-    hanja_hints: Array<HanjaHint>;
     /**
-     * This card's resolved `conjugation_matrix_cards` rows (empty if the
-     * card hasn't been run through the conjugation generator) - each
-     * `form` is exactly as spoiling as `target`, so like
-     * `grammar_pattern_endings` this only ships with the reveal.
+     * Null when hanja hints are disabled; otherwise the available personalized hints.
      */
-    inflections: Array<CardInflection>;
+    hanja_hints?: Array<HanjaHint> | null;
 };
 
 export type CardState = {
@@ -462,6 +405,24 @@ export type PasskeySummary = {
     last_used_at?: string | null;
 };
 
+/**
+ * Per-user state and assistance for this review attempt, separate from card content.
+ */
+export type ReviewContext = {
+    /**
+     * Return unchanged when submitting an answer.
+     */
+    attempt_token: string;
+    difficulty?: number | null;
+    guess_count: number;
+    /**
+     * Hanja characters from previously reviewed words, without their readings/glosses.
+     * Null when hints are disabled; empty when enabled but no hints are available.
+     */
+    hanja_hint_words?: Array<string> | null;
+    wrong_guess_count: number;
+};
+
 export type ReviewHistoryExport = {
     card_id: number;
     difficulty?: number | null;
@@ -475,11 +436,9 @@ export type ReviewHistoryExport = {
     wrong_answer?: null | WrongAnswerExport;
 };
 
-export type ReviewQueueCard = CardPrompt & {
-    attempt_token: string;
-    difficulty?: number | null;
-    guess_count: number;
-    wrong_guess_count: number;
+export type ReviewQueueCard = {
+    card: CardFront;
+    review: ReviewContext;
 };
 
 /**
@@ -492,7 +451,6 @@ export type ReviewQueueResponse = {
      * Refresh before promoting buffered cards after this deadline.
      */
     refresh_at: string;
-    translation_language: string;
 };
 
 export type ReviewResponse = {
@@ -1266,12 +1224,7 @@ export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResp
 export type GetHanjaDrillData = {
     body?: never;
     path?: never;
-    query: {
-        /**
-         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
-         */
-        translation_language: string;
-    };
+    query?: never;
     url: '/api/cards/hanja-drill';
 };
 
@@ -1321,23 +1274,19 @@ export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
 export type GetReviewQueueData = {
     body?: never;
     path?: never;
-    query: {
+    query?: {
         /**
          * Maximum number of cards. Omit to return the full currently eligible queue.
          * The daily new-card allowance applies independently of this response limit.
          */
         limit?: number;
-        /**
-         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
-         */
-        translation_language: string;
     };
     url: '/api/cards/queue';
 };
 
 export type GetReviewQueueErrors = {
     /**
-     * Invalid batch size
+     * Invalid batch size or preferred translation language not configured
      */
     400: ErrorResponse;
     /**
@@ -1385,12 +1334,7 @@ export type GetStatsResponse = GetStatsResponses[keyof GetStatsResponses];
 export type ListSuppressedCardsData = {
     body?: never;
     path?: never;
-    query: {
-        /**
-         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
-         */
-        translation_language: string;
-    };
+    query?: never;
     url: '/api/cards/suppressed';
 };
 

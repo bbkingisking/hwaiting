@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { CardPrompt, CardReveal, HanjaHint } from '@/lib/types'
+import type { ReviewQueueCard, CardReveal, HanjaHint } from '@/lib/types'
 import { toAdminCard } from '@/lib/card-json'
 import { copyJson } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,6 @@ import { MoreVertical } from 'lucide-react'
 import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
 import { EditCardDialog } from '@/components/edit-card-dialog'
-import { InflectionsDialog } from '@/components/inflections-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useFieldValues } from '@/components/field-values-provider'
 import { useCardTheme } from '@/components/card-theme-provider'
@@ -26,7 +25,7 @@ import { alignedAnswerCharacters } from '@/lib/answer-diff'
 
 interface FlashcardProps {
   staleReason?: string | null
-  card: CardPrompt
+  card: ReviewQueueCard
   // Grades `answer` server-side and records the FSRS review; resolves with
   // whether it was correct and the card's secret half. Callers hold the
   // reveal themselves (see the `reveal` state below) rather than expecting
@@ -40,13 +39,13 @@ interface FlashcardProps {
 }
 
 // Pre-answer, only the hanja *characters* of each hint are known (see
-// CardPrompt::hanja_hint_words) - the reading/gloss give the answer away, so
+// ReviewContext::hanja_hint_words) - the reading/gloss give the answer away, so
 // they're absent until `reveal` arrives. Stand in with gloss-free hints
 // until then; `showTarget` already keeps callers from reading `.trans_word`
 // before that point.
-function displayHanjaHints(card: CardPrompt, reveal: CardReveal | null): HanjaHint[] {
-  if (reveal) return reveal.hanja_hints
-  return (card.hanja_hint_words ?? []).map((hanja) => ({ hanja, word: '', trans_word: null }))
+function displayHanjaHints(card: ReviewQueueCard, reveal: CardReveal | null): HanjaHint[] {
+  if (reveal) return reveal.hanja_hints ?? []
+  return (card.review.hanja_hint_words ?? []).map((hanja) => ({ hanja, word: '', trans_word: null }))
 }
 
 function isHanja(char: string): boolean {
@@ -182,7 +181,7 @@ function GrammarPatternPill({
 }
 
 export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }: FlashcardProps) {
-  const promptKey = card.attempt_token
+  const promptKey = card.review.attempt_token
   const promptKeyRef = useRef(promptKey)
   promptKeyRef.current = promptKey
   const staleRef = useRef(staleReason)
@@ -200,20 +199,19 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [inflectionsOpen, setInflectionsOpen] = useState(false)
   const [advancing, setAdvancing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const submitButtonRef = useRef<HTMLButtonElement>(null)
   const { settings } = useSettings()
   const { isAdmin } = useAuth()
   const { theme: cardTheme } = useCardTheme()
-  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
   const hasAutoProgressedRef = useRef(false)
   const autoProgressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.attempt_token])
+  useEffect(() => () => clearTimeout(autoProgressTimer.current), [card.review.attempt_token])
   useEffect(() => { if (staleReason) clearTimeout(autoProgressTimer.current) }, [staleReason])
 
-  const showInfinitive = (answered || isAutoProgressing) && card.pos && (card.pos === 'verb' || card.pos === 'adjective')
+  const { pos: posLookup, speechLevel: speechLevelLookup, tense: tenseLookup, grammarPattern: grammarPatterns } = useFieldValues()
+  const showInfinitive = (answered || isAutoProgressing) && card.card.pos && (card.card.pos === 'verb' || card.card.pos === 'adjective')
 
   // `advancing` guards against a second click while a cold-path fetch for the
   // next card is in flight (the warm path, served from the prefetch buffer,
@@ -243,7 +241,6 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     setIsAutoProgressing(false)
     setEditOpen(false)
     setMenuOpen(false)
-    setInflectionsOpen(false)
     setAdvancing(false)
     hasAutoProgressedRef.current = false
     inputRef.current?.focus()
@@ -252,11 +249,11 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
     // A fresh prompt revision starts a new attempt after a content edit or
     // stale submission. The input stays mounted across that transition.
-  }, [card.attempt_token])
+  }, [card.review.attempt_token])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editOpen || menuOpen || inflectionsOpen) return
+      if (editOpen || menuOpen) return
       if (answered && (e.key === KEYS.ENTER || e.key === KEYS.SPACE)) {
         e.preventDefault()
         handleAdvance()
@@ -265,15 +262,15 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [answered, handleAdvance, editOpen, menuOpen, inflectionsOpen])
+  }, [answered, handleAdvance, editOpen, menuOpen])
 
   // The backend splits `sentence` around `target` for us (see
   // cards::split_sentence) - it owns both strings and is the only place that
   // needs to search one for the other.
-  const before = card.sentence_before
-  const after = card.sentence_after
+  const before = card.card.sentence_before
+  const after = card.card.sentence_after
 
-  const krdictLink = krdictUrl(card.krdict_id)
+  const krdictLink = krdictUrl(card.card.krdict_id)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -325,7 +322,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
   const handleCopyJson = () => {
     if (!reveal) return
-    copyJson(toAdminCard(card, reveal)).catch((err) => {
+    copyJson(toAdminCard(card.card, reveal)).catch((err) => {
       console.error('Error copying card JSON:', err)
     })
   }
@@ -334,7 +331,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     if (suppressing) return
     setSuppressing(true)
     try {
-      await suppressCard(card.card_id)
+      await suppressCard(card.card.card_id)
       onSuppress?.()
     } catch (err) {
       console.error('Error suppressing card:', err)
@@ -348,10 +345,10 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
       // The one stable token that changes when the card does. Nothing else
       // in the markup reliably differs between two consecutive cards, and
       // this subtree is not remounted (see App.tsx).
-      data-card-id={card.card_id}
-      data-sentence-id={card.sentence_id}
+      data-card-id={card.card.card_id}
+      data-sentence-id={card.card.sentence_id}
       data-answered={answered || isAutoProgressing}
-      aria-label={`Review card: ${card.trans_word}`}
+      aria-label={`Review card: ${card.card.trans_word}`}
       className="ct-card relative w-full max-w-xl"
     >
       <CardThemeDecorationBefore themeId={cardTheme.id} />
@@ -359,7 +356,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
       <CardHeader>
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5">
-          {card.guess_count === 0 && (
+          {card.review.guess_count === 0 && (
             <span data-slot="new-badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
               {cardTheme.newLabel}
             </span>
@@ -371,59 +368,43 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
             as bare text they'd be three unlabelled values in a row, so each
             names the dimension it reports.
           */}
-          {card.pos && posLookup[card.pos] && (
-            reveal && reveal.inflections.length > 0 ? (
-              // Conjugation table is exactly as spoiling as `target` (see
-              // CardReveal::inflections), so the pill only becomes clickable
-              // once `reveal` has arrived - pre-reveal it's the same inert
-              // span as every other badge here.
-              <button
-                type="button"
-                data-slot="badge"
-                onClick={() => setInflectionsOpen(true)}
-                aria-label={`Part of speech: ${posLookup[card.pos].label}. Show conjugation table.`}
-                className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/70 cursor-pointer"
-              >
-                {posLookup[card.pos].label}
-              </button>
-            ) : (
-              <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-                <span className="sr-only">Part of speech: </span>
-                {posLookup[card.pos].label}
-              </span>
-            )
-          )}
-          {card.speech_level && speechLevelLookup[card.speech_level] && (
+          {card.card.pos && posLookup[card.card.pos] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-              <span className="sr-only">Speech level: </span>
-              {speechLevelLookup[card.speech_level].label}
+              <span className="sr-only">Part of speech: </span>
+              {posLookup[card.card.pos].label}
             </span>
           )}
-          {card.tense && tenseLookup[card.tense] && (
+          {card.card.speech_level && speechLevelLookup[card.card.speech_level] && (
+            <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+              <span className="sr-only">Speech level: </span>
+              {speechLevelLookup[card.card.speech_level].label}
+            </span>
+          )}
+          {card.card.tense && tenseLookup[card.card.tense] && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               <span className="sr-only">Tense: </span>
-              {tenseLookup[card.tense].label}
+              {tenseLookup[card.card.tense].label}
             </span>
           )}
           {/* is_honorific/is_humble aren't lookup-table-backed like speech_level/tense
               above (see migration 20240101000025) - just booleans, so no *Lookup
               indirection needed for their labels. */}
-          {card.is_honorific && (
+          {card.card.is_honorific && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               <span className="sr-only">Subject honorific: </span>
               Honorific
             </span>
           )}
-          {card.is_humble && (
+          {card.card.is_humble && (
             <span data-slot="badge" className="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               <span className="sr-only">Object honorific: </span>
               Humble
             </span>
           )}
-          {card.grammar_pattern && grammarPatterns[card.grammar_pattern] && (
+          {card.card.grammar_pattern && grammarPatterns[card.card.grammar_pattern] && (
             <GrammarPatternPill
-              label={grammarPatterns[card.grammar_pattern].label}
-              tooltip={grammarPatterns[card.grammar_pattern].tooltip ?? ''}
+              label={grammarPatterns[card.card.grammar_pattern].label}
+              tooltip={grammarPatterns[card.card.grammar_pattern].tooltip ?? ''}
               endings={reveal?.grammar_pattern_endings}
             />
           )}
@@ -444,9 +425,8 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
             />
             <DropdownMenuContent align="end" className="min-w-50">
               {/*
-                Gated on `reveal`, not just `isAdmin`: CardReveal's fields
-                only exist once the card is graded (see lib/types.ts) -
-                editing it earlier would open the dialog on a blank record.
+                Open authoring tools after the answer so the complete editor
+                does not reveal the target during review.
               */}
               {isAdmin && reveal && (
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
@@ -481,14 +461,14 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
           <p lang="ko" className="text-2xl md:text-3xl font-semibold leading-relaxed text-center">
             {before}
             <span className="inline-flex flex-col items-center relative pt-5">
-              {settings.showHanjaHints && card.hanja && (
+              {settings.showHanjaHints && card.card.hanja && (
                 // role + aria-label only — the classes here are what keep the
                 // hint centred above the blank as the blank moves around the
                 // sentence, so they are deliberately left alone.
                 <span
                   role="note"
                   aria-label={hanjaHintLabel({
-                    hanja: card.hanja,
+                    hanja: card.card.hanja,
                     hints: displayHanjaHints(card, reveal),
                     showEum: answered || isAutoProgressing,
                     word: reveal?.word,
@@ -497,7 +477,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
                   className="text-sm text-muted-foreground/60 whitespace-nowrap absolute top-0 left-1/2 -translate-x-1/2 select-none"
                 >
                   <HanjaHintText
-                    hanja={card.hanja}
+                    hanja={card.card.hanja}
                     hints={displayHanjaHints(card, reveal)}
                     showEum={answered || isAutoProgressing}
                     word={reveal?.word}
@@ -571,15 +551,15 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
           </p>
         </form>
 
-        <p className="text-sm text-muted-foreground text-center mt-2" title={card.trans_dfn ?? undefined}>
+        <p className="text-sm text-muted-foreground text-center mt-2" title={card.card.trans_dfn ?? undefined}>
           <span className="sr-only">Word meaning: </span>
-          {card.trans_word}
+          {card.card.trans_word}
           {/* Otherwise reachable only as a title attribute, i.e. only on hover. */}
-          {card.trans_dfn && <span className="sr-only"> — {card.trans_dfn}</span>}
+          {card.card.trans_dfn && <span className="sr-only"> — {card.card.trans_dfn}</span>}
         </p>
         <p className="text-xs text-muted-foreground/70 text-center italic">
           <span className="sr-only">Sentence translation: </span>
-          {card.sentence_translation}
+          {card.card.sentence_translation}
         </p>
       </CardHeader>
 
@@ -589,19 +569,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
         <EditCardDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          card={toAdminCard(card, reveal)}
-        />
-      )}
-
-      {/* Same mounting gate as EditCardDialog above - the pill that opens
-          this is only clickable once `reveal` exists (see the pos badge). */}
-      {reveal && card.pos && (
-        <InflectionsDialog
-          open={inflectionsOpen}
-          onOpenChange={setInflectionsOpen}
-          word={reveal.word}
-          pos={card.pos}
-          inflections={reveal.inflections}
+          card={toAdminCard(card.card, reveal)}
         />
       )}
 

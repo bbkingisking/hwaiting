@@ -46,14 +46,13 @@ fn empty_target_splits_at_start() {
 
 use crate::auth::AuthUser;
 use crate::cards::time::parse_flexible_datetime;
-use crate::test_support::{test_pool, test_user};
+use crate::test_support::{test_pool, test_review_user as test_user};
 
 async fn queue(pool: &SqlitePool, user_id: i64, limit: i64) -> ReviewQueueResponse {
     get_review_queue(
         State(pool.clone()),
         AuthUser(user_id),
         AppQuery(ReviewQueueQuery { limit: Some(limit) }),
-        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -61,7 +60,7 @@ async fn queue(pool: &SqlitePool, user_id: i64, limit: i64) -> ReviewQueueRespon
 }
 
 fn ids(queue: &ReviewQueueResponse) -> Vec<i64> {
-    queue.cards.iter().map(|c| c.prompt.front.card_id).collect()
+    queue.cards.iter().map(|c| c.card.card_id).collect()
 }
 
 #[tokio::test]
@@ -73,7 +72,7 @@ async fn saved_timezone_controls_new_card_allowance_and_reset() {
     let reviewed_at = starts[0].min(starts[1]) + chrono::Duration::hours(6);
     for (zone, start) in zones.into_iter().zip(starts) {
         let user = test_user(&pool).await;
-        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit, study_timezone) VALUES (?, 1, ?)")
+        sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit, study_timezone) VALUES (?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit, study_timezone = excluded.study_timezone")
             .bind(user).bind(zone.name()).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO review_history (user_id, card_id, rating, state, reviewed_at) VALUES (?, 1, 'good', 'learning', ?)")
             .bind(user).bind(sqlite_datetime(reviewed_at)).execute(&pool).await.unwrap();
@@ -96,7 +95,7 @@ async fn saved_timezone_controls_new_card_allowance_and_reset() {
 async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
     let pool = test_pool().await;
     let user = test_user(&pool).await;
-    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3)")
+    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit")
         .bind(user)
         .execute(&pool)
         .await
@@ -109,7 +108,6 @@ async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
         State(pool.clone()),
         AuthUser(user),
         AppQuery(ReviewQueueQuery::default()),
-        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
@@ -124,7 +122,7 @@ async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
 async fn batch_clients_share_the_same_allowance_bounded_set() {
     let pool = test_pool().await;
     let user = test_user(&pool).await;
-    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 1)")
+    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit")
         .bind(user)
         .execute(&pool)
         .await
@@ -149,7 +147,7 @@ async fn batch_clients_share_the_same_allowance_bounded_set() {
 async fn out_of_order_first_reviews_do_not_expand_the_new_card_set() {
     let pool = test_pool().await;
     let user = test_user(&pool).await;
-    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3)")
+    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 3) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit")
         .bind(user)
         .execute(&pool)
         .await
@@ -192,7 +190,11 @@ async fn batch_deadline_tracks_reviews_that_become_due_before_the_day_boundary()
     let prompt = serde_json::to_value(&response.cards[0]).unwrap();
     assert!(prompt.get("word").is_none());
     assert!(prompt.get("target").is_none());
-    assert!(prompt.get("sentence_id").is_some());
+    assert!(prompt["card"].get("sentence_id").is_some());
+    assert!(prompt["card"].get("word").is_none());
+    assert!(prompt["card"].get("target").is_none());
+    assert!(prompt["review"].get("attempt_token").is_some());
+    assert!(prompt["card"].get("attempt_token").is_none());
 }
 
 #[tokio::test]
@@ -205,13 +207,12 @@ async fn batch_size_is_validated_and_zero_daily_limit_is_empty() {
                 State(pool.clone()),
                 AuthUser(user),
                 AppQuery(ReviewQueueQuery { limit: Some(limit) }),
-                crate::translation_language::TranslationLanguage("eng".into())
             )
             .await,
             Err(AppError::BadRequest(_))
         ));
     }
-    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0)")
+    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit")
         .bind(user)
         .execute(&pool)
         .await
@@ -256,7 +257,7 @@ async fn due_card_is_preferred_over_new_cards() {
 
     let envelope = queue(&pool, user_id, 1).await;
     let card = envelope.cards.first().expect("a card should be due");
-    assert_eq!(card.prompt.front.card_id, 2);
+    assert_eq!(card.card.card_id, 2);
 }
 
 #[tokio::test]
@@ -285,14 +286,14 @@ async fn suppressed_card_is_never_returned() {
         .cards
         .first()
         .expect("some other card should still be available");
-    assert_ne!(card.prompt.front.card_id, 2);
+    assert_ne!(card.card.card_id, 2);
 }
 
 #[tokio::test]
 async fn daily_new_card_limit_zero_suppresses_all_new_cards() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
-    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0)")
+    sqlx::query("INSERT INTO users_settings (user_id, daily_new_card_limit) VALUES (?, 0) ON CONFLICT(user_id) DO UPDATE SET daily_new_card_limit = excluded.daily_new_card_limit")
         .bind(user_id)
         .execute(&pool)
         .await
@@ -351,14 +352,12 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
             State(pool.clone()),
             AuthUser(user_id),
             AppQuery(ReviewQueueQuery::default()),
-            crate::translation_language::TranslationLanguage("eng".into()),
         )
     };
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
     assert_eq!(
-        card.attempt_token,
-        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 0, 0, "eng")
-            .unwrap()
+        card.review.attempt_token,
+        crate::cards::issue_attempt_token(user_id, 1, card.card.sentence_id, 0, 0, "eng").unwrap()
     );
     assert_eq!(
         fetch()
@@ -369,6 +368,7 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
             .into_iter()
             .next()
             .unwrap()
+            .review
             .attempt_token,
         crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap()
     );
@@ -389,9 +389,8 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         .bind(user_id).execute(&pool).await.unwrap();
     let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
     assert_eq!(
-        card.attempt_token,
-        crate::cards::issue_attempt_token(user_id, 1, card.prompt.front.sentence_id, 1, 0, "eng")
-            .unwrap()
+        card.review.attempt_token,
+        crate::cards::issue_attempt_token(user_id, 1, card.card.sentence_id, 1, 0, "eng").unwrap()
     );
     let _ = super::super::check::check_answer(
         State(pool.clone()),
@@ -399,7 +398,7 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer,
-            attempt_token: card.attempt_token.clone(),
+            attempt_token: card.review.attempt_token.clone(),
         }),
     )
     .await
@@ -425,7 +424,6 @@ async fn repeated_reviews_keep_the_cards_single_sentence() {
             State(pool.clone()),
             AuthUser(user_id),
             AppQuery(ReviewQueueQuery::default()),
-            crate::translation_language::TranslationLanguage("eng".into()),
         )
     };
 
@@ -435,10 +433,10 @@ async fn repeated_reviews_keep_the_cards_single_sentence() {
         (first_id, first_answer.as_str(), 2),
     ] {
         let card = fetch().await.unwrap().0.cards.into_iter().next().unwrap();
-        assert_eq!(card.prompt.front.card_id, 1);
-        assert_eq!(card.prompt.front.sentence_id, expected_id);
+        assert_eq!(card.card.card_id, 1);
+        assert_eq!(card.card.sentence_id, expected_id);
         assert_eq!(
-            card.attempt_token,
+            card.review.attempt_token,
             crate::cards::issue_attempt_token(user_id, 1, expected_id, revision, 0, "eng").unwrap()
         );
         let result = super::super::check::check_answer(
@@ -490,16 +488,77 @@ async fn queue_and_validation_skip_sentences_without_the_requested_translation()
         State(pool.clone()),
         AuthUser(user_id),
         AppQuery(ReviewQueueQuery::default()),
-        crate::translation_language::TranslationLanguage("eng".into()),
     )
     .await
     .unwrap()
     .0;
     assert_eq!(queue.cards.len(), 1);
     let card = &queue.cards[0];
-    assert_ne!(card.prompt.front.sentence_id, -1);
+    assert_ne!(card.card.sentence_id, -1);
     let mut tx = pool.begin().await.unwrap();
-    crate::cards::validate_attempt(&mut tx, &card.attempt_token, user_id, Some(1))
+    crate::cards::validate_attempt(&mut tx, &card.review.attempt_token, user_id, Some(1))
         .await
         .unwrap();
+    tx.rollback().await.unwrap();
+    sqlx::query("UPDATE users_settings SET translation_language = 'fra' WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        get_review_queue(
+            State(pool.clone()),
+            AuthUser(user_id),
+            AppQuery(ReviewQueueQuery::default())
+        )
+        .await
+        .unwrap()
+        .0
+        .cards
+        .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn review_context_keeps_optional_hints_separate_from_card_content() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    sqlx::query("UPDATE cards SET hanja = '學' WHERE id IN (1, 2)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO cards_states (user_id, card_id, state) VALUES (?, 2, 'review')")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let enabled = queue(&pool, user, 50).await;
+    let entry = enabled
+        .cards
+        .iter()
+        .find(|entry| entry.card.card_id == 1)
+        .unwrap();
+    assert_eq!(
+        entry.review.hanja_hint_words.as_ref().unwrap(),
+        &vec!["學".to_string()]
+    );
+    let card_content = serde_json::to_value(&entry.card).unwrap();
+    assert!(card_content.get("hanja_hint_words").is_none());
+    assert!(card_content.get("attempt_token").is_none());
+    crate::user::ensure_settings_row(&pool, user).await.unwrap();
+    sqlx::query("UPDATE users_settings SET show_hanja_hints = 0 WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let disabled = queue(&pool, user, 50).await;
+    let entry = disabled
+        .cards
+        .iter()
+        .find(|entry| entry.card.card_id == 1)
+        .unwrap();
+    assert_eq!(serde_json::to_value(&entry.card).unwrap(), card_content);
+    assert!(entry.review.hanja_hint_words.is_none());
+    let body = serde_json::to_value(entry).unwrap();
+    assert!(body["review"]["hanja_hint_words"].is_null());
 }

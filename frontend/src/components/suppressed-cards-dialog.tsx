@@ -1,5 +1,5 @@
 import { useSettings } from '@/components/settings-provider'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -24,22 +24,28 @@ interface SuppressedCardsDialogProps {
 
 export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDialogProps) {
   const { settings: { translationLanguage } } = useSettings()
+  const loadAbort = useRef<AbortController | null>(null)
   const [cards, setCards] = useState<SuppressedCard[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
   const { pos: posLookup, grade: gradeLookup } = useFieldValues()
 
   const loadCards = async () => {
+    loadAbort.current?.abort()
+    const controller = new AbortController()
+    loadAbort.current = controller
     setIsLoading(true)
     setError(null)
     try {
-      const response = await listSuppressedCards(translationLanguage!)
-      setCards(response.cards)
+      const response = await listSuppressedCards(controller.signal)
+      if (!controller.signal.aborted) setCards(response.cards)
     } catch (err) {
+      if (controller.signal.aborted) return
       console.error('Failed to load suppressed cards:', err)
       setError(err instanceof ApiError ? err.message : 'Failed to load cards')
     } finally {
-      setIsLoading(false)
+      if (!controller.signal.aborted) setIsLoading(false)
     }
   }
 
@@ -57,7 +63,8 @@ export function SuppressedCardsDialog({ open, onOpenChange }: SuppressedCardsDia
     if (open) {
       loadCards()
     }
-  }, [open])
+    return () => loadAbort.current?.abort()
+  }, [open, translationLanguage])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

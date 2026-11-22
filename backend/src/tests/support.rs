@@ -54,6 +54,17 @@ pub(crate) async fn test_user(pool: &SqlitePool) -> i64 {
         .unwrap()
 }
 
+/// A review account that has completed content-language onboarding.
+pub(crate) async fn test_review_user(pool: &SqlitePool) -> i64 {
+    let user_id = test_user(pool).await;
+    sqlx::query("INSERT INTO users_settings (user_id, translation_language) VALUES (?, 'eng')")
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    user_id
+}
+
 /// Same as `test_user`, but `is_admin = 1`.
 pub(crate) async fn test_admin_user(pool: &SqlitePool) -> i64 {
     sqlx::query_scalar("INSERT INTO users (username, is_admin) VALUES (?, 1) RETURNING id")

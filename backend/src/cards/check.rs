@@ -1,6 +1,6 @@
 //! `POST /api/cards/{id}/check` - grades an attempt, advances the card's
 //! FSRS state, and reveals the half of the card withheld by
-//! [`super::next::CardPrompt`].
+//! [`super::next::ReviewQueueCard`].
 
 use axum::{Json, extract::State};
 use chrono::{Timelike, Utc};
@@ -39,43 +39,27 @@ pub struct CardBack {
     pub alternatives: Vec<String>,
 }
 
-/// One resolved row from `conjugation_matrix_cards`, joined out to the
-/// catalog's `slug` rather than repeating its label/category (those are
-/// non-spoiling and already available from
-/// `list_field_values(fields=inflection_form)` - see `InflectionFormValue`).
-/// Only the conjugated `form` itself gives the answer away.
-#[derive(Serialize, ToSchema)]
-pub struct CardInflection {
-    pub form_slug: String,
-    pub form: String,
-}
-
 /// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
 /// `CardBack` plus the fields that are genuinely review-flow-specific
 /// rather than properties of the card itself - `hanja_hints` depends on the
 /// requesting user's review history (see `hanja_hints_on_connection`), and
-/// `grammar_pattern_endings`/`inflections` belong to rows referencing this
+/// `grammar_pattern_endings` belongs to rows referencing this
 /// card rather than the card itself - so none has a place on
 /// `CardBack`/`Card`.
 #[derive(Serialize, ToSchema)]
 pub struct CardReveal {
     #[serde(flatten)]
     pub back: CardBack,
-    pub hanja_hints: Vec<HanjaHint>,
+    /// Null when hanja hints are disabled; otherwise the available personalized hints.
+    pub hanja_hints: Option<Vec<HanjaHint>>,
     /// The grammar pattern's possible conjugation endings - a property of
     /// the referenced `grammar_patterns` row, not of this card, but exactly
     /// as spoiling as `target` for any card that uses the pattern, so it
     /// travels with the reveal rather than in the pattern's public
-    /// label/tooltip (see `list_field_values`, which admin/authoring
-    /// surfaces still fetch endings from - that's a legitimately public use,
-    /// picking a pattern rather than guessing one card's answer). Empty if
+    /// name/explanation. The admin grammar catalog also includes endings
+    /// for authoring. Empty if
     /// the card has no grammar pattern.
     pub grammar_pattern_endings: Vec<String>,
-    /// This card's resolved `conjugation_matrix_cards` rows (empty if the
-    /// card hasn't been run through the conjugation generator) - each
-    /// `form` is exactly as spoiling as `target`, so like
-    /// `grammar_pattern_endings` this only ships with the reveal.
-    pub inflections: Vec<CardInflection>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -169,11 +153,6 @@ async fn load_answer_content(
     // Fetch the secret half of the card fresh, by id - this handler is the
     // only place allowed to know `target` before the client does.
     //
-    // grammar_pattern_endings folds grammar_patterns_endings' rows
-    // (migration 20240101000040 decomposed the old `gp.endings` string into
-    // one row per literal ending) into a JSON array in seed order - see
-    // field_values::fetch_field_values, which does the same thing for
-    // grammar_patterns' own public listing.
     let row = sqlx::query(
         r#"
         SELECT c.word, c.definition, c.hanja,
@@ -399,16 +378,22 @@ async fn assemble_reveal(
     let eng_id = crate::translation_language::TranslationLanguage(translation_language.into())
         .id(&mut *connection)
         .await?;
-    let hanja_hints =
-        hanja_hints_on_connection(&mut *connection, eng_id, user_id, card_id, &hanja).await?;
-
-    let inflections = super::inflections_for(&mut *connection, card_id).await?;
+    let show_hanja_hints: bool =
+        sqlx::query_scalar("SELECT show_hanja_hints FROM users_settings WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_optional(&mut *connection)
+            .await?
+            .unwrap_or(true);
+    let hanja_hints = if show_hanja_hints {
+        Some(hanja_hints_on_connection(&mut *connection, eng_id, user_id, card_id, &hanja).await?)
+    } else {
+        None
+    };
 
     Ok(CardReveal {
         back,
         hanja_hints,
         grammar_pattern_endings,
-        inflections,
     })
 }
 

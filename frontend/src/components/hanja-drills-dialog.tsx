@@ -40,7 +40,7 @@ export function HanjaDrillsDialog({ open, onOpenChange }: HanjaDrillsDialogProps
     setAnswer('')
     setRevealed(false)
 
-    getHanjaDrill(controller.signal, translationLanguage!)
+    getHanjaDrill(controller.signal)
       .then(response => {
         if (controller.signal.aborted) return
         setDrill(response.drill ?? null)

@@ -116,8 +116,11 @@ impl IntoResponse for AppError {
                 "missing_translation_language" => {
                     "The translation_language query parameter is required"
                 }
+                "translation_language_not_configured" => {
+                    "Choose a preferred translation language in your settings"
+                }
                 "unknown_translation_language" => "Unknown translation-language code",
-                _ => "Expected exactly one lowercase three-letter translation_language code",
+                _ => "Expected a lowercase three-letter translation language code",
             };
             return (
                 StatusCode::BAD_REQUEST,

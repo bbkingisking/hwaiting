@@ -96,7 +96,7 @@ test('queue settings invalidate availability, including zero limits and midnight
 })
 
 test('display settings and reads do not cause queue refreshes', async () => {
-  await api.updateUserSettings({ red_threshold: 45, show_hanja_hints: true })
+  await api.updateUserSettings({ red_threshold: 45 })
   await api.getStats()
   await api.listSuppressedCards()
   assert.deepEqual(changes, [])
@@ -118,7 +118,7 @@ test('a queue change during a queue request discards its stale response', async 
   assert.deepEqual(await nextCard, { card: { card_id: 42 } })
   assert.equal(reads, 2)
   assert.ok(requests.filter(request => request.url.includes('/api/cards/queue'))
-    .every(request => request.url.endsWith('/api/cards/queue?limit=2&translation_language=eng')))
+    .every(request => request.url.endsWith('/api/cards/queue?limit=2')))
 })
 
 test('removing a queue subscription stops further notifications', async () => {
@@ -157,15 +157,15 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
   finish(Response.json({ cards: [{ card_id: 1 }] }))
   assert.deepEqual((await pending).cards, [{ card_id: 8 }])
   assert.equal(reads, 2)
-  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue?limit=2&translation_language=eng')))
+  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue?limit=2')))
 })
 
 const { reconcileQueue } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
 test('batch reconciliation replaces stale data and preserves legitimate repetitions', () => {
-  const card = { card_id: 1, sentence_id: 1, attempt_token: 'initial-attempt' }
-  const other = { ...card, card_id: 2 }
+  const card = { card: { card_id: 1, sentence_id: 1 }, review: { attempt_token: 'initial-attempt' } }
+  const other = { ...card, card: { ...card.card, card_id: 2 } }
   assert.deepEqual(reconcileQueue([card, other, other], card), [other])
-  const repetition = { ...card, attempt_token: 'later-attempt', sentence_id: 2 }
+  const repetition = { card: { ...card.card, sentence_id: 2 }, review: { attempt_token: 'later-attempt' } }
   assert.deepEqual(reconcileQueue([repetition], card), [repetition])
   assert.deepEqual(reconcileQueue([], card), [])
   assert.deepEqual(reconcileQueue([card], null), [card])
@@ -193,4 +193,34 @@ test('first settings load proposes the browser timezone and uses the saved winne
   assert.equal((await api.getUserSettings()).study_timezone, 'Asia/Seoul')
   assert.equal(requests.length, 3)
   assert.deepEqual(changes, ['availability'])
+})
+
+test('changing hanja hints refreshes review assistance, including disabling it', async () => {
+  await api.updateUserSettings({ show_hanja_hints: true })
+  await api.updateUserSettings({ show_hanja_hints: false })
+  assert.deepEqual(changes, ['availability', 'availability'])
+})
+
+test('a refreshed assistance object still identifies the in-flight review attempt', async () => {
+  const { sameReviewAttempt } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
+  const issued = { card: { card_id: 1 }, review: { attempt_token: 'issued', hanja_hint_words: [] } }
+  const refreshed = { ...issued, review: { ...issued.review, hanja_hint_words: ['學'] } }
+  assert.equal(sameReviewAttempt(refreshed, issued), true)
+  assert.equal(sameReviewAttempt({ ...refreshed, review: { attempt_token: 'later' } }, issued), false)
+  assert.equal(sameReviewAttempt(null, issued), false)
+})
+
+test('a saved L1 change invalidates a queue read started in the previous language', async () => {
+  let finish
+  let reads = 0
+  respond = url => {
+    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
+    if (++reads === 1) return new Promise(resolve => { finish = resolve })
+    return Response.json({ cards: [{ card: { trans_word: 'chose' } }] })
+  }
+  const pending = api.getReviewQueue()
+  await api.updateUserSettings({ translation_language: 'fra' })
+  finish(Response.json({ cards: [{ card: { trans_word: 'thing' } }] }))
+  assert.equal((await pending).cards[0].card.trans_word, 'chose')
+  assert.equal(reads, 2)
 })

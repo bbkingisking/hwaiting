@@ -30,13 +30,13 @@ export type HanjaHint = Api.HanjaHint
 // What's known about the card being reviewed before an answer is checked -
 // everything needed to render the sentence-with-blank, badges, and both
 // translations, but nothing `target` could be inferred from.
-export type CardPrompt = Api.ReviewQueueCard
+export type ReviewQueueCard = Api.ReviewQueueCard
 
 // Disclosed by POST /api/cards/{id}/check once an attempt has been graded:
 // the answer, the word's citation form, the hanja reading/gloss, and the
-// grammar pattern's conjugation endings - everything CardPrompt withheld.
+// grammar pattern's conjugation endings - everything ReviewQueueCard withheld.
 //
-// Deliberately NOT merged into a single `CardPrompt & Partial<CardReveal>`
+// Deliberately NOT merged into a single `ReviewQueueCard & Partial<CardReveal>`
 // type held in App.tsx's `card` state, as an earlier version of this file
 // did: that merge happened via a second, independently-timed setState call
 // (App.tsx's, following the network response) racing against the setState
@@ -50,10 +50,8 @@ export type CardPrompt = Api.ReviewQueueCard
 // timing involved. See flashcard.tsx.
 export type CardReveal = Api.CardReveal
 
-// EditCardDialog edits the backend's canonical full-card shape
-// (api.ts's AdminCard) directly - see its doc comment for why the review
-// flow needs an adapter (toAdminCard in flashcard.tsx) rather than passing
-// CardPrompt/CardReveal straight through.
+// The admin editor fetches its own complete AdminCardDetail snapshot.
+// Review prompts and reveals never stand in for the authoring aggregate.
 
 // Theme types
 export type Theme = 'light' | 'dark' | 'system'

@@ -151,11 +151,12 @@ pub async fn suppress_card(
 pub async fn list_suppressed_cards(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
-    translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<SuppressedCardsResponse>, AppError> {
     let user_id = auth.0;
     info!("Listing suppressed cards for user_id: {}", user_id);
 
+    let translation_language =
+        crate::translation_language::TranslationLanguage::for_user(&pool, user_id).await?;
     let language_id = translation_language.id(&pool).await?;
     let rows = sqlx::query(
         r#"

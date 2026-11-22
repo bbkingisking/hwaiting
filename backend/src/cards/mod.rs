@@ -86,31 +86,9 @@ pub struct HanjaHint {
     pub trans_word: Option<String>,
 }
 
-/// The canonical full-card shape: a `cards` row joined with its English
-/// translation and primary example sentence - exactly `CardFront` (next.rs)
-/// plus `CardBack` (check.rs), i.e. exactly what `CardPrompt` and
-/// `CardReveal` disclose between them minus the two fields that are
-/// review-flow state rather than properties of the card itself
-/// (`hanja_hint_words`, `hanja_hints` - both depend on the requesting user's
-/// review history, see `hanja_hints_on_connection`).
-///
-/// Flattening the same two structs the review flow already produces, rather
-/// than hand-declaring their union a third time, is what keeps this
-/// in sync with them: `Card` used to be its own independently-declared
-/// 20-field struct that merely happened to agree with `CardPrompt`/
-/// `CardReveal` - previously it was also independent of `admin::AdminCard`,
-/// which had the exact same problem in miniature (agreeing on 14 of its own
-/// fields) until both admin structs were unified into this one. Nothing
-/// enforced this wider agreement in the same way; the frontend's
-/// `toAdminCard`/`CARD_BACK_FIELDS` (lib/api.ts) had to hand-encode the
-/// front/back split from the outside, reconstructing in TypeScript what the
-/// Rust types could just express directly.
-///
-/// Shared verbatim by admin search (`admin::search_cards`) and edit
-/// (`admin::edit_card`). Not used by the review flow itself, which needs
-/// `CardPrompt`/`CardReveal` proper, extra per-user fields included -
-/// admin editing isn't gated by the same secrecy concerns, so it gets the
-/// whole row upfront.
+/// Localized card projection used internally by the scoped edit writer.
+/// Public admin reads use AdminCardDetail, which contains the sentence
+/// and all translations rather than selecting one language.
 #[derive(Serialize, ToSchema)]
 pub struct Card {
     #[serde(flatten)]
@@ -119,16 +97,21 @@ pub struct Card {
     pub back: CardBack,
 }
 
+/// A resolved conjugation with its grammatical facts. Clients own labels,
+/// grouping and ordering; the backend returns only forms applicable to the card.
+#[derive(Serialize, ToSchema)]
+pub struct CardInflection {
+    pub form_slug: String,
+    pub form: String,
+}
+
 /// This card's resolved `conjugation_matrix_cards` rows, joined out to the
-/// catalog's `slug` - shared by `check_answer` (`CardReveal::inflections`,
-/// which needs it alongside the rest of a graded reveal) and admin's
-/// standalone per-card lookup (`admin::get_card_inflections`, which needs
-/// exactly these rows without going through the review-grading flow).
+/// catalog's `slug`, for the standalone admin conjugation-table lookup
+/// (`admin::get_card_inflections`). Review responses do not carry this matrix.
 /// `pub(crate)`, unlike `hanja_hints_on_connection` below, because `admin` is a sibling
 /// module rather than a submodule of `cards` and can't otherwise reach it.
 ///
-/// Generic over the executor (rather than fixed to `&SqlitePool`, following
-/// `enum_lookup`'s `eng_language_id`/`resolve_optional_id`) so
+/// Generic over the executor rather than fixed to `&SqlitePool`, so
 /// `admin::get_card_inflections` can run this inside the same transaction as
 /// its existence check - closing the window a card deleted between two
 /// separate pool queries used to open, where the delete would land between
@@ -186,7 +169,7 @@ fn shares_hanja_character(a: &str, b: &str) -> bool {
 /// Hanja hints for `card_id`: hanja from other cards the user has already
 /// reviewed that share at least one character with `hanja`. Shared by
 /// `get_review_queue` (which only needs the characters - see
-/// `CardPrompt::hanja_hint_words`) and `check_answer` (which needs the full
+/// `ReviewContext::hanja_hint_words`) and `check_answer` (which needs the full
 /// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
 async fn hanja_hints_on_connection(
     connection: &mut sqlx::SqliteConnection,

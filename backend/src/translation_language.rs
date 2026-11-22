@@ -39,6 +39,22 @@ impl<S: Send + Sync> FromRequestParts<S> for TranslationLanguage {
     }
 }
 impl TranslationLanguage {
+    /// Resolve the account's preferred content language without an implicit fallback.
+    pub async fn for_user<'e, E>(executor: E, user_id: i64) -> Result<Self, AppError>
+    where
+        E: sqlx::Executor<'e, Database = Sqlite>,
+    {
+        let code: Option<String> =
+            sqlx::query_scalar("SELECT translation_language FROM users_settings WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_optional(executor)
+                .await?
+                .flatten();
+        code.map(Self).ok_or(AppError::TranslationLanguage(
+            "translation_language_not_configured",
+        ))
+    }
+
     pub async fn id<'e, E>(&self, executor: E) -> Result<i64, AppError>
     where
         E: sqlx::Executor<'e, Database = Sqlite>,
@@ -159,11 +175,16 @@ mod tests {
             vec!["eng"]
         );
         assert_eq!(languages[0].card_count, 50);
+        crate::user::ensure_settings_row(&pool, user).await.unwrap();
+        sqlx::query("UPDATE users_settings SET translation_language = 'fra' WHERE user_id = ?")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
         let queue = crate::cards::get_review_queue(
             State(pool),
             AuthUser(user),
             crate::error::AppQuery(crate::cards::ReviewQueueQuery::default()),
-            TranslationLanguage("fra".into()),
         )
         .await
         .unwrap();
@@ -216,21 +237,30 @@ mod tests {
             vec!["eng", "fra"]
         );
         assert_eq!(languages[1].card_count, 1);
+        crate::user::ensure_settings_row(&pool, admin)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE users_settings SET translation_language = 'fra' WHERE user_id = ?")
+            .bind(admin)
+            .execute(&pool)
+            .await
+            .unwrap();
         let queue = crate::cards::get_review_queue(
             State(pool.clone()),
             AuthUser(admin),
             AppQuery(crate::cards::ReviewQueueQuery::default()),
-            TranslationLanguage("fra".into()),
         )
         .await
         .unwrap()
         .0;
         let queue = serde_json::to_value(queue).unwrap();
-        assert_eq!(queue["translation_language"], "fra");
+        assert!(queue.get("translation_language").is_none());
         assert_eq!(queue["cards"].as_array().unwrap().len(), 1);
-        assert_eq!(queue["cards"][0]["sentence_id"], 1);
-        assert_eq!(queue["cards"][0]["trans_word"], "réponse");
-        let token = queue["cards"][0]["attempt_token"].as_str().unwrap();
+        assert_eq!(queue["cards"][0]["card"]["sentence_id"], 1);
+        assert_eq!(queue["cards"][0]["card"]["trans_word"], "réponse");
+        let token = queue["cards"][0]["review"]["attempt_token"]
+            .as_str()
+            .unwrap();
         let mut tx = pool.begin().await.unwrap();
         let claims = crate::cards::validate_attempt(&mut tx, token, admin, Some(1))
             .await
@@ -307,5 +337,29 @@ mod tests {
         )
         .await;
         assert!(matches!(missing, Err(AppError::NotFound)));
+    }
+    #[tokio::test]
+    async fn user_content_requires_a_saved_language() {
+        let pool = crate::test_support::test_pool().await;
+        let user = crate::test_support::test_user(&pool).await;
+        let result = crate::cards::get_review_queue(
+            State(pool.clone()),
+            AuthUser(user),
+            crate::error::AppQuery(crate::cards::ReviewQueueQuery::default()),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(AppError::TranslationLanguage(
+                "translation_language_not_configured"
+            ))
+        ));
+        crate::user::ensure_settings_row(&pool, user).await.unwrap();
+        assert!(matches!(
+            TranslationLanguage::for_user(&pool, user).await,
+            Err(AppError::TranslationLanguage(
+                "translation_language_not_configured"
+            ))
+        ));
     }
 }

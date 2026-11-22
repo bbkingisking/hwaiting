@@ -520,8 +520,8 @@ async fn answer_with_hanja_hints_needs_only_one_available_connection() {
     .unwrap()
     .0;
     assert!(response.correct);
-    assert_eq!(response.reveal.hanja_hints.len(), 1);
-    assert_eq!(response.reveal.hanja_hints[0].hanja, "學");
+    assert_eq!(response.reveal.hanja_hints.as_ref().unwrap().len(), 1);
+    assert_eq!(response.reveal.hanja_hints.as_ref().unwrap()[0].hanja, "學");
     drop(reserved);
     assert_eq!(revision_for(&pool, user_id, 1).await, 1);
 }
@@ -531,9 +531,9 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
     let token = crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap();
-    // Make the reveal-only inflection query fail after grading has written
-    // scheduling state, review history, and the incorrect answer.
-    sqlx::query("ALTER TABLE conjugation_matrix_cards RENAME TO unavailable_inflections")
+    // Hide the language after grading writes the incorrect answer, so reveal
+    // assembly fails. The language change must roll back with the review.
+    sqlx::query("CREATE TRIGGER hide_reveal_language AFTER INSERT ON wrong_answers BEGIN UPDATE languages SET slug = 'zzz' WHERE slug = 'eng'; END")
         .execute(&pool)
         .await
         .unwrap();
@@ -547,7 +547,12 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
         }),
     )
     .await;
-    assert!(matches!(result, Err(AppError::Database(_))));
+    assert!(matches!(
+        result,
+        Err(AppError::TranslationLanguage(
+            "unknown_translation_language"
+        ))
+    ));
     for table in ["cards_states", "review_history", "wrong_answers"] {
         let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(&pool)
@@ -555,7 +560,7 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
             .unwrap();
         assert_eq!(count, 0, "{table} must roll back if reveal assembly fails");
     }
-    sqlx::query("ALTER TABLE unavailable_inflections RENAME TO conjugation_matrix_cards")
+    sqlx::query("DROP TRIGGER hide_reveal_language")
         .execute(&pool)
         .await
         .unwrap();
@@ -608,4 +613,69 @@ async fn decomposed_correct_answer_records_a_good_review() {
         .unwrap();
     assert_eq!(wrong_count, 0);
     assert_eq!(revision_for(&pool, user_id, 1).await, 1);
+}
+
+#[tokio::test]
+async fn review_does_not_depend_on_conjugation_matrix() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let answer = target_for(&pool, 1).await;
+    sqlx::query("ALTER TABLE conjugation_matrix_cards RENAME TO unavailable_inflections")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let response = check_answer(
+        State(pool.clone()),
+        AppPath(1),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(response.correct);
+    let body = serde_json::to_value(response).unwrap();
+    assert!(body.get("inflections").is_none());
+    assert!(body.get("grammar_pattern_endings").is_some());
+}
+
+#[tokio::test]
+async fn reveal_respects_disabled_hanja_hints() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    crate::user::ensure_settings_row(&pool, user_id)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users_settings SET show_hanja_hints = 0 WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE cards SET hanja = '學' WHERE id IN (1, 2)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO cards_states (user_id, card_id, state) VALUES (?, 2, 'review')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let response = check_answer(
+        State(pool.clone()),
+        AppPath(1),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer: target_for(&pool, 1).await,
+            attempt_token: crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap(),
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(response.correct);
+    assert!(response.reveal.hanja_hints.is_none());
+    assert!(serde_json::to_value(response).unwrap()["hanja_hints"].is_null());
 }

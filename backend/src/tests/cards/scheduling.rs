@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::{test_pool, test_user};
+use crate::test_support::{test_pool, test_review_user as test_user};
 use crate::{
     auth::AuthUser,
     cards,
@@ -98,7 +98,6 @@ async fn next(pool: &SqlitePool, uid: i64) -> Value {
             State(pool.clone()),
             AuthUser(uid),
             AppQuery(Default::default()),
-            crate::translation_language::TranslationLanguage("eng".into()),
         )
         .await
         .unwrap()
@@ -203,7 +202,7 @@ async fn retention_changes_reschedule_queue_and_stats_without_rewriting_memory_o
     );
     assert_eq!(stats(&pool, uid).await["due_count"], 0);
     set_retention(&pool, uid, 0.99).await;
-    assert_eq!(next(&pool, uid).await["cards"][0]["card_id"], 1);
+    assert_eq!(next(&pool, uid).await["cards"][0]["card"]["card_id"], 1);
     assert_eq!(stats(&pool, uid).await["due_count"], 1);
     let memory_after: (f64, f64, String, i64) = sqlx::query_as(
         "SELECT stability,difficulty,last_review,review_revision FROM cards_states WHERE user_id=?",
