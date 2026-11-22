@@ -168,9 +168,11 @@ async fn seed_sample_cards(pool: &SqlitePool) -> anyhow::Result<()> {
     }
 
     info!("Seeding 50 sample cards");
+    let mut tx = pool.begin().await?;
     sqlx::raw_sql(include_str!("../seed/sample_cards.sql"))
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
     info!("Sample cards seeded successfully");
 
     Ok(())
@@ -179,3 +181,7 @@ async fn seed_sample_cards(pool: &SqlitePool) -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "tests/db.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/card_completeness.rs"]
+mod completeness_tests;

@@ -153,19 +153,15 @@ async fn existing_foreign_key_violations_block_startup() {
 #[tokio::test]
 async fn card_translations_are_unique_per_card_and_language() {
     let pool = test_pool().await;
-    let (card_id, language_id): (i64, i64) =
-        sqlx::query_as("SELECT card_id, language_id FROM cards_translations LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+        "SELECT card_id, language_id, required_sentence_id FROM cards_translations ORDER BY card_id LIMIT 2",
+    ).fetch_all(&pool).await.unwrap();
+    let (card_id, language_id, sentence_id) = rows[0];
     let duplicate = sqlx::query(
-        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'duplicate')",
+        "INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (?, ?, 'duplicate', ?)",
     )
-    .bind(card_id)
-    .bind(language_id)
-    .execute(&pool)
-    .await
-    .unwrap_err();
+    .bind(card_id).bind(language_id).bind(sentence_id)
+    .execute(&pool).await.unwrap_err();
     assert!(duplicate.as_database_error().unwrap().is_unique_violation());
 
     let other_language: i64 =
@@ -173,26 +169,18 @@ async fn card_translations_are_unique_per_card_and_language() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'translation')",
-    )
-    .bind(card_id)
-    .bind(other_language)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let other_card: i64 =
-        sqlx::query_scalar("INSERT INTO cards (word) VALUES ('다른 단어') RETURNING id")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    sqlx::query(
-        "INSERT INTO cards_translations (card_id, language_id, trans_word) VALUES (?, ?, 'translation')",
-    )
-    .bind(other_card)
-    .bind(language_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    // Another language on the same card, and the same language on another
+    // card, are both valid when the corresponding sentences are translated.
+    for (card_id, _, sentence_id) in rows {
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(
+            "INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (?, ?, 'translation', ?)",
+        ).bind(card_id).bind(other_language).bind(sentence_id)
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query(
+            "INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (?, ?, ?, 'translated sentence')",
+        ).bind(sentence_id).bind(card_id).bind(other_language)
+            .execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    }
 }

@@ -30,10 +30,13 @@ pub(crate) async fn test_pool() -> SqlitePool {
     let pool = crate::db::connect_migrated(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
+    let mut tx = pool.begin().await.unwrap();
     sqlx::raw_sql(include_str!("../../seed/sample_cards.sql"))
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .unwrap();
+
+    tx.commit().await.unwrap();
 
     pool
 }
