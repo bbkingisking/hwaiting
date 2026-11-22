@@ -150,34 +150,50 @@ pub fn login(username: &str, password: &str) -> Result<Value, AppError> {
 /// must be returned unchanged when answering.
 pub fn review() -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let leased = config::live_leases()
-        .map_err(|e| AppError::Message(format!("could not read local leases: {e}")))?;
-    let envelope = parse(&get("/api/cards/queue", &client)?)?;
-    for entry in envelope
-        .get("cards")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let Some(card_id) = entry["card"]["card_id"].as_i64() else {
-            continue;
-        };
-        if leased.contains(&card_id) {
-            continue;
-        }
-        if config::claim_card(card_id)
-            .map_err(|e| AppError::Message(format!("could not claim card {card_id}: {e}")))?
+    // A claim can race with another process after the lease snapshot is read.
+    // Refresh only in that case, and bound retries under sustained contention.
+    const MAX_CLAIM_ATTEMPTS: usize = 50;
+    for _ in 0..MAX_CLAIM_ATTEMPTS {
+        let leased = config::live_leases()
+            .map_err(|e| AppError::Message(format!("could not read local leases: {e}")))?;
+        // At most leased.len() entries can be held by known sibling processes.
+        // One more is enough to find an available entry without expanding the deck.
+        let limit = leased.len().saturating_add(1);
+        let envelope = parse(&get(&format!("/api/cards/queue?limit={limit}"), &client)?)?;
+        let mut lost_claim = false;
+        for entry in envelope
+            .get("cards")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
         {
-            let mut entry = entry.clone();
-            if let Some(review) = entry.get_mut("review").and_then(Value::as_object_mut) {
-                review.remove("hanja_hint_words");
+            let Some(card_id) = entry["card"]["card_id"].as_i64() else {
+                continue;
+            };
+            if leased.contains(&card_id) {
+                continue;
             }
-            return Ok(entry);
+            if config::claim_card(card_id)
+                .map_err(|e| AppError::Message(format!("could not claim card {card_id}: {e}")))?
+            {
+                let mut entry = entry.clone();
+                if let Some(review) = entry.get_mut("review").and_then(Value::as_object_mut) {
+                    review.remove("hanja_hint_words");
+                }
+                return Ok(entry);
+            }
+            lost_claim = true;
         }
+        if lost_claim {
+            continue;
+        }
+        // No unleased entry is available; preserve the server's refresh metadata.
+        return Ok(json!({"card": null, "review": null,
+            "next_due_at": envelope["next_due_at"], "refresh_at": envelope["refresh_at"]}));
     }
-    // Nothing available to this process; preserve the server's refresh metadata.
-    Ok(json!({"card": null, "review": null,
-        "next_due_at": envelope["next_due_at"], "refresh_at": envelope["refresh_at"]}))
+    Err(AppError::Message(format!(
+        "could not claim a review card after {MAX_CLAIM_ATTEMPTS} attempts; other reviewers kept claiming it first"
+    )))
 }
 
 /// Submits a guess for the given card and returns the graded result
