@@ -1,43 +1,10 @@
-//! Explicit content language, independent of interface labels.
+//! Saved review content language and explicit admin translation selection.
 use crate::{auth::AuthUser, error::AppError};
-use axum::{
-    Json,
-    extract::{FromRequestParts, Query, State},
-    http::request::Parts,
-};
+use axum::{Json, extract::State};
 use sqlx::{Sqlite, SqlitePool};
 
 #[derive(Clone, Debug)]
 pub struct TranslationLanguage(pub String);
-impl<S: Send + Sync> FromRequestParts<S> for TranslationLanguage {
-    type Rejection = AppError;
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, AppError> {
-        let Query(pairs) = Query::<Vec<(String, String)>>::from_request_parts(parts, state)
-            .await
-            .map_err(|_| AppError::TranslationLanguage("invalid_translation_language"))?;
-        let values: Vec<_> = pairs
-            .iter()
-            .filter(|(key, _)| key == "translation_language")
-            .collect();
-        if values.is_empty() {
-            return Err(AppError::TranslationLanguage(
-                "missing_translation_language",
-            ));
-        }
-        if values.len() != 1 {
-            return Err(AppError::TranslationLanguage(
-                "invalid_translation_language",
-            ));
-        }
-        let code = &values[0].1;
-        if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
-            return Err(AppError::TranslationLanguage(
-                "invalid_translation_language",
-            ));
-        }
-        Ok(Self(code.clone()))
-    }
-}
 impl TranslationLanguage {
     /// Resolve the account's preferred content language without an implicit fallback.
     pub async fn for_user<'e, E>(executor: E, user_id: i64) -> Result<Self, AppError>
@@ -97,58 +64,6 @@ pub async fn available_translation_languages(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        Router,
-        http::{Request, StatusCode},
-        routing::get,
-    };
-    use tower::ServiceExt;
-
-    #[tokio::test]
-    async fn query_contract_is_explicit_and_errors_have_codes() {
-        let app = Router::new().route(
-            "/",
-            get(|translation_language: TranslationLanguage| async move { translation_language.0 }),
-        );
-        for (query, code) in [
-            ("", "missing_translation_language"),
-            ("?translation_language=en", "invalid_translation_language"),
-            ("?translation_language=ENG", "invalid_translation_language"),
-            ("?translation_language=", "invalid_translation_language"),
-            (
-                "?translation_language=eng&translation_language=fra",
-                "invalid_translation_language",
-            ),
-        ] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .uri(format!("/{query}"))
-                        .body(axum::body::Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            let body = axum::body::to_bytes(response.into_body(), 1024)
-                .await
-                .unwrap();
-            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-            assert_eq!(body["code"], code);
-        }
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/?translation_language=fra")
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
     #[tokio::test]
     async fn discovery_requires_complete_content_and_lookup_rejects_unknown_codes() {
         let pool = crate::test_support::test_pool().await;
@@ -208,23 +123,16 @@ mod tests {
             INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (1, 1, 100, 'Une réponse.');
         "#).execute(&mut *tx).await.unwrap();
         tx.commit().await.unwrap();
-        let views = crate::admin::get_sentence_translations(
+        let detail = crate::admin::get_admin_card(
             crate::auth::AdminUser(admin),
             State(pool.clone()),
-            AppPath((1, 1)),
+            AppPath(1),
         )
         .await
         .unwrap()
         .0;
-        assert_eq!(views.len(), 2);
-        assert!(views.iter().any(|view| view.translation_language == "fra"));
-        let absent = crate::admin::get_sentence_translations(
-            crate::auth::AdminUser(admin),
-            State(pool.clone()),
-            AppPath((2, 1)),
-        )
-        .await;
-        assert!(matches!(absent, Err(AppError::NotFound)));
+        assert_eq!(detail.sentence.translations["fra"], "Une réponse.");
+        assert_eq!(detail.translations["fra"].word, "réponse");
         let languages = available_translation_languages(State(pool.clone()), AuthUser(admin))
             .await
             .unwrap()
@@ -261,6 +169,12 @@ mod tests {
         let token = queue["cards"][0]["review"]["attempt_token"]
             .as_str()
             .unwrap();
+        // A preference change must not reinterpret an already-issued attempt.
+        sqlx::query("UPDATE users_settings SET translation_language = 'eng' WHERE user_id = ?")
+            .bind(admin)
+            .execute(&pool)
+            .await
+            .unwrap();
         let mut tx = pool.begin().await.unwrap();
         let claims = crate::cards::validate_attempt(&mut tx, token, admin, Some(1))
             .await
@@ -279,11 +193,10 @@ mod tests {
         .await
         .unwrap();
         assert!(result.0.correct);
-        let found = crate::admin::search_cards(
+        let found = crate::admin::search_card_summaries(
             crate::auth::AdminUser(admin),
             State(pool.clone()),
             AppQuery(crate::admin::SearchCardsQuery { q: "1".into() }),
-            TranslationLanguage("fra".into()),
         )
         .await
         .unwrap();

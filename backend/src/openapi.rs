@@ -20,21 +20,6 @@ impl Modify for SecurityAddon {
                 ))),
             );
         }
-        for (name, path) in &mut openapi.paths.paths {
-            let operation = match name.as_str() {
-                "/api/admin/cards/search" => path.get.as_mut(),
-                "/api/admin/cards/{card_id}" => path.patch.as_mut(),
-                _ => None,
-            };
-            if let Some(operation) = operation {
-                operation.parameters.get_or_insert_with(Vec::new).push(
-                    ParameterBuilder::new().name("translation_language").parameter_in(ParameterIn::Query)
-                        .required(Required::True)
-                        .description(Some("Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback."))
-                        .schema(Some(ObjectBuilder::new().schema_type(Type::String))).build()
-                );
-            }
-        }
         // Keep the write requirement executable in Swagger UI and visible
         // to generated clients, including unauthenticated login endpoints.
         for path in openapi.paths.paths.values_mut() {
@@ -115,10 +100,10 @@ impl Modify for SecurityAddon {
         crate::export_import::export_data,
         crate::export_import::import_data,
         crate::admin::list_users,
-        crate::admin::search_cards,
-        crate::admin::get_sentence_translations,
+        crate::admin::search_card_summaries,
+        crate::admin::get_admin_card,
         crate::admin::get_card_inflections,
-        crate::admin::edit_card,
+        crate::admin::save_admin_card,
         crate::health_check,
     ),
     components(schemas(
@@ -161,10 +146,8 @@ impl Modify for SecurityAddon {
         crate::export_import::ImportDataResponse,
         crate::admin::AdminUserSummary,
         crate::admin::ListUsersResponse,
-        crate::admin::SearchCardsResponse,
         crate::admin::CardInflectionsResponse,
         crate::admin::UpdateCardRequest,
-        crate::admin::EditCardResponse,
     )),
     modifiers(&SecurityAddon),
     tags(

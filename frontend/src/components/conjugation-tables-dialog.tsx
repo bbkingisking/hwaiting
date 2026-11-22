@@ -9,7 +9,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { InflectionsDialog } from '@/components/inflections-dialog'
 import { Loader2 } from 'lucide-react'
-import { getCardInflections, ApiError, type AdminCard, type CardInflection } from '@/lib/api'
+import { getCardInflections, ApiError, type AdminCardSummary, type CardInflection } from '@/lib/api'
 import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface ConjugationTablesDialogProps {
@@ -22,7 +22,7 @@ interface ConjugationTablesDialogProps {
 // EditCardDialog.
 export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTablesDialogProps) {
   const { query, setQuery, cards, isLoading, hasSearched, error, setError } = useDebouncedCardSearch(open)
-  const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
+  const [selectedCard, setSelectedCard] = useState<AdminCardSummary | null>(null)
   const [inflections, setInflections] = useState<CardInflection[]>([])
   const [inflectionsOpen, setInflectionsOpen] = useState(false)
   const [inflectionsLoading, setInflectionsLoading] = useState(false)
@@ -38,15 +38,11 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
     }
   }, [open])
 
-  const handleCardClick = (card: AdminCard) => {
-    // InflectionsDialog groups rows by `restricted_to_pos`, which needs a
-    // real pos slug to filter against (see its groupByCategory) - the same
-    // gate flashcard.tsx applies before ever mounting that dialog.
+  const handleCardClick = (card: AdminCardSummary) => {
     if (!card.pos) {
-      setError(`Card #${card.card_id} has no part of speech set - can't resolve its conjugation table`)
+      setError(`Card #${card.card_id} has no part of speech set`)
       return
     }
-
     setError(null)
     setSelectedCard(card)
     setInflectionsLoading(true)
@@ -110,23 +106,22 @@ export function ConjugationTablesDialog({ open, onOpenChange }: ConjugationTable
             ) : (
               <ul aria-label="Matching cards for conjugation" className="space-y-2 max-h-96 overflow-y-auto">
                 {cards.map(card => (
-                  <li key={card.sentence_id}>
+                  <li key={card.card_id}>
                     <button
                       type="button"
                       data-card-id={card.card_id}
-                      data-sentence-id={card.sentence_id}
                       onClick={() => handleCardClick(card)}
                       disabled={inflectionsLoading}
                       className="w-full text-left p-3 border rounded-md hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
                       <span className="sr-only">View conjugation table for </span>
                       <span className="block space-y-1">
-                        <span className="block font-medium">{card.target}</span>
+                        <span className="block font-medium">{card.word}</span>
                         <span className="block text-sm text-muted-foreground">
-                          {card.word} · {card.trans_word} · card #{card.card_id} · sentence #{card.sentence_id}
+                          Card #{card.card_id}
                         </span>
                         <span className="block text-xs text-muted-foreground/70">
-                          {card.sentence}
+                          {card.pos}
                         </span>
                       </span>
                     </button>

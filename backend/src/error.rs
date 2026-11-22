@@ -113,9 +113,6 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         if let AppError::TranslationLanguage(code) = &self {
             let message = match *code {
-                "missing_translation_language" => {
-                    "The translation_language query parameter is required"
-                }
                 "translation_language_not_configured" => {
                     "Choose a preferred translation language in your settings"
                 }

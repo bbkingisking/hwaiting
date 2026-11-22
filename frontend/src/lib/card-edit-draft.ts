@@ -40,7 +40,7 @@ function nullIfEmpty(val: string): string | null {
 }
 
 // Compare against the snapshot opened by this editor, never a refreshed prop.
-export function cardEditPatch(baseline: AdminCard, form: FormState): UpdateCardRequest {
+export function cardEditPatch(baseline: AdminCard, form: FormState): UpdateCardRequest & { expected_content_revision: number } {
   const updates = {
     word: form.word.trim() || undefined,
     hanja: nullIfEmpty(form.hanja),

@@ -569,7 +569,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
         <EditCardDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          card={toAdminCard(card.card, reveal)}
+          cardId={card.card.card_id}
         />
       )}
 

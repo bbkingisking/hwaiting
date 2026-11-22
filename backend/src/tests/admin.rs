@@ -154,20 +154,13 @@ async fn edit_returns_the_same_canonical_projection_as_search() {
     assert_eq!(response.card.front.sentence_after, "입니다.");
     assert!(response.card.front.inflection_hint.is_honorific);
     assert!(response.card.front.inflection_hint.is_humble);
-    let search = search_cards(
-        AdminUser(admin_id),
-        State(pool),
-        AppQuery(SearchCardsQuery { q: "1".into() }),
-        crate::translation_language::TranslationLanguage("eng".into()),
-    )
-    .await
-    .unwrap()
-    .0;
-    assert_eq!(search.cards.len(), 1);
-    assert_eq!(
-        serde_json::to_value(response.card).unwrap(),
-        serde_json::to_value(&search.cards[0]).unwrap()
-    );
+    let detail = get_admin_card(AdminUser(admin_id), State(pool), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(detail.word, response.card.back.word);
+    assert_eq!(detail.sentence.text, response.card.back.sentence);
+    assert_eq!(detail.sentence.target.form, response.card.back.target);
 }
 
 #[tokio::test]
@@ -230,7 +223,7 @@ async fn editing_a_nonexistent_card_is_not_found() {
 
 #[test]
 fn edit_requires_content_revision() {
-    assert!(serde_json::from_str::<UpdateCardRequest>(r#"{"sentence_id":1}"#).is_err());
+    assert!(serde_json::from_str::<SaveAdminCardRequest>(r#"{"changes":[]}"#).is_err());
 }
 
 #[tokio::test]
@@ -267,18 +260,15 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
     )
     .await;
     assert!(matches!(stale, Err(AppError::StaleContent)));
-    let current = search_cards(
-        AdminUser(admin_id),
-        State(pool.clone()),
-        AppQuery(SearchCardsQuery { q: "1".into() }),
-        crate::translation_language::TranslationLanguage("eng".into()),
-    )
-    .await
-    .unwrap()
-    .0;
+    let current = get_admin_card(AdminUser(admin_id), State(pool.clone()), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(current.content_revision, first.content_revision);
+    assert_eq!(current.hanja, first.card.front.hanja);
     assert_eq!(
-        serde_json::to_value(&current.cards[0]).unwrap(),
-        serde_json::to_value(&first.card).unwrap()
+        current.translations["eng"].word,
+        first.card.front.trans_word
     );
     let retry = edit_card(
         AdminUser(admin_id),
@@ -298,4 +288,126 @@ async fn stale_edit_cannot_overwrite_content_or_change_other_fields() {
     assert_eq!(retry.content_revision, 2);
     assert_eq!(retry.card.front.hanja.as_deref(), Some("first editor"));
     assert_eq!(retry.card.front.trans_word, "second editor");
+}
+
+#[tokio::test]
+async fn complete_editor_reads_all_translations_and_saves_atomically() {
+    let pool = test_pool().await;
+    let admin = crate::test_support::test_admin_user(&pool).await;
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::raw_sql("INSERT INTO languages (id, slug) VALUES (100, 'fra'); INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (1, 100, 'chose', 1); INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (1, 1, 100, 'Une chose.');").execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let detail = get_admin_card(AdminUser(admin), State(pool.clone()), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(detail.sentence.sentence_id, 1);
+    assert!(detail.translations.contains_key("eng"));
+    assert_eq!(detail.translations["fra"].word, "chose");
+    assert_eq!(detail.sentence.translations["fra"], "Une chose.");
+    let snapshot = serde_json::to_value(&detail).unwrap();
+    assert!(snapshot.get("primary_sentence_id").is_none());
+    let body = serde_json::json!({"expected_content_revision": 0, "changes": [
+        {"sentence_id": 1, "translation_language": "eng", "trans_word": "updated word"},
+        {"sentence_id": 1, "translation_language": "fra", "sentence_translation": "Une chose mise à jour."}
+    ]});
+    let saved = save_admin_card(
+        AdminUser(admin),
+        State(pool.clone()),
+        AppPath(1),
+        AppJson(serde_json::from_value(body).unwrap()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(saved.card.content_revision, 1);
+    assert_eq!(saved.card.translations["eng"].word, "updated word");
+    assert_eq!(
+        saved.card.sentence.translations["fra"],
+        "Une chose mise à jour."
+    );
+    let invalid = serde_json::json!({"expected_content_revision": 1, "changes": [
+        {"sentence_id": 1, "translation_language": "eng", "trans_word": "must roll back"},
+        {"sentence_id": -999, "translation_language": "eng", "sentence_translation": "invalid"}
+    ]});
+    assert!(
+        save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(serde_json::from_value(invalid).unwrap())
+        )
+        .await
+        .is_err()
+    );
+    let after = get_admin_card(AdminUser(admin), State(pool.clone()), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(after.content_revision, 1);
+    assert_eq!(after.translations["eng"].word, "updated word");
+    let stale = serde_json::json!({"expected_content_revision": 0, "changes": []});
+    assert!(matches!(
+        save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(serde_json::from_value(stale).unwrap())
+        )
+        .await,
+        Err(AppError::StaleContent)
+    ));
+    let results = search_card_summaries(
+        AdminUser(admin),
+        State(pool),
+        AppQuery(SearchCardsQuery { q: "1".into() }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(results.cards.iter().filter(|c| c.card_id == 1).count(), 1);
+}
+
+#[tokio::test]
+async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchanged() {
+    let pool = test_pool().await;
+    let admin = test_admin_user(&pool).await;
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::raw_sql("INSERT INTO languages (id,slug) VALUES (100,'fra'); INSERT INTO cards_translations (card_id,language_id,trans_word,required_sentence_id) VALUES (1,100,'chose',1); INSERT INTO sentences_translations (sentence_id,card_id,language_id,translation) VALUES (1,1,100,'Une chose.');").execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let conflict = serde_json::json!({"expected_content_revision":0,"changes":[
+        {"sentence_id":1,"translation_language":"eng","hanja":"first","trans_word":"must not save"},
+        {"sentence_id":1,"translation_language":"fra","hanja":"second"}
+    ]});
+    assert!(matches!(
+        save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(serde_json::from_value(conflict).unwrap())
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+    let card = get_admin_card(AdminUser(admin), State(pool.clone()), AppPath(1))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(card.content_revision, 0);
+    assert_ne!(card.translations["eng"].word, "must not save");
+    let noop = serde_json::json!({"expected_content_revision":0,"changes":[
+        {"sentence_id":1,"translation_language":"eng","trans_word":card.translations["eng"].word},
+        {"sentence_id":1,"translation_language":"fra","trans_word":"chose"}
+    ]});
+    let response = save_admin_card(
+        AdminUser(admin),
+        State(pool),
+        AppPath(1),
+        AppJson(serde_json::from_value(noop).unwrap()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(!response.changed);
+    assert_eq!(response.card.content_revision, 0);
 }

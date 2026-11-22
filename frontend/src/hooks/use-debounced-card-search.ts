@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { searchCardsByTarget, ApiError, type AdminCard } from '@/lib/api'
+import { searchCardsByTarget, ApiError, type AdminCardSummary } from '@/lib/api'
 
 interface DebouncedCardSearch {
   query: string
   setQuery: (query: string) => void
-  cards: AdminCard[]
+  cards: AdminCardSummary[]
   refreshSearch: () => void
   isLoading: boolean
   hasSearched: boolean
@@ -19,7 +19,7 @@ interface DebouncedCardSearch {
 // stale search from the last time it was open never shows.
 export function useDebouncedCardSearch(open: boolean): DebouncedCardSearch {
   const [query, setQuery] = useState('')
-  const [cards, setCards] = useState<AdminCard[]>([])
+  const [cards, setCards] = useState<AdminCardSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)

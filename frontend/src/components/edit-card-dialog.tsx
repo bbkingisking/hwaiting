@@ -1,8 +1,10 @@
 import { copyJson } from '@/lib/clipboard'
 import { Check, Copy } from 'lucide-react'
-import { cardEditPatch, type FormState, toFormState } from '@/lib/card-edit-draft'
-import { useEffect, useId, useRef, useState } from 'react'
-import { type AdminCard, ApiError, editCard, getSentenceTranslations } from '@/lib/api'
+import { type FormState } from '@/lib/card-edit-draft'
+import { adminCardViews, initialDrafts, updateDrafts, draftChanges, viewKey } from '@/lib/admin-card-draft'
+import { useEffect, useId, useState } from 'react'
+import { type AdminCardDetail, ApiError, getAdminCard, saveAdminCard } from '@/lib/api'
+import { useSettings } from '@/components/settings-provider'
 import { krdictUrl } from '@/lib/utils'
 import { useFieldValues } from '@/components/field-values-provider'
 import { EnumSelect } from '@/components/enum-select'
@@ -15,41 +17,48 @@ import { Switch } from '@/components/ui/switch'
 interface EditCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  card: AdminCard
+  cardId: number
 }
 
-export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps) {
-  const [form, setForm] = useState<FormState>(toFormState(card))
-  const [baseline, setBaseline] = useState(card)
-  const [translations, setTranslations] = useState<Record<string, AdminCard>>({})
-  const [language, setLanguage] = useState('eng')
-  const [translationLoading, setTranslationLoading] = useState(false)
-  const wasOpen = useRef(false)
+export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogProps) {
+  const [detail, setDetail] = useState<AdminCardDetail | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, FormState>>({})
+  const [language, setLanguage] = useState('')
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const { speechLevel, tense, grammarPattern } = useFieldValues()
-  // Names follow the interface language, independently of the card's translations.
-  const languageNames = new Intl.DisplayNames(document.documentElement.lang || 'en', {
-    type: 'language',
-    fallback: 'none',
-  })
+  const { settings: { translationLanguage } } = useSettings()
+  const languageNames = new Intl.DisplayNames(document.documentElement.lang || 'en', { type: 'language', fallback: 'none' })
+  const views = detail ? adminCardViews(detail) : {}
+  const activeKey = detail ? viewKey(detail.sentence.sentence_id, language) : ''
+  const baseline = views[activeKey]
+  const form = drafts[activeKey] ?? (detail ? Object.values(drafts)[0] : undefined)
+  const changes = draftChanges(views, drafts)
+  const dirty = changes.length > 0
+  const sentence = detail?.sentence
+  const languages = Object.keys(sentence?.translations ?? {}).filter(code => detail?.translations[code])
 
-  // Reset form whenever the dialog opens with a (potentially new) card
   useEffect(() => {
-    if (
-      open &&
-      (!wasOpen.current || baseline.card_id !== card.card_id || baseline.sentence_id !== card.sentence_id)
-    ) {
-      setTranslations({})
-      setLanguage('eng')
-      setBaseline(card)
-      setForm(toFormState(card))
-      setError(null)
-      setCopied(false)
-    }
-    wasOpen.current = open
-  }, [open, card, baseline])
+    if (!open) return
+    const controller = new AbortController()
+    setLoading(true)
+    setDetail(null)
+    setDrafts({})
+    setError(null)
+    setCopied(false)
+    getAdminCard(cardId, controller.signal).then(data => {
+      if (controller.signal.aborted) return
+      setDetail(data)
+      setDrafts(initialDrafts(adminCardViews(data)))
+      const codes = Object.keys(data.sentence.translations).filter(code => data.translations[code])
+      setLanguage(codes.includes(translationLanguage ?? '') ? translationLanguage! : codes[0] ?? '')
+    }).catch(err => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load card')
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [open, cardId])
 
   useEffect(() => {
     if (!open || !copied) return
@@ -57,57 +66,21 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     return () => window.clearTimeout(timer)
   }, [open, copied])
 
-  useEffect(() => {
-    if (!open) return
-    const controller = new AbortController()
-    setTranslationLoading(true)
-    getSentenceTranslations(card.card_id, card.sentence_id, controller.signal).then((views) => {
-      if (controller.signal.aborted) return
-      const all = Object.fromEntries(views.map((view) => [view.translation_language, view.card]))
-      setTranslations(all)
-      const selected = all.eng ? 'eng' : views[0]?.translation_language
-      if (selected) {
-        setLanguage(selected)
-        setBaseline(all[selected])
-        setForm(toFormState(all[selected]))
-      }
-    }).catch((err) => {
-      if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Could not load translations')
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted) setTranslationLoading(false)
-    })
-    return () => controller.abort()
-  }, [open, card.card_id, card.sentence_id])
-
-  function selectLanguage(next: string) {
-    if (next === language || !translations[next]) return
-    if (
-      translationDirty && !window.confirm('Discard your unsaved translation changes and switch language?')
-    ) return
-    const nextForm = toFormState(translations[next])
-    // Korean content and grammatical properties belong to every translation.
-    setForm({
-      ...form,
-      trans_word: nextForm.trans_word,
-      trans_dfn: nextForm.trans_dfn,
-      sentence_translation: nextForm.sentence_translation,
-    })
-    setBaseline(translations[next])
-    setLanguage(next)
-    setCopied(false)
+  function setField(field: keyof FormState, value: string | boolean) {
+    const key = activeKey || Object.keys(views)[0]
+    if (!key) return
+    setDrafts(prev => updateDrafts(prev, key, field, value))
   }
 
   function handleChange(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }))
+      setField(field, e.target.value)
     }
   }
 
   function handleSwitchChange(field: 'is_honorific' | 'is_humble') {
     return (checked: boolean) => {
-      setForm((prev) => ({ ...prev, [field]: checked }))
+      setField(field, checked)
     }
   }
 
@@ -115,7 +88,8 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     setSaving(true)
     setError(null)
     try {
-      await editCard(baseline.card_id, patch, language)
+      if (!detail) return
+      await saveAdminCard(cardId, { expected_content_revision: detail.content_revision, changes })
       onOpenChange(false)
     } catch (err) {
       setError(
@@ -131,15 +105,9 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
   }
 
   async function handleCopy() {
-    await copyJson(baseline)
+    await copyJson(detail)
     setCopied(true)
   }
-
-  const patch = cardEditPatch(baseline, form)
-  const dirty = Object.keys(patch).length > 2
-  const initial = toFormState(baseline)
-  const translationDirty = form.trans_word !== initial.trans_word || form.trans_dfn !== initial.trans_dfn ||
-    form.sentence_translation !== initial.sentence_translation
 
   useEffect(() => {
     if (!open || !dirty) return
@@ -157,29 +125,30 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
     onOpenChange(next)
   }
 
-  const krdictLink = krdictUrl(card.krdict_id)
+  const krdictLink = krdictUrl(detail?.krdict_id)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className='sm:max-w-2xl max-h-[90vh] overflow-y-auto'>
         <DialogHeader>
-          <DialogTitle>Edit card</DialogTitle>
+          <DialogTitle>Edit card #{cardId}{detail ? ` · ${detail.word}` : ''}</DialogTitle>
         </DialogHeader>
 
-        <fieldset disabled={saving || translationLoading} className='flex flex-col gap-6 py-2'>
+        {loading && <p role='status' className='py-8 text-center text-muted-foreground'>Loading card and translations…</p>}
+        {detail && form && <fieldset disabled={saving} className='flex flex-col gap-6 py-2'>
           <section className='space-y-3' aria-labelledby='metadata-heading'>
             <h3 id='metadata-heading' className='text-sm font-semibold'>Metadata</h3>
             <div className='grid gap-3 sm:grid-cols-2'>
               <Field label='Card ID'>
                 {(id) => (
-                  <Input id={id} value={card.card_id} readOnly className='text-muted-foreground font-mono' />
+                  <Input id={id} value={cardId} readOnly className='text-muted-foreground font-mono' />
                 )}
               </Field>
               <Field label='Sentence ID'>
                 {(id) => (
                   <Input
                     id={id}
-                    value={card.sentence_id}
+                    value={detail.sentence.sentence_id}
                     readOnly
                     className='text-muted-foreground font-mono'
                   />
@@ -212,6 +181,8 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
             </div>
           </section>
 
+
+          {baseline && <>
           <section className='space-y-3 border-t pt-5' aria-labelledby='context-heading'>
             <h3 id='context-heading' className='text-sm font-semibold'>Context</h3>
             <Field label='Sentence (Korean)'>
@@ -289,12 +260,12 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
                   id={id}
                   allowEmpty={false}
                   options={Object.fromEntries(
-                    Object.keys(translations).map(
+                    languages.map(
                       (code) => [code, { slug: code, label: languageNames.of(code) ?? code, endings: [] }],
                     ),
                   )}
                   value={language}
-                  onChange={(event) => selectLanguage(event.target.value)}
+                  onChange={(event) => { setLanguage(event.target.value); setCopied(false) }}
                 />
               )}
             </Field>
@@ -327,17 +298,18 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
             </div>
           </section>
 
-          {error && <p role='alert' className='text-sm text-destructive'>{error}</p>}
-        </fieldset>
+          </>}
+        </fieldset>}
+        {error && <p role='alert' className='text-sm text-destructive'>{error}</p>}
 
         <DialogFooter className='flex-col sm:flex-row sm:justify-between'>
-          <Button variant='outline' onClick={handleCopy} disabled={translationLoading}>
+          <Button variant='outline' onClick={handleCopy} disabled={loading || !detail}>
             {copied ? <Check /> : <Copy />}
             {copied ? 'Copied!' : 'Copy full card as JSON'}
           </Button>
           <div className='flex flex-col gap-2 sm:flex-row'>
             <Button variant='outline' onClick={() => handleOpenChange(false)} disabled={saving}>Close</Button>
-            <Button onClick={handleSave} disabled={saving || translationLoading || !dirty}>
+            <Button onClick={handleSave} disabled={saving || loading || !dirty}>
               {saving ? 'Saving…' : 'Save changes'}
             </Button>
           </div>

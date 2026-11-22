@@ -1,4 +1,5 @@
-import type { Card as AdminCard, CardFront, CardBack } from './api-generated/types.gen'
+import type { CardFront, CardBack } from './api-generated/types.gen'
+type AdminCard = CardFront & CardBack
 
 // Project review data onto the canonical card fields so copying and editing
 // use the same shapes as Browse cards, without attempt or hint metadata.

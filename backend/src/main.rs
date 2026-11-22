@@ -162,14 +162,10 @@ async fn main() -> anyhow::Result<()> {
             delete(passkey::delete_passkey).patch(passkey::update_passkey),
         )
         .route("/admin/users", get(admin::list_users))
-        .route("/admin/cards/search", get(admin::search_cards))
-        .route(
-            "/admin/cards/{card_id}/sentences/{sentence_id}/translations",
-            get(admin::get_sentence_translations),
-        )
+        .route("/admin/cards/search", get(admin::search_card_summaries))
         .route(
             "/admin/cards/{card_id}",
-            patch(events::mutations::edit_card),
+            get(admin::get_admin_card).patch(events::mutations::edit_card),
         )
         .route(
             "/admin/cards/{card_id}/inflections",

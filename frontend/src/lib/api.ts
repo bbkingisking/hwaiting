@@ -11,9 +11,6 @@ import type * as Schemas from './api-generated/types.gen'
 import { apiBase, attestationToJson, describeCeremonyError, toCreationOptions } from './webauthn'
 import { fetchWithCookies } from './http'
 
-type EditCardRequest = Schemas.UpdateCardRequest
-type EditCardResponse = Schemas.EditCardResponse
-
 type CheckRequest = Schemas.CheckRequest
 type CheckResponse = Schemas.CheckResponse
 type ReviewResponse = Schemas.ReviewResponse
@@ -299,17 +296,11 @@ export async function updateUserSettings(settings: UpdateSettingsRequest, signal
   return result
 }
 
-// Backend's admin::AdminCard and cards::ReviewQueueCard used to be two
-// independently hand-declared structs that happened to agree on most
-// fields - now unified into one schema, cards::Card, reused by both.
-//
-// `Card` is also the shape EditCardDialog edits, review flow included: the
-// review card only ever holds the CardPrompt/CardReveal split (see
-// lib/types.ts), which withholds `target` et al. pre-answer on purpose, so
-// opening the editor there requires an adapter (toAdminCard in
-// card-json.ts) rather than passing the review card straight through.
-type AdminCard = Schemas.Card
-export type CardEdit = { card: AdminCard }
+// Flat card projection is retained for review JSON copying; the editor loads AdminCardDetail.
+type AdminCard = Schemas.CardFront & Schemas.CardBack
+export type AdminCardDetail = Schemas.AdminCardDetail
+export type AdminCardSummary = Schemas.AdminCardSummary
+export type CardEdit = { card: AdminCardDetail }
 const cardEdits = new EventTarget()
 export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => void {
   const onEdit = (event: Event) => listener((event as CustomEvent<CardEdit>).detail)
@@ -317,26 +308,22 @@ export function subscribeCardEdits(listener: (edit: CardEdit) => void): () => vo
   return () => cardEdits.removeEventListener('edit', onEdit)
 }
 
-type SearchCardsResponse = Schemas.SearchCardsResponse
+type SearchCardsResponse = Schemas.AdminSearchResponse
 
-export async function getSentenceTranslations(cardId: number, sentenceId: number, signal?: AbortSignal): Promise<Schemas.CardTranslationView[]> {
-  return fetchWithAuth(`${apiBase()}/api/admin/cards/${cardId}/sentences/${sentenceId}/translations`, { signal })
-}
-
-export async function searchCardsByTarget(query: string, signal?: AbortSignal, translationLanguage = 'eng'): Promise<SearchCardsResponse> {
-  const url = `${apiBase()}/api/admin/cards/search?translation_language=${encodeURIComponent(translationLanguage)}&q=${encodeURIComponent(query)}`
+export async function searchCardsByTarget(query: string, signal?: AbortSignal): Promise<SearchCardsResponse> {
+  const url = `${apiBase()}/api/admin/cards/search?q=${encodeURIComponent(query)}`
   return fetchWithAuth(url, { signal })
 }
 
-export async function editCard(cardId: number, updates: EditCardRequest, translationLanguage = 'eng'): Promise<EditCardResponse> {
-  const url = `${apiBase()}/api/admin/cards/${cardId}?translation_language=${encodeURIComponent(translationLanguage)}`
-  const result: EditCardResponse = await fetchWithAuth(url, {
-    method: 'PATCH',
-    body: JSON.stringify(updates),
+export async function getAdminCard(cardId: number, signal?: AbortSignal): Promise<AdminCardDetail> {
+  return fetchWithAuth(`${apiBase()}/api/admin/cards/${cardId}`, { signal })
+}
+
+export async function saveAdminCard(cardId: number, updates: Schemas.SaveAdminCardRequest): Promise<Schemas.SaveAdminCardResponse> {
+  const result: Schemas.SaveAdminCardResponse = await fetchWithAuth(`${apiBase()}/api/admin/cards/${cardId}`, {
+    method: 'PATCH', body: JSON.stringify(updates),
   })
-  cardEdits.dispatchEvent(new CustomEvent<CardEdit>('edit', {
-    detail: { card: result.card },
-  }))
+  cardEdits.dispatchEvent(new CustomEvent<CardEdit>('edit', { detail: { card: result.card } }))
   return result
 }
 

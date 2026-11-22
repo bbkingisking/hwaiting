@@ -4,6 +4,59 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AdminCardChange = UpdateCardRequest & {
+    translation_language: string;
+};
+
+/**
+ * Complete authoring content, independent of the current user's L1.
+ */
+export type AdminCardDetail = {
+    card_id: number;
+    content_revision: number;
+    definition?: string | null;
+    grade?: string | null;
+    hanja?: string | null;
+    krdict_id?: number | null;
+    origin_type?: string | null;
+    pos?: string | null;
+    sentence: AdminSentence;
+    translations: {
+        [key: string]: AdminTranslation;
+    };
+    word: string;
+};
+
+export type AdminCardSummary = {
+    card_id: number;
+    pos?: string | null;
+    word: string;
+};
+
+export type AdminSearchResponse = {
+    cards: Array<AdminCardSummary>;
+};
+
+export type AdminSentence = {
+    sentence_id: number;
+    target: AdminTarget;
+    text: string;
+    translations: {
+        [key: string]: string;
+    };
+};
+
+export type AdminTarget = InflectionHint & {
+    alternatives: Array<string>;
+    form: string;
+    grammar_pattern?: string | null;
+};
+
+export type AdminTranslation = {
+    definition?: string | null;
+    word: string;
+};
+
 export type AdminUserSummary = {
     created_at: string;
     id: number;
@@ -45,13 +98,6 @@ export type Capabilities = {
     passkeys_enabled: boolean;
     signups_enabled: boolean;
 };
-
-/**
- * Localized card projection used internally by the scoped edit writer.
- * Public admin reads use AdminCardDetail, which contains the sentence
- * and all translations rather than selecting one language.
- */
-export type Card = CardFront & CardBack;
 
 /**
  * The card fields disclosed once an answer is graded, shared with the
@@ -154,11 +200,6 @@ export type CardState = {
     suppressed: boolean;
 };
 
-export type CardTranslationView = {
-    card: Card;
-    translation_language: string;
-};
-
 export type CheckRequest = {
     answer: string;
     attempt_token: string;
@@ -184,12 +225,6 @@ export type DayHistory = {
      */
     percentage: number;
     total: number;
-};
-
-export type EditCardResponse = {
-    card: Card;
-    content_revision: number;
-    success: boolean;
 };
 
 /**
@@ -457,8 +492,14 @@ export type ReviewResponse = {
     success: boolean;
 };
 
-export type SearchCardsResponse = {
-    cards: Array<Card>;
+export type SaveAdminCardRequest = {
+    changes: Array<AdminCardChange>;
+    expected_content_revision: number;
+};
+
+export type SaveAdminCardResponse = {
+    card: AdminCardDetail;
+    success: boolean;
 };
 
 export type SignupRequest = {
@@ -517,10 +558,6 @@ export type SuppressedCardsResponse = {
 export type UpdateCardRequest = {
     alternatives?: Array<string> | null;
     definition?: string | null;
-    /**
-     * Revision of the content the editor opened. Stale edits are rejected.
-     */
-    expected_content_revision: number;
     grade?: string | null;
     grammar_pattern?: string | null;
     hanja?: string | null;
@@ -530,7 +567,7 @@ export type UpdateCardRequest = {
     pos?: string | null;
     sentence?: string | null;
     /**
-     * The sentence variant being edited; it must belong to the card in the path.
+     * The card’s sentence; it must belong to the card in the path.
      */
     sentence_id: number;
     sentence_translation?: string | null;
@@ -651,47 +688,44 @@ export type WrongAnswerExport = {
     target_sentence_id: number;
 };
 
-export type SearchCardsData = {
+export type SearchCardSummariesData = {
     body?: never;
     path?: never;
     query: {
         q: string;
-        /**
-         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
-         */
-        translation_language: string;
     };
     url: '/api/admin/cards/search';
 };
 
-export type SearchCardsErrors = {
-    /**
-     * Malformed query string
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Valid JWT but not an admin
-     */
-    403: ErrorResponse;
+export type SearchCardSummariesResponses = {
+    200: AdminSearchResponse;
 };
 
-export type SearchCardsError = SearchCardsErrors[keyof SearchCardsErrors];
+export type SearchCardSummariesResponse = SearchCardSummariesResponses[keyof SearchCardSummariesResponses];
 
-export type SearchCardsResponses = {
-    /**
-     * Cards matching a substring search over sentence targets, or an exact card id match (capped at 50)
-     */
-    200: SearchCardsResponse;
+export type GetAdminCardData = {
+    body?: never;
+    path: {
+        card_id: number;
+    };
+    query?: never;
+    url: '/api/admin/cards/{card_id}';
 };
 
-export type SearchCardsResponse2 = SearchCardsResponses[keyof SearchCardsResponses];
+export type GetAdminCardErrors = {
+    404: ErrorResponse;
+};
 
-export type EditCardData = {
-    body: UpdateCardRequest;
+export type GetAdminCardError = GetAdminCardErrors[keyof GetAdminCardErrors];
+
+export type GetAdminCardResponses = {
+    200: AdminCardDetail;
+};
+
+export type GetAdminCardResponse = GetAdminCardResponses[keyof GetAdminCardResponses];
+
+export type SaveAdminCardData = {
+    body: SaveAdminCardRequest;
     headers: {
         /**
          * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
@@ -703,53 +737,24 @@ export type EditCardData = {
         'X-Requested-With': 'hwaiting';
     };
     path: {
-        /**
-         * Card ID
-         */
         card_id: number;
     };
-    query: {
-        /**
-         * Content translation language: exactly one registered lowercase ISO 639-3 code. No fallback.
-         */
-        translation_language: string;
-    };
+    query?: never;
     url: '/api/admin/cards/{card_id}';
 };
 
-export type EditCardErrors = {
-    /**
-     * Target word doesn't appear in the sentence
-     */
+export type SaveAdminCardErrors = {
     400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Valid JWT but not an admin
-     */
-    403: ErrorResponse;
-    /**
-     * Card doesn't exist
-     */
-    404: ErrorResponse;
-    /**
-     * Card content has changed; reload before editing
-     */
     409: StaleAnswerResponse;
 };
 
-export type EditCardError = EditCardErrors[keyof EditCardErrors];
+export type SaveAdminCardError = SaveAdminCardErrors[keyof SaveAdminCardErrors];
 
-export type EditCardResponses = {
-    /**
-     * Card updated
-     */
-    200: EditCardResponse;
+export type SaveAdminCardResponses = {
+    200: SaveAdminCardResponse;
 };
 
-export type EditCardResponse2 = EditCardResponses[keyof EditCardResponses];
+export type SaveAdminCardResponse2 = SaveAdminCardResponses[keyof SaveAdminCardResponses];
 
 export type GetCardInflectionsData = {
     body?: never;
@@ -788,28 +793,6 @@ export type GetCardInflectionsResponses = {
 };
 
 export type GetCardInflectionsResponse = GetCardInflectionsResponses[keyof GetCardInflectionsResponses];
-
-export type GetSentenceTranslationsData = {
-    body?: never;
-    path: {
-        card_id: number;
-        sentence_id: number;
-    };
-    query?: never;
-    url: '/api/admin/cards/{card_id}/sentences/{sentence_id}/translations';
-};
-
-export type GetSentenceTranslationsErrors = {
-    404: ErrorResponse;
-};
-
-export type GetSentenceTranslationsError = GetSentenceTranslationsErrors[keyof GetSentenceTranslationsErrors];
-
-export type GetSentenceTranslationsResponses = {
-    200: Array<CardTranslationView>;
-};
-
-export type GetSentenceTranslationsResponse = GetSentenceTranslationsResponses[keyof GetSentenceTranslationsResponses];
 
 export type ListUsersData = {
     body?: never;

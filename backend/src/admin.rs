@@ -1,3 +1,6 @@
+mod editor;
+pub(crate) use editor::*;
+
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
@@ -99,14 +102,8 @@ pub struct SearchCardsQuery {
     pub q: String,
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct SearchCardsResponse {
-    pub cards: Vec<Card>,
-}
-
-// Search and edit responses must project the same joined card data. The
-// latter selects one sentence after the write, so the editor receives the
-// exact canonical row it changed rather than reconstructing it from inputs.
+// The localized projection used to compare and apply each scoped edit inside
+// the aggregate writer transaction. Public admin reads use AdminCardDetail.
 const CARD_PROJECTION_SQL: &str = r#"
     SELECT
         c.id, c.content_revision, c.krdict_id, c.word, c.definition, c.hanja,
@@ -160,68 +157,6 @@ fn project_card(row: SqliteRow, alternatives: Vec<String>) -> Card {
             alternatives,
         },
     }
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/admin/cards/search",
-    params(SearchCardsQuery),
-    responses(
-        (status = 200, description = "Cards matching a substring search over sentence targets, or an exact card id match (capped at 50)", body = SearchCardsResponse),
-        (status = 400, description = "Malformed query string", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
-    ),
-    security(("cookie_auth" = [])),
-    tag = "admin"
-)]
-pub async fn search_cards(
-    _admin: AdminUser,
-    State(pool): State<SqlitePool>,
-    AppQuery(params): AppQuery<SearchCardsQuery>,
-    translation_language: crate::translation_language::TranslationLanguage,
-) -> Result<Json<SearchCardsResponse>, AppError> {
-    let language_id = translation_language.id(&pool).await?;
-    let q = params.q.trim();
-    if q.is_empty() {
-        return Ok(Json(SearchCardsResponse { cards: Vec::new() }));
-    }
-
-    info!("Admin searching cards by target or card id: {}", q);
-
-    let pattern = format!(
-        "%{}%",
-        q.replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_")
-    );
-    let card_id: Option<i64> = q.parse().ok();
-
-    let search_sql = format!(
-        "{CARD_PROJECTION_SQL} WHERE tg.form LIKE ? ESCAPE '\\' OR c.id = ? \
-         ORDER BY length(tg.form) ASC, tg.form ASC LIMIT 50"
-    );
-    let rows = sqlx::query(&search_sql)
-        .bind(language_id)
-        .bind(language_id)
-        .bind(&pattern)
-        .bind(card_id)
-        .fetch_all(&pool)
-        .await?;
-
-    let mut cards = Vec::with_capacity(rows.len());
-    for row in rows {
-        let sentence_id: i64 = row.get("sentence_id");
-        let alternatives: Vec<String> =
-            sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
-                .bind(sentence_id)
-                .fetch_all(&pool)
-                .await?;
-
-        cards.push(project_card(row, alternatives));
-    }
-
-    Ok(Json(SearchCardsResponse { cards }))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -282,9 +217,10 @@ pub async fn get_card_inflections(
 /// throughout (see the double-option pattern above).
 #[derive(Deserialize, ToSchema, Default)]
 pub struct UpdateCardRequest {
-    /// Revision of the content the editor opened. Stale edits are rejected.
+    /// Internal revision check; the aggregate HTTP request supplies its revision once.
+    #[serde(skip)]
     pub expected_content_revision: i64,
-    /// The sentence variant being edited; it must belong to the card in the path.
+    /// The card’s sentence; it must belong to the card in the path.
     pub sentence_id: i64,
     pub word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
@@ -331,22 +267,7 @@ fn omit_unchanged<T: PartialEq>(requested: &mut Option<T>, current: T) {
     }
 }
 
-#[utoipa::path(
-    patch,
-    path = "/api/admin/cards/{card_id}",
-    params(("card_id" = i64, Path, description = "Card ID")),
-    request_body = UpdateCardRequest,
-    responses(
-        (status = 200, description = "Card updated", body = EditCardResponse),
-        (status = 400, description = "Target word doesn't appear in the sentence", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
-        (status = 409, description = "Card content has changed; reload before editing", body = crate::error::StaleAnswerResponse),
-        (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
-    ),
-    security(("cookie_auth" = [])),
-    tag = "admin"
-)]
+#[cfg(test)]
 pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -354,6 +275,20 @@ pub async fn edit_card(
     AppJson(payload): AppJson<UpdateCardRequest>,
     translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<EditCardResponse>, AppError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let response =
+        edit_card_in_transaction(&mut tx, card_id, payload, &translation_language, true).await?;
+    tx.commit().await?;
+    Ok(Json(response))
+}
+
+async fn edit_card_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+    payload: UpdateCardRequest,
+    translation_language: &crate::translation_language::TranslationLanguage,
+    advance_revision: bool,
+) -> Result<EditCardResponse, AppError> {
     info!("Admin editing card {}", card_id);
 
     let UpdateCardRequest {
@@ -383,45 +318,43 @@ pub async fn edit_card(
         word, hanja, definition
     );
 
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let content_revision: i64 =
         sqlx::query_scalar("SELECT content_revision FROM cards WHERE id = ?")
             .bind(card_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?
             .ok_or(AppError::NotFound)?;
     if content_revision != expected_content_revision {
         return Err(AppError::StaleContent);
     }
 
-    // The editor names the exact variant it displayed. Never silently edit
-    // the first sentence when a card has more than one.
+    // The supplied sentence must belong to this card.
     let owns_sentence: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sentences WHERE id = ? AND card_id = ?)")
             .bind(sentence_id)
             .bind(card_id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
     if !owns_sentence {
         return Err(AppError::NotFound);
     }
 
     // Compare inside the writer transaction, before any updates or enum resolution.
-    let language_id = translation_language.id(&mut *tx).await?;
+    let language_id = translation_language.id(&mut **tx).await?;
     let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
     let current = sqlx::query(&projection_sql)
         .bind(language_id)
         .bind(language_id)
         .bind(card_id)
         .bind(sentence_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?
         .ok_or(AppError::NotFound)?;
     let current_alternatives: Vec<String> = sqlx::query_scalar(
         "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ? ORDER BY id",
     )
     .bind(sentence_id)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
     let mut alternatives = alternatives.map(|values| {
         values
@@ -480,30 +413,29 @@ pub async fn edit_card(
         let content_revision =
             sqlx::query_scalar("SELECT content_revision FROM cards WHERE id = ?")
                 .bind(card_id)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await?;
         let card = project_card(current, current_alternatives);
-        tx.commit().await?;
-        return Ok(Json(EditCardResponse {
+        return Ok(EditCardResponse {
             success: true,
             content_revision,
             card,
             changed: false,
-        }));
+        });
     }
 
     // Resolve enum slugs -> lookup table ids (None: field absent; Some(None): clear it;
     // Some(Some(id)): set it). The frontend sends slugs but the columns store FKs.
-    let pos_id = crate::enum_lookup::resolve_optional_id(&mut tx, "parts_of_speech", pos).await?;
+    let pos_id = crate::enum_lookup::resolve_optional_id(tx, "parts_of_speech", pos).await?;
     let origin_type_id =
-        crate::enum_lookup::resolve_optional_id(&mut tx, "origin_types", origin_type).await?;
-    let grade_id = crate::enum_lookup::resolve_optional_id(&mut tx, "grades", grade).await?;
+        crate::enum_lookup::resolve_optional_id(tx, "origin_types", origin_type).await?;
+    let grade_id = crate::enum_lookup::resolve_optional_id(tx, "grades", grade).await?;
     // grammar_pattern_id lives on `targets` as of migration 20240101000039,
     // not on `cards` - resolved here alongside the other enum slugs, but
     // written into the targets SET block below (alongside
     // speech_level_id/tense_id) rather than the cards SET block.
     let grammar_pattern_id =
-        crate::enum_lookup::resolve_optional_id(&mut tx, "grammar_patterns", grammar_pattern_slug)
+        crate::enum_lookup::resolve_optional_id(tx, "grammar_patterns", grammar_pattern_slug)
             .await?;
 
     // Update cards table — build SET clause dynamically so absent fields are untouched
@@ -551,7 +483,7 @@ pub async fn edit_card(
             if let Some(v) = grade_id {
                 q = q.bind(v)
             }
-            let result = q.bind(card_id).execute(&mut *tx).await?;
+            let result = q.bind(card_id).execute(&mut **tx).await?;
             debug!("Cards update rows_affected: {}", result.rows_affected());
         }
     }
@@ -567,13 +499,13 @@ pub async fn edit_card(
         }
 
         if !sets.is_empty() {
-            let language_id = translation_language.id(&mut *tx).await?;
+            let language_id = translation_language.id(&mut **tx).await?;
             let ct_exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM cards_translations WHERE card_id = ? AND language_id = ?)"
             )
             .bind(card_id)
             .bind(language_id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
 
             if ct_exists {
@@ -588,7 +520,7 @@ pub async fn edit_card(
                 if let Some(ref v) = trans_dfn {
                     q = q.bind(v.as_deref())
                 }
-                q.bind(card_id).bind(language_id).execute(&mut *tx).await?;
+                q.bind(card_id).bind(language_id).execute(&mut **tx).await?;
             }
         }
     }
@@ -610,7 +542,7 @@ pub async fn edit_card(
                 None => {
                     sqlx::query_scalar("SELECT text FROM sentences WHERE id = ?")
                         .bind(sid)
-                        .fetch_one(&mut *tx)
+                        .fetch_one(&mut **tx)
                         .await?
                 }
             };
@@ -619,7 +551,7 @@ pub async fn edit_card(
                 None => {
                     sqlx::query_scalar("SELECT form FROM targets WHERE sentence_id = ?")
                         .bind(sid)
-                        .fetch_one(&mut *tx)
+                        .fetch_one(&mut **tx)
                         .await?
                 }
             };
@@ -635,7 +567,7 @@ pub async fn edit_card(
             sqlx::query("UPDATE sentences SET text = ? WHERE id = ?")
                 .bind(v.as_str())
                 .bind(sid)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
         }
         if let Some(ref st) = sentence_translation {
@@ -644,12 +576,12 @@ pub async fn edit_card(
             // to the selected translation-language row explicitly, since an unqualified
             // `WHERE sentence_id = ?` would now touch every language's row
             // for this sentence at once.
-            let language_id = translation_language.id(&mut *tx).await?;
+            let language_id = translation_language.id(&mut **tx).await?;
             sqlx::query("UPDATE sentences_translations SET translation = ? WHERE sentence_id = ? AND language_id = ?")
                 .bind(st.as_str())
                 .bind(sid)
                 .bind(language_id)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
         }
 
@@ -663,10 +595,8 @@ pub async fn edit_card(
         // cards_translations updates above, rather than up to six separate
         // single-column statements against the same row.
         let speech_level_id =
-            crate::enum_lookup::resolve_optional_id(&mut tx, "speech_levels", speech_level_slug)
-                .await?;
-        let tense_id =
-            crate::enum_lookup::resolve_optional_id(&mut tx, "tenses", tense_slug).await?;
+            crate::enum_lookup::resolve_optional_id(tx, "speech_levels", speech_level_slug).await?;
+        let tense_id = crate::enum_lookup::resolve_optional_id(tx, "tenses", tense_slug).await?;
 
         let mut sets: Vec<&str> = Vec::new();
         if target.is_some() {
@@ -712,14 +642,14 @@ pub async fn edit_card(
             if let Some(v) = is_humble {
                 q = q.bind(v)
             }
-            q.bind(sid).execute(&mut *tx).await?;
+            q.bind(sid).execute(&mut **tx).await?;
         }
 
         // Update alternative targets
         if let Some(ref alts) = alternatives {
             sqlx::query("DELETE FROM targets_alternatives WHERE sentence_id = ?")
                 .bind(sid)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
 
             for alt in alts {
@@ -728,92 +658,44 @@ pub async fn edit_card(
                 )
                 .bind(sid)
                 .bind(alt)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             }
         }
     }
 
-    let content_revision = sqlx::query_scalar("UPDATE cards SET content_revision = content_revision + 1 WHERE id = ? RETURNING content_revision")
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let content_revision = if advance_revision {
+        sqlx::query_scalar("UPDATE cards SET content_revision = content_revision + 1 WHERE id = ? RETURNING content_revision")
+            .bind(card_id).fetch_one(&mut **tx).await?
+    } else {
+        expected_content_revision
+    };
 
-    let language_id = translation_language.id(&mut *tx).await?;
+    let language_id = translation_language.id(&mut **tx).await?;
     let projection_sql = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
     let row = sqlx::query(&projection_sql)
         .bind(language_id)
         .bind(language_id)
         .bind(card_id)
         .bind(sentence_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
     let alternatives: Vec<String> =
         sqlx::query_scalar("SELECT alt_target FROM targets_alternatives WHERE sentence_id = ?")
             .bind(sentence_id)
-            .fetch_all(&mut *tx)
+            .fetch_all(&mut **tx)
             .await?;
     let card = project_card(row, alternatives);
 
-    tx.commit().await?;
     info!("Card {} updated successfully", card_id);
-    Ok(Json(EditCardResponse {
+    Ok(EditCardResponse {
         success: true,
         content_revision,
         card,
         changed: true,
-    }))
+    })
 }
 
 #[cfg(test)]
 #[path = "tests/admin.rs"]
 mod tests;
-
-#[derive(Serialize, ToSchema)]
-pub struct CardTranslationView {
-    pub translation_language: String,
-    pub card: Card,
-}
-
-#[utoipa::path(get, path = "/api/admin/cards/{card_id}/sentences/{sentence_id}/translations",
-    params(("card_id" = i64, Path), ("sentence_id" = i64, Path)),
-    responses((status = 200, body = Vec<CardTranslationView>), (status = 404, body = crate::error::ErrorResponse)),
-    security(("cookie_auth" = [])), tag = "admin")]
-pub async fn get_sentence_translations(
-    _admin: AdminUser,
-    State(pool): State<SqlitePool>,
-    AppPath((card_id, sentence_id)): AppPath<(i64, i64)>,
-) -> Result<Json<Vec<CardTranslationView>>, AppError> {
-    let mut tx = pool.begin().await?;
-    let languages: Vec<String> = sqlx::query_scalar("SELECT l.slug FROM sentences_translations st JOIN languages l ON l.id = st.language_id WHERE st.card_id = ? AND st.sentence_id = ? ORDER BY l.slug")
-        .bind(card_id).bind(sentence_id).fetch_all(&mut *tx).await?;
-    if languages.is_empty() {
-        return Err(AppError::NotFound);
-    }
-    let alternatives: Vec<String> = sqlx::query_scalar(
-        "SELECT alt_target FROM targets_alternatives WHERE sentence_id = ? ORDER BY id",
-    )
-    .bind(sentence_id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let query = format!("{CARD_PROJECTION_SQL} WHERE c.id = ? AND s.id = ?");
-    let mut views = Vec::new();
-    for code in languages {
-        let language_id = crate::translation_language::TranslationLanguage(code.clone())
-            .id(&mut *tx)
-            .await?;
-        let row = sqlx::query(&query)
-            .bind(language_id)
-            .bind(language_id)
-            .bind(card_id)
-            .bind(sentence_id)
-            .fetch_one(&mut *tx)
-            .await?;
-        views.push(CardTranslationView {
-            translation_language: code,
-            card: project_card(row, alternatives.clone()),
-        });
-    }
-    tx.commit().await?;
-    Ok(Json(views))
-}

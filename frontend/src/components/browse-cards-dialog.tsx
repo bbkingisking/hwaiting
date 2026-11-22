@@ -9,7 +9,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Loader2 } from 'lucide-react'
-import { subscribeCardEdits, type AdminCard } from '@/lib/api'
+import { subscribeCardEdits, type AdminCardSummary } from '@/lib/api'
 import { useDebouncedCardSearch } from '@/hooks/use-debounced-card-search'
 
 interface BrowseCardsDialogProps {
@@ -19,9 +19,9 @@ interface BrowseCardsDialogProps {
 
 export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps) {
   const { query, setQuery, cards, refreshSearch, isLoading, hasSearched, error } = useDebouncedCardSearch(open)
-  const [selectedCard, setSelectedCard] = useState<AdminCard | null>(null)
+  const [selectedCard, setSelectedCard] = useState<AdminCardSummary | null>(null)
   const [editOpen, setEditOpen] = useState(false)
-  const handleCardClick = (card: AdminCard) => {
+  const handleCardClick = (card: AdminCardSummary) => {
     setSelectedCard(card)
     setEditOpen(true)
   }
@@ -29,7 +29,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
   useEffect(() => {
     if (!open) return
     return subscribeCardEdits(({ card }) => {
-      setSelectedCard(prev => prev?.sentence_id === card.sentence_id ? card : prev)
+      setSelectedCard(prev => prev?.card_id === card.card_id ? { ...prev, word: card.word, pos: card.pos } : prev)
       // Search owns the result list, including whether the edited card still
       // matches the query and any card-wide fields on sibling sentences.
       refreshSearch()
@@ -74,24 +74,23 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
                 </div>
               )
             ) : (
-              <ul aria-label="Matching card sentences" className="space-y-2 max-h-96 overflow-y-auto">
+              <ul aria-label="Matching cards" className="space-y-2 max-h-96 overflow-y-auto">
                 {cards.map(card => (
-                  <li key={card.sentence_id}>
+                  <li key={card.card_id}>
                     <button
                       type="button"
                       data-card-id={card.card_id}
-                      data-sentence-id={card.sentence_id}
                       onClick={() => handleCardClick(card)}
                       className="w-full text-left p-3 border rounded-md hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="sr-only">Edit </span>
                       <span className="block space-y-1">
-                        <span className="block font-medium">{card.target}</span>
+                        <span className="block font-medium">{card.word}</span>
                         <span className="block text-sm text-muted-foreground">
-                          {card.word} · {card.trans_word} · card #{card.card_id} · sentence #{card.sentence_id}
+                          Card #{card.card_id}
                         </span>
                         <span className="block text-xs text-muted-foreground/70">
-                          {card.sentence}
+                          {card.pos}
                         </span>
                       </span>
                     </button>
@@ -107,7 +106,7 @@ export function BrowseCardsDialog({ open, onOpenChange }: BrowseCardsDialogProps
         <EditCardDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          card={selectedCard}
+          cardId={selectedCard.card_id}
         />
       )}
     </>
