@@ -465,3 +465,87 @@ async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchan
     assert!(!response.changed);
     assert_eq!(response.card.content_revision, 0);
 }
+
+#[tokio::test]
+async fn aggregate_shared_sentence_and_target_do_not_depend_on_language_grouping() {
+    let cases = [
+        serde_json::json!([
+            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","target":"답","trans_word":"answer"},
+            {"sentence_id":1,"translation_language":"fra","sentence_translation":"Une réponse."}
+        ]),
+        serde_json::json!([
+            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"},
+            {"sentence_id":1,"translation_language":"fra","target":"답","sentence_translation":"Une réponse."}
+        ]),
+        serde_json::json!([
+            {"sentence_id":1,"translation_language":"fra","target":"답","sentence_translation":"Une réponse."},
+            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"}
+        ]),
+    ];
+    let mut reference = None;
+    for changes in cases {
+        let pool = test_pool().await;
+        let admin = test_admin_user(&pool).await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql("INSERT INTO languages (id,slug) VALUES (100,'fra'); INSERT INTO cards_translations (card_id,language_id,trans_word,required_sentence_id) VALUES (1,100,'chose',1); INSERT INTO sentences_translations (sentence_id,card_id,language_id,translation) VALUES (1,1,100,'Une chose.');").execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        let request = serde_json::from_value(serde_json::json!({
+            "expected_content_revision":0,"changes":changes
+        }))
+        .unwrap();
+        let saved = save_admin_card(AdminUser(admin), State(pool), AppPath(1), AppJson(request))
+            .await
+            .unwrap()
+            .0;
+        assert!(saved.changed);
+        assert_eq!(saved.card.content_revision, 1);
+        assert_eq!(saved.card.sentence.text, "새 답입니다.");
+        assert_eq!(saved.card.sentence.target.form, "답");
+        assert_eq!(saved.card.translations["eng"].word, "answer");
+        assert_eq!(saved.card.sentence.translations["fra"], "Une réponse.");
+        let json = serde_json::to_value(saved.card).unwrap();
+        if let Some(reference) = &reference {
+            assert_eq!(&json, reference);
+        } else {
+            reference = Some(json);
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_merged_sentence_and_target_roll_back_the_entire_save() {
+    let pool = test_pool().await;
+    let admin = test_admin_user(&pool).await;
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::raw_sql("INSERT INTO languages (id,slug) VALUES (100,'fra'); INSERT INTO cards_translations (card_id,language_id,trans_word,required_sentence_id) VALUES (1,100,'chose',1); INSERT INTO sentences_translations (sentence_id,card_id,language_id,translation) VALUES (1,1,100,'Une chose.');").execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let before = serde_json::to_value(
+        get_admin_card(AdminUser(admin), State(pool.clone()), AppPath(1))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    let request = serde_json::from_value(serde_json::json!({"expected_content_revision":0,"changes":[
+        {"sentence_id":1,"translation_language":"eng","word":"must roll back","sentence":"새 답입니다.","trans_word":"must also roll back"},
+        {"sentence_id":1,"translation_language":"fra","target":"없는표현"}
+    ]})).unwrap();
+    assert!(matches!(
+        save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(request)
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+    let after = serde_json::to_value(
+        get_admin_card(AdminUser(admin), State(pool), AppPath(1))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    assert_eq!(after, before);
+}

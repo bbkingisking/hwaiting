@@ -174,20 +174,41 @@ pub async fn save_admin_card(
     if revision != payload.expected_content_revision {
         return Err(AppError::StaleContent);
     }
-    // Fields shared by every translation must not silently become last-write-wins.
-    let mut shared = BTreeMap::new();
-    for change in &payload.changes {
-        macro_rules! check_shared {
+    let sentence_id: i64 = sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let mut shared = UpdateCardRequest {
+        sentence_id,
+        expected_content_revision: revision,
+        ..Default::default()
+    };
+    let mut changes = payload.changes;
+    let mut seen = BTreeSet::new();
+    let mut has_shared = false;
+    for change in &mut changes {
+        if change.fields.sentence_id != sentence_id {
+            return Err(AppError::NotFound);
+        }
+        if !seen.insert(change.translation_language.clone()) {
+            return Err(AppError::BadRequest(
+                "Duplicate sentence/language change".into(),
+            ));
+        }
+        // Shared facts form one edit regardless of which translation item supplied
+        // them. In particular, validate the final sentence/target pair together.
+        macro_rules! merge_shared {
             ($($field:ident),* $(,)?) => { $(
-                if let Some(value) = &change.fields.$field {
-                    let value = serde_json::to_value(value).map_err(|e| AppError::Internal(e.to_string()))?;
-                    if shared.insert(stringify!($field), value.clone()).is_some_and(|old| old != value) {
+                if let Some(value) = change.fields.$field.take() {
+                    if shared.$field.as_ref().is_some_and(|old| old != &value) {
                         return Err(AppError::BadRequest(format!("Conflicting values for shared field '{}'", stringify!($field))));
                     }
+                    shared.$field = Some(value);
+                    has_shared = true;
                 }
             )* };
         }
-        check_shared!(
+        merge_shared!(
             word,
             definition,
             pos,
@@ -204,23 +225,23 @@ pub async fn save_admin_card(
             is_humble
         );
     }
-    let mut seen = BTreeSet::new();
     let mut changed = false;
-    for mut change in payload.changes {
-        if !seen.insert((
-            change.fields.sentence_id,
-            change.translation_language.clone(),
-        )) {
-            return Err(AppError::BadRequest(
-                "Duplicate sentence/language change".into(),
-            ));
-        }
+    if has_shared {
+        // A shared edit must have come from at least one translation item.
+        let language = crate::translation_language::TranslationLanguage(
+            changes[0].translation_language.clone(),
+        );
+        changed |= edit_card_in_transaction(&mut tx, card_id, shared, &language, false)
+            .await?
+            .changed;
+    }
+    for mut change in changes {
         change.fields.expected_content_revision = revision;
         let language =
             crate::translation_language::TranslationLanguage(change.translation_language);
-        let response =
-            edit_card_in_transaction(&mut tx, card_id, change.fields, &language, false).await?;
-        changed |= response.changed;
+        changed |= edit_card_in_transaction(&mut tx, card_id, change.fields, &language, false)
+            .await?
+            .changed;
     }
     // One save is one content revision, regardless of the number of changed views.
     if changed {
