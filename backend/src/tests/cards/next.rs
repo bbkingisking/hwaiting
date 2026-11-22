@@ -405,16 +405,9 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
     bury_every_other_card(&pool, user_id, 1).await;
-    let second_id = sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_rowid();
-    sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
-        .bind(second_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let second_id =
+        crate::test_support::translated_sentence(&pool, 1, "새 답입니다.", "답", "A new answer.")
+            .await;
     let first_id: i64 = sqlx::query_scalar("SELECT MIN(id) FROM sentences WHERE card_id = 1")
         .fetch_one(&pool)
         .await
@@ -477,4 +470,35 @@ async fn multiple_sentences_rotate_with_one_card_schedule() {
     .await
     .unwrap();
     assert_eq!(recorded, vec![first_id, second_id, first_id]);
+}
+
+#[tokio::test]
+async fn queue_and_validation_skip_sentences_without_the_requested_translation() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    bury_every_other_card(&pool, user_id, 1).await;
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::raw_sql(r#"
+        INSERT INTO languages (id, slug) VALUES (100, 'fra');
+        INSERT INTO sentences (id, card_id, text, required_language_id) VALUES (-1, 1, '새 답입니다.', 100);
+        INSERT INTO targets (sentence_id, form) VALUES (-1, '답');
+        INSERT INTO cards_translations (card_id, language_id, trans_word, required_sentence_id) VALUES (1, 100, 'réponse', -1);
+        INSERT INTO sentences_translations (sentence_id, card_id, language_id, translation) VALUES (-1, 1, 100, 'Une réponse.');
+    "#).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let queue = get_review_queue(
+        State(pool.clone()),
+        AuthUser(user_id),
+        AppQuery(ReviewQueueQuery::default()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(queue.cards.len(), 1);
+    let card = &queue.cards[0];
+    assert_ne!(card.prompt.front.sentence_id, -1);
+    let mut tx = pool.begin().await.unwrap();
+    crate::cards::validate_attempt(&mut tx, &card.attempt_token, user_id, Some(1))
+        .await
+        .unwrap();
 }

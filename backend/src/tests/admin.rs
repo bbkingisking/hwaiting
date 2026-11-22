@@ -229,16 +229,9 @@ async fn editing_a_second_sentence_does_not_change_the_first() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let second = sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_rowid();
-    sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
-        .bind(second)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let second =
+        crate::test_support::translated_sentence(&pool, 1, "새 답입니다.", "답", "A new answer.")
+            .await;
     let _ = edit_card(
         AdminUser(admin_id),
         State(pool.clone()),

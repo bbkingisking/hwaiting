@@ -121,7 +121,7 @@ const CARD_PROJECTION_SQL: &str = r#"
     INNER JOIN cards_translations ct ON c.id = ct.card_id AND ct.language_id = ?
     INNER JOIN sentences s ON c.id = s.card_id
     INNER JOIN targets tg ON tg.sentence_id = s.id
-    LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
+    INNER JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
     LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
     LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
     LEFT JOIN grades g ON g.id = c.grade_id
@@ -148,9 +148,7 @@ fn project_card(row: SqliteRow, alternatives: Vec<String>) -> Card {
             trans_dfn: row.get("trans_dfn"),
             sentence_before,
             sentence_after,
-            sentence_translation: row
-                .get::<Option<String>, _>("sentence_translation")
-                .unwrap_or_default(),
+            sentence_translation: row.get("sentence_translation"),
             inflection_hint: crate::inflection_hints::InflectionHint::from_row(&row),
             grammar_pattern: row.get("grammar_pattern"),
         },

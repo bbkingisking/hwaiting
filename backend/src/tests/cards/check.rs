@@ -359,16 +359,8 @@ async fn grading_rejects_a_sentence_the_backend_did_not_select() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
     let unselected_sentence =
-        sqlx::query("INSERT INTO sentences (card_id, text) VALUES (1, '새 답입니다.')")
-            .execute(&pool)
-            .await
-            .unwrap()
-            .last_insert_rowid();
-    sqlx::query("INSERT INTO targets (sentence_id, form) VALUES (?, '답')")
-        .bind(unselected_sentence)
-        .execute(&pool)
-        .await
-        .unwrap();
+        crate::test_support::translated_sentence(&pool, 1, "새 답입니다.", "답", "A new answer.")
+            .await;
     let other_sentence: i64 =
         sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = 2 ORDER BY id LIMIT 1")
             .fetch_one(&pool)

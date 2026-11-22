@@ -92,6 +92,9 @@ pub(crate) async fn validate_attempt(
     let selected: Option<i64> = sqlx::query_scalar(
         "SELECT s.id FROM sentences s JOIN targets t ON t.sentence_id = s.id
          WHERE s.card_id = ?
+           AND EXISTS (SELECT 1 FROM sentences_translations st
+                       JOIN languages l ON l.id = st.language_id
+                       WHERE st.sentence_id = s.id AND l.slug = 'eng')
          ORDER BY COALESCE((SELECT MAX(rh.id) FROM review_history rh
                             WHERE rh.user_id = ? AND rh.sentence_id = s.id), 0), s.id LIMIT 1",
     )

@@ -225,6 +225,8 @@ async fn select_cards(
             SELECT s2.id FROM sentences s2
             INNER JOIN targets t2 ON t2.sentence_id = s2.id
             WHERE s2.card_id = c.id
+              AND EXISTS (SELECT 1 FROM sentences_translations st2
+                          WHERE st2.sentence_id = s2.id AND st2.language_id = ct.language_id)
             ORDER BY COALESCE((
                 SELECT MAX(rh.id) FROM review_history rh
                 WHERE rh.user_id = ? AND rh.sentence_id = s2.id
@@ -232,7 +234,7 @@ async fn select_cards(
             LIMIT 1
         )
         INNER JOIN targets tg ON tg.sentence_id = s.id
-        LEFT JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
+        INNER JOIN sentences_translations st ON s.id = st.sentence_id AND st.language_id = ?
         LEFT JOIN parts_of_speech pop ON pop.id = c.pos_id
         LEFT JOIN origin_types ot ON ot.id = c.origin_type_id
         LEFT JOIN grades g ON g.id = c.grade_id
