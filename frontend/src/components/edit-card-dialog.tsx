@@ -204,10 +204,10 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
             <h3 id='dictionary-heading' className='text-sm font-semibold'>Dictionary form</h3>
             <div className='grid gap-3 sm:grid-cols-2'>
               <Field label='Word (Korean)'>
-                {(id) => <Input id={id} value={form.word} readOnly className='text-muted-foreground' />}
+                {(id) => <Input id={id} lang="ko" value={form.word} readOnly className='text-muted-foreground' />}
               </Field>
               <Field label='Hanja'>
-                {(id) => <Input id={id} value={form.hanja} onChange={handleChange('hanja')} />}
+                {(id) => <Input id={id} lang="ko" value={form.hanja} onChange={handleChange('hanja')} />}
               </Field>
             </div>
           </section>
@@ -218,7 +218,7 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
               {(id) => (
                 <textarea
                   id={id}
-                  value={form.sentence}
+                  lang="ko" value={form.sentence}
                   readOnly
                   rows={2}
                   className='text-muted-foreground w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none'
@@ -227,13 +227,13 @@ export function EditCardDialog({ open, onOpenChange, card }: EditCardDialogProps
             </Field>
             <div className='grid gap-3 sm:grid-cols-2'>
               <Field label='Target'>
-                {(id) => <Input id={id} value={form.target} onChange={handleChange('target')} />}
+                {(id) => <Input id={id} lang="ko" value={form.target} onChange={handleChange('target')} />}
               </Field>
               <Field label='Accepted alternatives · comma-separated'>
                 {(id) => (
                   <Input
                     id={id}
-                    value={form.alternatives}
+                    lang="ko" value={form.alternatives}
                     onChange={handleChange('alternatives')}
                     placeholder='e.g. alt1, alt2'
                   />
