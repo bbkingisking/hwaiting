@@ -84,7 +84,7 @@ async fn saved_timezone_controls_new_card_allowance_and_reset() {
         assert_eq!(response.cards.is_empty(), limited);
         if limited {
             assert_eq!(
-                parse_flexible_datetime(response.next_due_at.as_deref().unwrap()).unwrap(),
+                parse_flexible_datetime(response.next_available_at.as_deref().unwrap()).unwrap(),
                 logical_day_start(&now.with_timezone(&zone), 4, 1)
             );
         }
@@ -139,8 +139,7 @@ async fn batch_clients_share_the_same_allowance_bounded_set() {
     assert_eq!(ids(&a), vec![1]);
     assert_eq!(ids(&a), ids(&b));
     assert_eq!(ids(&b), ids(&c));
-    assert!(a.next_due_at.is_none());
-    assert!(chrono::DateTime::parse_from_rfc3339(&a.refresh_at).is_ok());
+    assert!(a.next_available_at.is_none());
 }
 
 #[tokio::test]
@@ -164,7 +163,7 @@ async fn out_of_order_first_reviews_do_not_expand_the_new_card_set() {
             .bind(user).bind(card).execute(&pool).await.unwrap();
         assert_eq!(ids(&queue(&pool, user, 20).await), expected);
     }
-    assert!(queue(&pool, user, 5).await.next_due_at.is_some());
+    assert!(queue(&pool, user, 5).await.next_available_at.is_some());
     // A due repetition is still eligible after exhausting new cards.
     sqlx::query("UPDATE cards_states SET due_at = unixepoch('now', '-1 minute') WHERE user_id = ? AND card_id = 2")
         .bind(user).execute(&pool).await.unwrap();
@@ -180,7 +179,7 @@ async fn batch_deadline_tracks_reviews_that_become_due_before_the_day_boundary()
     let response = queue(&pool, user, 5).await;
     let due: String = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', due_at, 'unixepoch') FROM cards_states WHERE user_id = ? AND card_id = 1")
         .bind(user).fetch_one(&pool).await.unwrap();
-    assert!(response.refresh_at <= due);
+    assert!(response.next_available_at.as_ref().unwrap() <= &due);
     assert!(!ids(&response).contains(&1));
     let again = queue(&pool, user, 5).await;
     assert_eq!(
@@ -219,7 +218,7 @@ async fn batch_size_is_validated_and_zero_daily_limit_is_empty() {
         .unwrap();
     let result = queue(&pool, user, 5).await;
     assert!(result.cards.is_empty());
-    assert!(result.next_due_at.is_none());
+    assert!(result.next_available_at.is_none());
 }
 
 /// Marks every seeded card except `keep` as already-reviewed and due far
@@ -304,13 +303,13 @@ async fn daily_new_card_limit_zero_suppresses_all_new_cards() {
     let envelope = queue(&pool, user_id, 1).await;
     assert!(envelope.cards.is_empty());
     assert!(
-        envelope.next_due_at.is_none(),
+        envelope.next_available_at.is_none(),
         "a zero limit does not reset tomorrow"
     );
 }
 
 #[tokio::test]
-async fn next_due_at_reports_the_earliest_scheduled_due_date() {
+async fn next_available_at_reports_the_earliest_scheduled_due_date() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
 
@@ -339,7 +338,7 @@ async fn next_due_at_reports_the_earliest_scheduled_due_date() {
 
     let envelope = queue(&pool, user_id, 1).await;
     assert!(envelope.cards.is_empty(), "nothing should be due yet");
-    assert_eq!(envelope.next_due_at, Some(expected));
+    assert_eq!(envelope.next_available_at, Some(expected));
 }
 
 #[tokio::test]
@@ -558,4 +557,93 @@ async fn review_context_keeps_optional_hints_separate_from_card_content() {
     assert!(entry.review.hanja_hint_words.is_none());
     let body = serde_json::to_value(entry).unwrap();
     assert!(body["review"]["hanja_hint_words"].is_null());
+}
+
+#[tokio::test]
+async fn availability_is_independent_of_queue_size_and_ignores_disabled_new_card_reset() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    sqlx::query("UPDATE users_settings SET daily_new_card_limit = 0 WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (card, days) in [(1, -1), (2, 3)] {
+        sqlx::query("INSERT INTO review_history (user_id,card_id,rating,state) VALUES (?,?,'good','review')")
+            .bind(user).bind(card).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO cards_states (user_id,card_id,last_review,state,due_at) VALUES (?,?,datetime('now'),'review',unixepoch('now') + ? * 86400)")
+            .bind(user).bind(card).bind(days).execute(&pool).await.unwrap();
+    }
+    let expected: String = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M:%SZ',due_at,'unixepoch') FROM cards_states WHERE user_id = ? AND card_id = 2")
+        .bind(user).fetch_one(&pool).await.unwrap();
+    let available = queue(&pool, user, 1).await;
+    assert_eq!(ids(&available), vec![1]);
+    assert_eq!(
+        available.next_available_at.as_deref(),
+        Some(expected.as_str())
+    );
+    let json = serde_json::to_value(available).unwrap();
+    assert!(json.get("refresh_at").is_none());
+    assert!(json.get("next_due_at").is_none());
+    sqlx::query("UPDATE cards_states SET due_at = 0 WHERE user_id = ? AND card_id = 2")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let available = queue(&pool, user, 1).await;
+    assert_eq!(available.cards.len(), 1);
+    assert!(
+        available.next_available_at.is_none(),
+        "already eligible cards outside the response limit are not future availability"
+    );
+}
+
+#[tokio::test]
+async fn allowance_reset_only_reports_new_cards_with_eligible_content() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    // All cards are immediately available; the reset unlocks nothing.
+    sqlx::query("UPDATE users_settings SET daily_new_card_limit = 100 WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(queue(&pool, user, 1).await.next_available_at.is_none());
+    sqlx::query("UPDATE users_settings SET daily_new_card_limit = 1 WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        queue(&pool, user, 1).await.next_available_at.is_none(),
+        "an unused allowance does not expand at the boundary"
+    );
+    sqlx::query(
+        "INSERT INTO review_history(user_id,card_id,rating,state) VALUES (?,1,'good','learning')",
+    )
+    .bind(user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(queue(&pool, user, 1).await.next_available_at.is_some());
+    sqlx::query("INSERT INTO users_card_flags(user_id,card_id,suppressed) SELECT ?,id,1 FROM cards WHERE id > 1")
+        .bind(user).execute(&pool).await.unwrap();
+    assert!(queue(&pool, user, 1).await.next_available_at.is_none());
+    sqlx::query("DELETE FROM users_card_flags WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO languages(slug) VALUES ('fra')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users_settings SET translation_language = 'fra' WHERE user_id = ?")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let empty = queue(&pool, user, 1).await;
+    assert!(empty.cards.is_empty());
+    assert!(empty.next_available_at.is_none());
 }

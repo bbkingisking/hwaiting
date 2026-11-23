@@ -42,7 +42,7 @@ function AppContent() {
   const [checking, setChecking] = useState(false)
   const [lastCheckMs, setLastCheckMs] = useState<number | null>(null)
   const [noCards, setNoCards] = useState(false)
-  const [nextDueAt, setNextDueAt] = useState<string | null>(null)
+  const [nextAvailableAt, setNextAvailableAt] = useState<string | null>(null)
   const [statsKey, setStatsKey] = useState(0)
   const [staleReason, setStaleReason] = useState<string | null>(null)
   const currentCard = useRef(card)
@@ -62,7 +62,7 @@ function AppContent() {
 
   const prefetchRef = useRef<PrefetchSlot | null>(null)
   const buffer = useRef<ReviewQueueCard[]>([])
-  const refreshAt = useRef(0)
+  const availableAt = useRef(0)
   const [queueDeadline, setQueueDeadline] = useState<string | null>(null)
   const queueGeneration = useRef(0)
 
@@ -77,8 +77,9 @@ function AppContent() {
       setCard(updated)
     }
     buffer.current = reconcileQueue(result.cards, active)
-    refreshAt.current = Date.parse(result.refresh_at)
-    setQueueDeadline(result.refresh_at)
+    availableAt.current = result.next_available_at ? Date.parse(result.next_available_at) : Infinity
+    setQueueDeadline(result.next_available_at ?? null)
+    setNextAvailableAt(result.next_available_at ?? null)
   }
 
   const coldLoadRef = useRef<Promise<boolean> | null>(null)
@@ -123,7 +124,7 @@ function AppContent() {
     if (!isAuthenticated) return
     const task = createRefreshTask(async current => {
       const active = currentCard.current
-      if (!active || prefetchRef.current || (buffer.current.length >= 1 && Date.now() < refreshAt.current)) return
+      if (!active || prefetchRef.current || (buffer.current.length >= 1 && Date.now() < availableAt.current)) return
       const slot = startPrefetch()
       const result = await slot.promise
       if (!current()) return
@@ -189,6 +190,7 @@ function AppContent() {
   useEffect(() => subscribeCardEdits(handleLocalEdit), [])
 
   const refreshQueueAtDeadline = useEffectEvent(() => {
+    setStatsKey(value => value + 1)
     cancelPrefetch()
     if (currentCard.current) refillTask.current?.request()
     else void loadCardCold()
@@ -202,7 +204,7 @@ function AppContent() {
   const cancelPrefetch = () => {
     ++queueGeneration.current
     buffer.current = []
-    refreshAt.current = 0
+    availableAt.current = 0
     setQueueDeadline(null)
     if (prefetchRef.current) {
       prefetchRef.current.abort.abort()
@@ -275,8 +277,8 @@ function AppContent() {
         currentCard.current = null
         setCard(null)
         setNoCards(true)
-        setNextDueAt(envelope.next_due_at ?? null)
-        refreshAt.current = Date.parse(envelope.refresh_at)
+        setNextAvailableAt(envelope.next_available_at ?? null)
+        availableAt.current = envelope.next_available_at ? Date.parse(envelope.next_available_at) : Infinity
       }
       return true
     } catch (err) {
@@ -304,7 +306,7 @@ function AppContent() {
 
     try {
       // Deadlines and invalidations require a fresh snapshot before promotion.
-      if (Date.now() >= refreshAt.current) buffer.current = []
+      if (Date.now() >= availableAt.current) buffer.current = []
       if (!buffer.current.length) {
         const generation = queueGeneration.current
         const pending = prefetchRef.current
@@ -321,7 +323,7 @@ function AppContent() {
             currentCard.current = null
             setCard(null)
             setNoCards(true)
-            setNextDueAt(envelope.next_due_at ?? null)
+            setNextAvailableAt(envelope.next_available_at ?? null)
             return
           }
         }
@@ -378,7 +380,7 @@ function AppContent() {
       void startPrefetch().promise.then(result => {
         if (!result) {
           // The refresh task owns backoff after this immediate post-review read.
-          refreshAt.current = 0
+          availableAt.current = 0
           refillTask.current?.request()
         }
       })
@@ -461,7 +463,7 @@ function AppContent() {
               />
             </div>
             <p className="mb-2">No cards to review right now</p>
-            <NextDueCountdown dueAt={nextDueAt} />
+            <NextDueCountdown dueAt={nextAvailableAt} />
           </div>
         ) : error && !card ? (
           <div className="text-center">
@@ -504,7 +506,7 @@ function AppContent() {
           <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card.card_id ?? null} />
           <StatusIndicator
             refreshKey={statsKey}
-            nextCardDueAt={noCards ? nextDueAt : null}
+            nextAvailableAt={noCards ? nextAvailableAt : null}
             onCardsAvailable={handleCardsAvailable}
           />
         </div>

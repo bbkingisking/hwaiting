@@ -113,7 +113,7 @@ test('a queue change during a queue request discards its stale response', async 
   }
   const nextCard = api.getReviewQueue()
   await api.unsuppressCard(42)
-  completeOldRead(Response.json({ card: null, next_due_at: '2026-11-09T12:00:00Z' }))
+  completeOldRead(Response.json({ card: null, next_available_at: '2026-11-09T12:00:00Z' }))
 
   assert.deepEqual(await nextCard, { card: { card_id: 42 } })
   assert.equal(reads, 2)
@@ -150,7 +150,7 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
     if (!url.includes('/api/reviews/queue')) return Response.json({ success: true })
     reads++
     if (reads === 1) return new Promise(resolve => { finish = resolve })
-    return Response.json({ cards: [{ card_id: 8 }], refresh_at: '2026-11-10T04:00:00Z' })
+    return Response.json({ cards: [{ card_id: 8 }], next_available_at: '2026-11-10T04:00:00Z' })
   }
   const pending = api.getReviewQueue()
   await api.unsuppressCard(8)

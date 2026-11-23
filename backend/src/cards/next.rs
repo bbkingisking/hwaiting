@@ -87,9 +87,10 @@ pub struct ReviewQueueCard {
 #[derive(Serialize, ToSchema)]
 pub struct ReviewQueueResponse {
     pub cards: Vec<ReviewQueueCard>,
-    pub next_due_at: Option<String>,
-    /// Refresh before promoting buffered cards after this deadline.
-    pub refresh_at: String,
+    /// Earliest future eligibility change: a scheduled review or an allowance
+    /// reset that unlocks waiting new cards. Independent of response limit or
+    /// whether cards are available now; null when no future availability is known.
+    pub next_available_at: Option<String>,
 }
 
 #[derive(Deserialize, Default, IntoParams)]
@@ -102,7 +103,7 @@ pub struct ReviewQueueQuery {
 
 #[utoipa::path(
     get, path = "/api/reviews/queue",
-    description = "Return an ordered snapshot of eligible due and new review prompts, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Refresh buffered prompts by refresh_at.", params(ReviewQueueQuery),
+    description = "Return an ordered snapshot of eligible due and new review prompts, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Includes the next future card availability time, even when cards are available now.", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
         (status = 400, description = "Invalid batch size or preferred translation language not configured", body = crate::error::ErrorResponse),
@@ -168,9 +169,7 @@ async fn select_cards(
     // A "new" card is one where it's the user's first review (no prior review_history)
     // Check if new cards are suppressed (limit = 0) or if daily limit is reached
     let mut remaining = 0;
-    let new_card_limit_reached = if daily_new_card_limit == 0 {
-        true // Suppress all new cards
-    } else {
+    if daily_new_card_limit > 0 {
         // Count how many NEW cards the user has reviewed today
         let new_cards_today: i64 = sqlx::query_scalar(
             r#"
@@ -193,8 +192,7 @@ async fn select_cards(
         .await?;
 
         remaining = (daily_new_card_limit - new_cards_today).max(0);
-        remaining == 0
-    };
+    }
 
     let query = format!(
         r#"
@@ -257,93 +255,47 @@ async fn select_cards(
         .bind(limit.unwrap_or(-1)) // SQLite: negative LIMIT means no response limit.
         .fetch_all(&mut *tx)
         .await?;
-    let future_due: Option<String> = sqlx::query_scalar(
-        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
-         FROM cards_states cs
-         LEFT JOIN users_card_flags f ON f.card_id = cs.card_id AND f.user_id = cs.user_id
-         WHERE cs.user_id = ? AND cs.due_at > ? AND COALESCE(f.suppressed, 0) = 0",
+    // Apply the same content and suppression requirements as queue selection.
+    // New cards behind the daily allowance become available at the boundary
+    // only when that reset actually expands the eligible set.
+    let availability = sqlx::query(
+        r#"
+        SELECT
+            MIN(CASE WHEN cs.last_review IS NOT NULL AND cs.due_at > ?
+                THEN cs.due_at END) AS future_due,
+            SUM(CASE WHEN NOT EXISTS (
+                SELECT 1 FROM review_history rh WHERE rh.user_id = ? AND rh.card_id = c.id
+            ) AND cs.last_review IS NULL THEN 1 ELSE 0 END) AS unseen
+        FROM cards c
+        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
+        LEFT JOIN users_card_flags f ON f.card_id = c.id AND f.user_id = ?
+        WHERE COALESCE(f.suppressed, 0) = 0
+          AND EXISTS (SELECT 1 FROM cards_translations ct
+                      WHERE ct.card_id = c.id AND ct.language_id = ?)
+          AND EXISTS (SELECT 1 FROM sentences s
+                      JOIN targets tg ON tg.sentence_id = s.id
+                      JOIN sentences_translations st ON st.sentence_id = s.id
+                      WHERE s.card_id = c.id AND st.language_id = ?)
+        "#,
     )
-    .bind(user_id)
     .bind(now_epoch)
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .bind(language_id)
+    .bind(language_id)
     .fetch_one(&mut *tx)
     .await?;
-    let boundary = logical_day_start(&now, day_boundary_hour, 1)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
-    let refresh_at = future_due
-        .map(|due| due.min(boundary.clone()))
-        .unwrap_or(boundary);
-
-    if rows.is_empty() {
-        // No card available. Two independent things can be blocking, and
-        // whichever unblocks first is the honest answer:
-        //
-        // 1. Every card the user has already reviewed at least once is
-        //    scheduled for later - the query below finds the earliest such
-        //    due date.
-        // 2. The daily new-card cap is reached (new_card_limit_reached),
-        //    *and* there's at least one never-reviewed card waiting behind
-        //    it - in which case the cap resetting at the next day boundary
-        //    is also a candidate. Previously this case fell through to
-        //    `next_due_at: None` with no indication of when to come back,
-        //    which is the common case for a session that reviews until
-        //    there's nothing left to do for the day, rather than one that
-        //    stops because everything's genuinely scheduled for later.
-        let scheduled_next: Option<String> = sqlx::query_scalar(
-            r#"
-            SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
-            FROM cards c
-            INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-            LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-            WHERE cs.due_at > ?
-            AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-            "#,
-        )
-        .bind(user_id)
-        .bind(user_id)
-        .bind(now_epoch)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        let new_card_reset = if new_card_limit_reached && daily_new_card_limit > 0 {
-            let new_cards_waiting: i64 = sqlx::query_scalar(
-                r#"
-                SELECT EXISTS (
-                    SELECT 1 FROM cards c
-                    LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-                    LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-                    WHERE cs.last_review IS NULL
-                    AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-                )
-                "#,
-            )
-            .bind(user_id)
-            .bind(user_id)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            (new_cards_waiting > 0).then(|| logical_day_start(&now, day_boundary_hour, 1))
-        } else {
-            None
-        };
-
-        let scheduled_next_dt = scheduled_next
-            .as_deref()
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
-
-        let next_due_at = [scheduled_next_dt, new_card_reset]
-            .into_iter()
-            .flatten()
-            .min()
-            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
-
-        return Ok(ReviewQueueResponse {
-            cards: vec![],
-            next_due_at,
-            refresh_at,
-        });
-    };
+    let future_due: Option<i64> = availability.get("future_due");
+    let unseen: i64 = availability.get::<Option<i64>, _>("unseen").unwrap_or(0);
+    let new_card_reset = (daily_new_card_limit > remaining && unseen > remaining)
+        .then(|| logical_day_start(&now, day_boundary_hour, 1).timestamp());
+    let next_available_at = [future_due, new_card_reset]
+        .into_iter()
+        .flatten()
+        .min()
+        .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+        .map(|time| time.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
     let mut cards = Vec::with_capacity(rows.len());
     for row in rows {
@@ -445,8 +397,7 @@ async fn select_cards(
     }
     Ok(ReviewQueueResponse {
         cards,
-        next_due_at: None,
-        refresh_at,
+        next_available_at,
     })
 }
 

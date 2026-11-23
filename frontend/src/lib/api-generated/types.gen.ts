@@ -434,11 +434,12 @@ export type ReviewQueueCard = {
  */
 export type ReviewQueueResponse = {
     cards: Array<ReviewQueueCard>;
-    next_due_at?: string | null;
     /**
-     * Refresh before promoting buffered cards after this deadline.
+     * Earliest future eligibility change: a scheduled review or an allowance
+     * reset that unlocks waiting new cards. Independent of response limit or
+     * whether cards are available now; null when no future availability is known.
      */
-    refresh_at: string;
+    next_available_at?: string | null;
 };
 
 export type ReviewResponse = {

@@ -196,7 +196,7 @@ async fn retention_changes_reschedule_queue_and_stats_without_rewriting_memory_o
     let future = next(&pool, uid).await;
     assert!(future["cards"].as_array().unwrap().is_empty());
     assert_eq!(
-        future["next_due_at"],
+        future["next_available_at"],
         stats(&pool, uid).await["next_due_at"]
     );
     assert_eq!(stats(&pool, uid).await["due_count"], 0);
