@@ -130,11 +130,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/stats/today", get(cards::get_today_stats))
         .route("/stats/history", get(cards::get_history))
         .route(
-            "/reviews/fsrs-parameters",
+            "/scheduling/fsrs-parameters",
             post(events::mutations::optimize_fsrs),
         )
         .route(
-            "/reviews/fsrs-parameters",
+            "/scheduling/fsrs-parameters",
             delete(events::mutations::reset_fsrs_parameters),
         )
         .route("/user/me", get(user::get_profile))

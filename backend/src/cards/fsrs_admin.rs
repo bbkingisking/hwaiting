@@ -1,4 +1,4 @@
-//! User-level FSRS parameter management: `POST /api/reviews/fsrs-parameters`
+//! User-level FSRS parameter management: `POST /api/scheduling/fsrs-parameters`
 //! fits parameters to the user's own review history via `fsrs::compute_parameters`;
 //! `DELETE` on the same path reverts to library defaults. Distinct from
 //! [`super::check`], which applies whichever parameters are currently
@@ -85,7 +85,7 @@ fn build_fsrs_items(rows: &[(i64, String, String)]) -> Result<Vec<FSRSItem>, App
 // Optimize FSRS parameters from user's review history
 #[utoipa::path(
     post,
-    path = "/api/reviews/fsrs-parameters",
+    path = "/api/scheduling/fsrs-parameters",
     description = "Fit personal FSRS parameters from the current user's review history, save them, and reschedule their cards atomically. Requires at least one review separated from a previous review of the same card by a full day.",
     responses(
         (status = 200, description = "FSRS parameters optimized from full review history", body = OptimizeFsrsResponse),
@@ -93,7 +93,7 @@ fn build_fsrs_items(rows: &[(i64, String, String)]) -> Result<Vec<FSRSItem>, App
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "reviews"
+    tag = "scheduling"
 )]
 pub async fn optimize_fsrs(
     State(pool): State<SqlitePool>,
@@ -186,14 +186,14 @@ pub async fn optimize_fsrs(
 // Reset FSRS parameters to defaults
 #[utoipa::path(
     delete,
-    path = "/api/reviews/fsrs-parameters",
+    path = "/api/scheduling/fsrs-parameters",
     description = "Remove the current user's fitted FSRS parameters and reschedule their cards using library defaults. The parameter reset and scheduling changes commit together.",
     responses(
         (status = 204, description = "FSRS parameters reset to library defaults"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "reviews"
+    tag = "scheduling"
 )]
 pub async fn reset_fsrs_parameters(
     State(pool): State<SqlitePool>,

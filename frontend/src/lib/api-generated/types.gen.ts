@@ -1413,6 +1413,41 @@ export type ValidateCardAttemptResponses = {
 
 export type ValidateCardAttemptResponse = ValidateCardAttemptResponses[keyof ValidateCardAttemptResponses];
 
+export type GetReviewQueueData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum number of cards. Omit to return the full currently eligible queue.
+         * The daily new-card allowance applies independently of this response limit.
+         */
+        limit?: number;
+    };
+    url: '/api/reviews/queue';
+};
+
+export type GetReviewQueueErrors = {
+    /**
+     * Invalid batch size or preferred translation language not configured
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
+
+export type GetReviewQueueResponses = {
+    /**
+     * Ordered review queue snapshot
+     */
+    200: ReviewQueueResponse;
+};
+
+export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
+
 export type ResetFsrsParametersData = {
     body?: never;
     headers: {
@@ -1427,7 +1462,7 @@ export type ResetFsrsParametersData = {
     };
     path?: never;
     query?: never;
-    url: '/api/reviews/fsrs-parameters';
+    url: '/api/scheduling/fsrs-parameters';
 };
 
 export type ResetFsrsParametersErrors = {
@@ -1462,7 +1497,7 @@ export type OptimizeFsrsData = {
     };
     path?: never;
     query?: never;
-    url: '/api/reviews/fsrs-parameters';
+    url: '/api/scheduling/fsrs-parameters';
 };
 
 export type OptimizeFsrsErrors = {
@@ -1511,41 +1546,6 @@ export type GetHistoryResponses = {
 };
 
 export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
-
-export type GetReviewQueueData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Maximum number of cards. Omit to return the full currently eligible queue.
-         * The daily new-card allowance applies independently of this response limit.
-         */
-        limit?: number;
-    };
-    url: '/api/reviews/queue';
-};
-
-export type GetReviewQueueErrors = {
-    /**
-     * Invalid batch size or preferred translation language not configured
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
-
-export type GetReviewQueueResponses = {
-    /**
-     * Ordered review queue snapshot
-     */
-    200: ReviewQueueResponse;
-};
-
-export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
 
 export type GetTodayStatsData = {
     body?: never;

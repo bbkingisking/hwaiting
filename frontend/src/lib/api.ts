@@ -338,7 +338,7 @@ export async function getCardInflections(cardId: number, signal?: AbortSignal): 
 type OptimizeFsrsResponse = Schemas.OptimizeFsrsResponse
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
-  const url = `${apiBase()}/api/reviews/fsrs-parameters`
+  const url = `${apiBase()}/api/scheduling/fsrs-parameters`
   const result = await fetchWithAuth(url, {
     method: 'POST',
   })
@@ -347,7 +347,7 @@ export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
 }
 
 export async function resetFsrsParameters(): Promise<{ success: boolean }> {
-  const url = `${apiBase()}/api/reviews/fsrs-parameters`
+  const url = `${apiBase()}/api/scheduling/fsrs-parameters`
   const result = await fetchWithAuth(url, {
     method: 'DELETE',
   })
