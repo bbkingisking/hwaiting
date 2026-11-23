@@ -43,8 +43,7 @@ pub struct AvailableTranslationLanguage {
     pub card_count: i64,
 }
 
-/// Available translation languages for Korean card content.
-#[utoipa::path(get, path = "/api/cards/languages", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
+#[utoipa::path(get, path = "/api/cards/languages", description = "Available translation languages for Korean card content.", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
 pub async fn available_translation_languages(
     State(pool): State<SqlitePool>,
     _auth: AuthUser,

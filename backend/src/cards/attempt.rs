@@ -125,12 +125,10 @@ pub struct ValidateResponse {
     pub valid: bool,
 }
 
-/// Check whether a displayed review prompt is still fresh, without grading or recording a review.
-/// A successful check is only a snapshot: answer submission validates again atomically.
-/// This does not check queue position or current queue preferences.
 #[utoipa::path(
     post,
     path = "/api/reviews/check-freshness",
+    description = "Check whether a displayed review prompt is still fresh, without grading or recording a review. A successful check is only a snapshot: answer submission validates again atomically. This does not check queue position or current queue preferences.",
     request_body = ValidateRequest,
     responses(
         (status = 200, description = "Whether the token still matches an available prompt", body = ValidateResponse),

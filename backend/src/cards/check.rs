@@ -81,12 +81,11 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
             .any(|alt| normalized.chars().eq(alt.nfc()))
 }
 
-/// Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer.
-/// Validates prompt freshness within the same transaction; stale prompts record no review.
-/// The returned card ID is internal metadata for publishing the committed mutation.
+// The returned card ID is internal metadata for publishing the committed mutation.
 #[utoipa::path(
     post,
     path = "/api/reviews/answer",
+    description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates prompt freshness within the same transaction; stale prompts record no review.",
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
