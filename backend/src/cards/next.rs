@@ -101,7 +101,8 @@ pub struct ReviewQueueQuery {
 }
 
 #[utoipa::path(
-    get, path = "/api/reviews/queue", params(ReviewQueueQuery),
+    get, path = "/api/reviews/queue",
+    description = "Return an ordered snapshot of eligible due and new review prompts, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Refresh buffered prompts by refresh_at.", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
         (status = 400, description = "Invalid batch size or preferred translation language not configured", body = crate::error::ErrorResponse),

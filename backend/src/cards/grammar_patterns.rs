@@ -34,7 +34,8 @@ pub struct GrammarPatternOption {
     pub endings: Vec<String>,
 }
 
-#[utoipa::path(get, path = "/api/admin/grammar-patterns", responses((status = 200, body = Vec<GrammarPatternOption>), (status = 403, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "admin")]
+#[utoipa::path(get, path = "/api/admin/grammar-patterns",
+    description = "List authored grammar patterns with English labels, explanations, and accepted endings for the admin card editor.", responses((status = 200, body = Vec<GrammarPatternOption>), (status = 403, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "admin")]
 pub async fn list_grammar_patterns(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,

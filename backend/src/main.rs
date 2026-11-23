@@ -431,6 +431,7 @@ ENVIRONMENT VARIABLES:
 #[utoipa::path(
     get,
     path = "/api/health",
+    description = "Return a simple health response indicating that the HTTP server is responding. Available without authentication.",
     responses(
         (status = 200, description = "Service is up", body = String),
     ),

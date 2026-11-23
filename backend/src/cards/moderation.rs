@@ -46,6 +46,7 @@ pub struct SuppressedCardsResponse {
 #[utoipa::path(
     post,
     path = "/api/cards/{card_id}/comment",
+    description = "Record a content-feedback comment on a card for admin triage. Comments do not change review scheduling or card content.",
     params(("card_id" = i64, Path, description = "Card ID")),
     request_body = CommentRequest,
     responses(
@@ -93,6 +94,7 @@ pub async fn comment_on_card(
 #[utoipa::path(
     put,
     path = "/api/cards/{card_id}/suppress",
+    description = "Exclude a card from the current user's review rotation. Repeating the request keeps the card suppressed; other users are unaffected.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 200, description = "Card suppressed from review rotation", body = ReviewResponse),
@@ -141,6 +143,7 @@ pub async fn suppress_card(
 #[utoipa::path(
     get,
     path = "/api/cards/suppressed",
+    description = "List the current user's suppressed cards with sentence content and translations in their configured translation language, ordered by Korean word.",
     responses(
         (status = 200, description = "All suppressed cards for the user", body = SuppressedCardsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -203,6 +206,7 @@ pub async fn list_suppressed_cards(
 #[utoipa::path(
     put,
     path = "/api/cards/{card_id}/unsuppress",
+    description = "Clear the current user's suppression flag so the card can return to the review rotation when eligible. Succeeds even if no suppression flag exists.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 200, description = "Card unsuppressed", body = ReviewResponse),

@@ -86,6 +86,7 @@ fn build_fsrs_items(rows: &[(i64, String, String)]) -> Result<Vec<FSRSItem>, App
 #[utoipa::path(
     post,
     path = "/api/reviews/fsrs-parameters",
+    description = "Fit personal FSRS parameters from the current user's review history, save them, and reschedule their cards atomically. Requires at least one review separated from a previous review of the same card by a full day.",
     responses(
         (status = 200, description = "FSRS parameters optimized from full review history", body = OptimizeFsrsResponse),
         (status = 400, description = "No/insufficient review history to optimize from", body = crate::error::ErrorResponse),
@@ -186,6 +187,7 @@ pub async fn optimize_fsrs(
 #[utoipa::path(
     delete,
     path = "/api/reviews/fsrs-parameters",
+    description = "Remove the current user's fitted FSRS parameters and reschedule their cards using library defaults. The parameter reset and scheduling changes commit together.",
     responses(
         (status = 204, description = "FSRS parameters reset to library defaults"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),

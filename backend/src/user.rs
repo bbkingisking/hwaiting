@@ -156,6 +156,7 @@ pub struct UpdateSettingsResponse {
 #[utoipa::path(
     get,
     path = "/api/user/me",
+    description = "Return the signed-in user's username and admin status. The username is null for passkey-only accounts.",
     responses(
         (status = 200, description = "Current user's profile", body = UserProfile),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -183,6 +184,7 @@ pub async fn get_profile(
 #[utoipa::path(
     get,
     path = "/api/user/settings",
+    description = "Return the current user's study and display settings and whether personal FSRS parameters are stored. Creates default settings on first access if needed.",
     responses(
         (status = 200, description = "Current user settings (row lazily created on first access)", body = UserSettings),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -227,6 +229,7 @@ pub async fn get_settings(
 #[utoipa::path(
     patch,
     path = "/api/user/settings",
+    description = "Update only the supplied study and display settings, validating values and saving the changes atomically. The initial study timezone is applied only if none is saved yet.",
     request_body = UpdateSettingsRequest,
     responses(
         (status = 200, description = "Settings updated (partial update, only provided fields written)", body = UpdateSettingsResponse),

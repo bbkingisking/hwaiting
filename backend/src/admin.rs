@@ -50,6 +50,7 @@ pub struct ListUsersResponse {
 #[utoipa::path(
     get,
     path = "/api/admin/users",
+    description = "List account IDs, usernames, admin status, and creation times for administrators. An optional username filter matches exactly; without it, returns all users.",
     params(ListUsersQuery),
     responses(
         (status = 200, description = "All users, or the one matching ?username= exactly", body = ListUsersResponse),
@@ -169,6 +170,7 @@ pub struct CardInflectionsResponse {
 #[utoipa::path(
     get,
     path = "/api/admin/cards/{card_id}/inflections",
+    description = "Return a card's generated conjugation-matrix rows for administrators. An existing card without generated inflections returns an empty list.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 200, description = "This card's resolved conjugation-matrix rows (empty if it hasn't been run through the conjugation generator)", body = CardInflectionsResponse),

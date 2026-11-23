@@ -123,6 +123,7 @@ pub struct HistoryBreakdownResponse {
 #[utoipa::path(
     get,
     path = "/api/reviews/stats",
+    description = "Return the current user's card counts, next due time, and today's review totals and accuracy. Today follows the saved study timezone and day-boundary hour.",
     responses(
         (status = 200, description = "Current new/due counts and next due time, plus today’s review counts and accuracy", body = StatsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -569,6 +570,7 @@ async fn query_breakdown(
 #[utoipa::path(
     get,
     path = "/api/reviews/history",
+    description = "Return aggregated review history: daily counts, all-time totals and streaks, and accuracy by part of speech and word origin. Daily groupings use the user's study timezone and day-boundary hour; individual review records are available through data export.",
     responses(
         (status = 200, description = "Aggregated history: daily counts, all-time summary and streaks, and POS/origin accuracy; not individual review records", body = HistoryResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),

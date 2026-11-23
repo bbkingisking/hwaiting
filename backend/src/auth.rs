@@ -40,6 +40,7 @@ pub struct AuthResponse {
 #[utoipa::path(
     post,
     path = "/api/auth/login",
+    description = "Sign in with a username and password and set the HttpOnly authentication cookie. Passkey-only accounts cannot use password login.",
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Login successful", body = AuthResponse),
@@ -104,6 +105,7 @@ pub async fn login(
 #[utoipa::path(
     post,
     path = "/api/auth/signup",
+    description = "Create a username/password account and sign in by setting the HttpOnly authentication cookie. Available only when this deployment allows sign-ups.",
     request_body = SignupRequest,
     responses(
         (status = 201, description = "Account created", body = AuthResponse),

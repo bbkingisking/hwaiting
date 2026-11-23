@@ -137,6 +137,7 @@ pub async fn protect_api(request: Request, next: Next) -> Result<Response, AppEr
 #[utoipa::path(
     post,
     path = "/api/auth/logout",
+    description = "Clear the authentication cookie to sign out. Also clears expired or invalid cookies; no valid session is required.",
     responses((status = 204, description = "Authentication cookie cleared")),
     tag = "auth"
 )]
