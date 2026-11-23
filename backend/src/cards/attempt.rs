@@ -128,10 +128,10 @@ pub struct ValidateResponse {
 #[utoipa::path(
     post,
     path = "/api/reviews/check-freshness",
-    description = "Check whether a displayed review prompt is still fresh, without grading or recording a review. A successful check is only a snapshot: answer submission validates again atomically. This does not check queue position or current queue preferences.",
+    description = "Check whether an attempt token is still valid. Does not perform any grading or scheduling changes.",
     request_body = ValidateRequest,
     responses(
-        (status = 200, description = "Whether the token still matches an available prompt", body = ValidateResponse),
+        (status = 200, description = "The token is still valid for review", body = ValidateResponse),
         (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 500, description = "Operational failure", body = crate::error::ErrorResponse),
