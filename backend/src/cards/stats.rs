@@ -14,7 +14,7 @@ use crate::error::AppError;
 
 use super::time::{
     CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL, accuracy_percentage, logical_day_start,
-    logical_today_date, logical_today_start, parse_flexible_datetime, review_day, sqlite_datetime,
+    logical_today_date, parse_flexible_datetime, review_day, sqlite_datetime,
 };
 use super::{MASTERED_STATE, ReviewPrefs, review_prefs};
 
@@ -59,14 +59,17 @@ fn compute_streaks(dates: &[chrono::NaiveDate], today: chrono::NaiveDate) -> (i6
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct StatsResponse {
-    new_count: i64,
-    due_count: i64,
+pub struct TodayStatsResponse {
+    /// Date of the current study day in the user's saved timezone.
+    study_day: String,
+    /// Exclusive end of this study day, as a UTC timestamp.
+    day_ends_at: String,
+    /// Answered reviews today, excluding first exposures.
     reviews_today: i64,
     correct_today: i64,
-    /// Unrounded accuracy percentage (0–100); null when there are no counted reviews today.
+    /// Unrounded accuracy percentage (0–100); null when there are no reviews today.
     percentage: Option<f64>,
-    next_due_at: Option<String>,
+    /// Distinct cards first introduced today; first exposures are views, not reviews.
     new_today_count: i64,
 }
 
@@ -119,161 +122,63 @@ pub struct HistoryBreakdownResponse {
     by_origin: Vec<BreakdownRow>,
 }
 
-// Get statistics
 #[utoipa::path(
     get,
-    path = "/api/reviews/stats",
-    description = "Return the current user's card counts, next due time, and today's review totals and accuracy. Today follows the saved study timezone and day-boundary hour.",
+    path = "/api/stats/today",
+    description = "Today's review totals, accuracy, and first-view count for the authenticated user. First exposures are views, not reviews. The study day follows the saved timezone and day-boundary hour; day_ends_at is its exclusive UTC end. No queue counts or scheduling information are included.",
     responses(
-        (status = 200, description = "Current new/due counts and next due time, plus today’s review counts and accuracy", body = StatsResponse),
+        (status = 200, description = "Current study-day activity", body = TodayStatsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "reviews"
+    tag = "stats"
 )]
-pub async fn get_stats(
+pub async fn get_today_stats(
     State(pool): State<SqlitePool>,
     auth: crate::auth::AuthUser,
-) -> Result<Json<StatsResponse>, AppError> {
-    let user_id = auth.0;
-
-    // daily_new_card_limit: 0 = suppress all new cards.
+) -> Result<Json<TodayStatsResponse>, AppError> {
     let ReviewPrefs {
         day_boundary_hour,
         study_timezone,
-        daily_new_card_limit,
         ..
-    } = review_prefs(&pool, user_id).await?;
-
-    // Start of the user's current logical day, as UTC for database comparison
-    let today_start = sqlite_datetime(logical_today_start(
-        day_boundary_hour,
-        &crate::user::parse_study_timezone(study_timezone.as_deref())?,
-    ));
-
-    // Count new cards (cards not in cards_states, excluding suppressed)
-    // If daily_new_card_limit is 0, new count is 0 (suppressed)
-    let new_count_query = if daily_new_card_limit == 0 {
-        // When new cards are suppressed (limit = 0), report 0 new cards
+    } = review_prefs(&pool, auth.0).await?;
+    let zone = crate::user::parse_study_timezone(study_timezone.as_deref())?;
+    let now = Utc::now().with_timezone(&zone);
+    let start = logical_day_start(&now, day_boundary_hour, 0);
+    let end = logical_day_start(&now, day_boundary_hour, 1);
+    // One read keeps numerator, denominator, and first-view count consistent.
+    // Normalize timestamps so SQLite and RFC3339 imports share the same bounds.
+    let row = sqlx::query(&format!(
         r#"
-        SELECT 0
-        "#
-    } else {
-        r#"
-        SELECT COUNT(*)
-        FROM cards c
-        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (cs.last_review IS NULL)
-        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        "#
-    };
-
-    let new_count: i64 = if daily_new_card_limit == 0 {
-        sqlx::query_scalar(new_count_query).fetch_one(&pool).await?
-    } else {
-        sqlx::query_scalar(new_count_query)
-            .bind(user_id)
-            .bind(user_id)
-            .fetch_one(&pool)
-            .await?
-    };
-
-    // Count due cards (existing cards with last_review set, excluding suppressed)
-    let due_count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM cards c
-        INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE cs.last_review IS NOT NULL
-        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        AND cs.due_at <= unixepoch('now')
-        "#,
-    )
-    .bind(user_id)
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await?;
-
-    // Count reviews today (after day_boundary_hour)
-    let reviews_today: i64 = sqlx::query_scalar(&format!(
-        r#"
-        SELECT COUNT(*)
-        FROM review_history
-        WHERE user_id = ?
-        AND {COUNTED_REVIEW_SQL}
-        AND datetime(reviewed_at) >= datetime(?)
-        "#,
-    ))
-    .bind(user_id)
-    .bind(&today_start)
-    .fetch_one(&pool)
-    .await?;
-
-    // Count correct reviews today
-    let correct_today: i64 = sqlx::query_scalar(&format!(
-        r#"
-        SELECT COUNT(*)
-        FROM review_history
-        WHERE user_id = ?
-        AND {COUNTED_REVIEW_SQL}
-        AND {CORRECT_REVIEW_SQL}
-        AND datetime(reviewed_at) >= datetime(?)
-        "#,
-    ))
-    .bind(user_id)
-    .bind(&today_start)
-    .fetch_one(&pool)
-    .await?;
-
-    let percentage = accuracy_percentage(correct_today, reviews_today);
-
-    // Find when the next card becomes due
-    let next_due_at: Option<String> = sqlx::query_scalar(
-        r#"
-        SELECT strftime('%Y-%m-%dT%H:%M:%SZ', MIN(cs.due_at), 'unixepoch')
-        FROM cards c
-        INNER JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE cs.due_at > unixepoch('now')
-        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        "#,
-    )
-    .bind(user_id)
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await?;
-
-    // Count how many NEW cards were reviewed today
-    let new_today_count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(DISTINCT rh.card_id)
+        SELECT
+            COALESCE(SUM(CASE WHEN {COUNTED_REVIEW_SQL} THEN 1 ELSE 0 END), 0) AS reviews,
+            COALESCE(SUM(CASE WHEN {COUNTED_REVIEW_SQL} AND {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END), 0) AS correct,
+            COUNT(DISTINCT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM review_history earlier
+                WHERE earlier.user_id = rh.user_id AND earlier.card_id = rh.card_id
+                  AND datetime(earlier.reviewed_at) < datetime(?)
+            ) THEN rh.card_id END) AS new_cards
         FROM review_history rh
-        WHERE rh.user_id = ?
-        AND rh.reviewed_at >= ?
-        AND NOT EXISTS (
-            SELECT 1 FROM review_history rh2
-            WHERE rh2.user_id = rh.user_id
-            AND rh2.card_id = rh.card_id
-            AND rh2.reviewed_at < ?
-        )
+        WHERE user_id = ?
+          AND datetime(reviewed_at) >= datetime(?)
+          AND datetime(reviewed_at) < datetime(?)
         "#,
-    )
-    .bind(user_id)
-    .bind(&today_start)
-    .bind(&today_start)
+    ))
+    .bind(sqlite_datetime(start))
+    .bind(auth.0)
+    .bind(sqlite_datetime(start))
+    .bind(sqlite_datetime(end))
     .fetch_one(&pool)
     .await?;
-
-    Ok(Json(StatsResponse {
-        new_count,
-        due_count,
+    let reviews_today = row.get("reviews");
+    let correct_today = row.get("correct");
+    Ok(Json(TodayStatsResponse {
+        study_day: logical_today_date(now.naive_local(), day_boundary_hour).to_string(),
+        day_ends_at: end.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         reviews_today,
         correct_today,
-        percentage,
-        next_due_at,
-        new_today_count,
+        percentage: accuracy_percentage(correct_today, reviews_today),
+        new_today_count: row.get("new_cards"),
     }))
 }
 
@@ -610,3 +515,7 @@ pub async fn get_history(
 #[cfg(test)]
 #[path = "../tests/cards/stats.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/cards/today.rs"]
+mod today_tests;

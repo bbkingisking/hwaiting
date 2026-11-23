@@ -229,7 +229,7 @@ class BrowserScenarios(unittest.TestCase):
         other=self.request('/api/reviews/queue')[2]['cards'][-1]['card']['card_id']
         assert other != cid
         assert self.answer_card(other)[0]==200
-        self.wait.until(lambda d: any('/reviews/stats' in p for p in d.execute_script('return window.reads')))
+        self.wait.until(lambda d: any('/stats/today' in p for p in d.execute_script('return window.reads')))
         self.wait.until(lambda d: any('/reviews/queue' in p for p in d.execute_script('return window.reads')))
         assert int(self.driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))==cid
         assert self.driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').get_attribute('value')=='preserve my answer'

@@ -64,6 +64,7 @@ fn resolve_local<Tz: TimeZone>(zone: &Tz, naive: NaiveDateTime) -> chrono::DateT
 
 /// Start of the user's current logical day in their saved study timezone:
 /// today's boundary if that moment has passed, otherwise yesterday's.
+#[cfg(test)]
 pub(super) fn logical_today_start(
     day_boundary_hour: i64,
     zone: &chrono_tz::Tz,

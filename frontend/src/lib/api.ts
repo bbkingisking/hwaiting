@@ -242,7 +242,7 @@ export async function exportUserData(): Promise<void> {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
-type StatsResponse = Schemas.StatsResponse
+type TodayStatsResponse = Schemas.TodayStatsResponse
 
 export type DayHistory = Schemas.DayHistory
 export type HistorySummary = Schemas.HistorySummary
@@ -257,8 +257,8 @@ export async function getHistory(): Promise<HistoryResponse> {
   return fetchWithAuth(url)
 }
 
-export async function getStats(): Promise<StatsResponse> {
-  const url = `${apiBase()}/api/reviews/stats`
+export async function getTodayStats(): Promise<TodayStatsResponse> {
+  const url = `${apiBase()}/api/stats/today`
   return fetchWithAuth(url)
 }
 

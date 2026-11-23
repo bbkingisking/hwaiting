@@ -1,4 +1,5 @@
 use super::*;
+use crate::cards::time::logical_today_start;
 use chrono::NaiveDate;
 
 fn d(s: &str) -> NaiveDate {
@@ -61,7 +62,7 @@ fn longest_streak_can_exceed_current_streak() {
 // it exercises the exact same "non-consecutive resets the run" branch
 // gap_breaks_the_current_streak_count already covers.
 
-// --- get_stats / get_history (handler-level, in-process SQLite) ---------
+// --- get_today_stats / get_history (handler-level, in-process SQLite) ---------
 
 use crate::test_support::{test_pool, test_user};
 
@@ -181,7 +182,7 @@ async fn stats_use_each_users_saved_timezone() {
             .await
             .unwrap();
         insert_review(&pool, user_id, 1, "good", "review", &review_at).await;
-        let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+        let stats = get_today_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
             .await
             .unwrap()
             .0;
@@ -216,7 +217,7 @@ async fn reviews_before_the_day_boundary_dont_count_as_today() {
     insert_review(&pool, user_id, 1, "good", "review", &before).await;
     insert_review(&pool, user_id, 2, "good", "review", &after).await;
 
-    let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+    let stats = get_today_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
         .await
         .unwrap()
         .0;
@@ -237,7 +238,7 @@ async fn a_learning_first_review_is_excluded_from_todays_accuracy() {
     // denominator of today's accuracy.
     insert_review(&pool, user_id, 1, "good", "learning", &today).await;
 
-    let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+    let stats = get_today_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
         .await
         .unwrap()
         .0;
@@ -247,7 +248,7 @@ async fn a_learning_first_review_is_excluded_from_todays_accuracy() {
 
     // A second, post-learning review of a different card does count.
     insert_review(&pool, user_id, 2, "again", "review", &today).await;
-    let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+    let stats = get_today_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
         .await
         .unwrap()
         .0;
@@ -267,7 +268,7 @@ async fn stats_and_history_serialize_unrounded_accuracy() {
         insert_review(&pool, user_id, 1, rating, "review", &today).await;
     }
 
-    let stats = get_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
+    let stats = get_today_stats(State(pool.clone()), crate::auth::AuthUser(user_id))
         .await
         .unwrap()
         .0;

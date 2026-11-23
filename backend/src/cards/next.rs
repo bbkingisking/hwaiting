@@ -162,7 +162,7 @@ async fn select_cards(
     let now = chrono::Utc::now().with_timezone(&zone);
     let now_epoch = now.timestamp();
 
-    // Start of "today" per day_boundary_hour - same helper get_stats uses.
+    // Start of "today" per day_boundary_hour - same helper today stats uses.
     let today_start_str = sqlite_datetime(logical_day_start(&now, day_boundary_hour, 0));
 
     // Count how many NEW cards the user has reviewed today

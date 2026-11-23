@@ -97,7 +97,8 @@ test('queue settings invalidate availability, including zero limits and midnight
 
 test('display settings and reads do not cause queue refreshes', async () => {
   await api.updateUserSettings({ red_threshold: 45 })
-  await api.getStats()
+  await api.getTodayStats()
+  assert.ok(requests.some(request => request.url.endsWith('/api/stats/today')))
   await api.listSuppressedCards()
   assert.deepEqual(changes, [])
 })

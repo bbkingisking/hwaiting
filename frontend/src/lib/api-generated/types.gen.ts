@@ -469,19 +469,6 @@ export type StaleAnswerResponse = {
     error: string;
 };
 
-export type StatsResponse = {
-    correct_today: number;
-    due_count: number;
-    new_count: number;
-    new_today_count: number;
-    next_due_at?: string | null;
-    /**
-     * Unrounded accuracy percentage (0–100); null when there are no counted reviews today.
-     */
-    percentage?: number | null;
-    reviews_today: number;
-};
-
 export type SuppressedCard = {
     card_id: number;
     grade?: string | null;
@@ -494,6 +481,30 @@ export type SuppressedCard = {
 
 export type SuppressedCardsResponse = {
     cards: Array<SuppressedCard>;
+};
+
+export type TodayStatsResponse = {
+    correct_today: number;
+    /**
+     * Exclusive end of this study day, as a UTC timestamp.
+     */
+    day_ends_at: string;
+    /**
+     * Distinct cards first introduced today; first exposures are views, not reviews.
+     */
+    new_today_count: number;
+    /**
+     * Unrounded accuracy percentage (0–100); null when there are no reviews today.
+     */
+    percentage?: number | null;
+    /**
+     * Answered reviews today, excluding first exposures.
+     */
+    reviews_today: number;
+    /**
+     * Date of the current study day in the user's saved timezone.
+     */
+    study_day: string;
 };
 
 /**
@@ -1532,30 +1543,30 @@ export type GetReviewQueueResponses = {
 
 export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
 
-export type GetStatsData = {
+export type GetTodayStatsData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/reviews/stats';
+    url: '/api/stats/today';
 };
 
-export type GetStatsErrors = {
+export type GetTodayStatsErrors = {
     /**
      * Missing/invalid JWT
      */
     401: ErrorResponse;
 };
 
-export type GetStatsError = GetStatsErrors[keyof GetStatsErrors];
+export type GetTodayStatsError = GetTodayStatsErrors[keyof GetTodayStatsErrors];
 
-export type GetStatsResponses = {
+export type GetTodayStatsResponses = {
     /**
-     * Current new/due counts and next due time, plus today’s review counts and accuracy
+     * Current study-day activity
      */
-    200: StatsResponse;
+    200: TodayStatsResponse;
 };
 
-export type GetStatsResponse = GetStatsResponses[keyof GetStatsResponses];
+export type GetTodayStatsResponse = GetTodayStatsResponses[keyof GetTodayStatsResponses];
 
 export type ExportDataData = {
     body?: never;

@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
             "/cards/{card_id}/unsuppress",
             put(events::mutations::unsuppress_card),
         )
-        .route("/reviews/stats", get(cards::get_stats))
+        .route("/stats/today", get(cards::get_today_stats))
         .route("/reviews/history", get(cards::get_history))
         .route(
             "/reviews/fsrs-parameters",
