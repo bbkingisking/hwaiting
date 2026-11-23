@@ -222,7 +222,7 @@ export type DayHistory = {
     /**
      * Unrounded accuracy percentage (0–100).
      */
-    percentage: number;
+    percentage?: number | null;
     total: number;
 };
 
@@ -287,7 +287,7 @@ export type HistoryResponse = {
      */
     breakdown: HistoryBreakdownResponse;
     /**
-     * All-time aggregate + current FSRS state distribution + streaks.
+     * All-time review aggregates and streaks; first exposures are excluded.
      */
     summary: HistorySummary;
     /**
@@ -297,16 +297,11 @@ export type HistoryResponse = {
 };
 
 export type HistorySummary = {
-    avg_reviews_per_day: number;
-    cards_learning: number;
-    cards_relearning: number;
-    cards_review: number;
-    cards_suppressed: number;
-    cards_unseen: number;
     current_streak: number;
     first_review_date?: string | null;
     longest_streak: number;
-    total_accuracy: number;
+    reviews_per_active_day: number;
+    total_accuracy?: number | null;
     total_cards_reviewed: number;
     total_reviews: number;
 };

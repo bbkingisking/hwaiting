@@ -190,22 +190,17 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
       summary: {
         total_reviews: summary.total_reviews,
         total_cards_reviewed: summary.total_cards_reviewed,
-        accuracy: parseFloat(summary.total_accuracy.toFixed(1)),
-        avg_reviews_per_day: parseFloat(summary.avg_reviews_per_day.toFixed(1)),
+        accuracy: summary.total_accuracy == null ? null : parseFloat(summary.total_accuracy.toFixed(1)),
+        reviews_per_active_day: parseFloat(summary.reviews_per_active_day.toFixed(1)),
         current_streak: summary.current_streak,
         longest_streak: summary.longest_streak,
-        cards_learning: summary.cards_learning,
-        cards_mastered: summary.cards_review,
-        cards_relearning: summary.cards_relearning,
-        cards_unseen: summary.cards_unseen,
-        cards_suppressed: summary.cards_suppressed,
         studying_since: summary.first_review_date,
       },
       recent_days: days.map(d => ({
         date: d.date,
         correct: d.correct,
         total: d.total,
-        accuracy: Math.round(d.percentage),
+        accuracy: d.percentage == null ? null : Math.round(d.percentage),
       })),
       breakdown: {
         by_pos: breakdownPos.map(r => ({ slug: r.slug, reviews: r.reviews, accuracy: parseFloat(r.accuracy.toFixed(1)) })),
@@ -240,7 +235,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
     correct: d.correct,
   }))
 
-  const hasData = chartData.length > 0
+  const hasData = days.some(d => d.total > 0)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -267,7 +262,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
 
           {!isLoading && !error && !hasData && (
             <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-              No reviews yet. Come back after your first session!
+              No reviews in the last 5 days.
             </div>
           )}
 
@@ -323,7 +318,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                             {Math.round(Number(value))}% correct
                           </span>
                           <span className="text-muted-foreground text-xs">
-                            {item.payload.correct} / {item.payload.total} cards
+                            {item.payload.correct} / {item.payload.total} reviews
                           </span>
                         </div>
                       )}
@@ -358,6 +353,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                   connectNulls={false}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props
+                    if (payload.percentage == null) return <g key={payload.date} />
                     const color = colorizedDots
                       ? dotColor(payload.percentage, settings?.redThreshold ?? 50, settings?.yellowThreshold ?? 70)
                       : 'white'
@@ -365,6 +361,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
                   }}
                   activeDot={(props: any) => {
                     const { cx, cy, payload } = props
+                    if (payload.percentage == null) return <g key={payload.date} />
                     const color = colorizedDots
                       ? dotColor(payload.percentage, settings?.redThreshold ?? 50, settings?.yellowThreshold ?? 70)
                       : 'white'
@@ -380,7 +377,7 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
           <div className="flex justify-between px-1 pt-1">
             {days.map(d => (
               <div key={d.date} className="flex flex-col items-center gap-0.5">
-                <Percentage value={d.percentage} className="text-xs font-semibold" />
+                {d.percentage == null ? <span>—</span> : <Percentage value={d.percentage} className="text-xs font-semibold" />}
                 <span className="text-xs text-muted-foreground">{formatShortDate(d.date)}</span>
               </div>
             ))}
@@ -406,21 +403,14 @@ export function ReviewHistoryDialog({ open, onOpenChange }: ReviewHistoryDialogP
               <SummaryStat label="Total Reviews" value={summary.total_reviews.toLocaleString()} />
               <SummaryStat label="Cards Reviewed" value={summary.total_cards_reviewed.toLocaleString()} />
               <SummaryStat label="Accuracy" value={
-                <Percentage value={summary.total_accuracy}>{summary.total_accuracy.toFixed(1)}%</Percentage>
+                summary.total_accuracy == null ? '—' : <Percentage value={summary.total_accuracy}>{summary.total_accuracy.toFixed(1)}%</Percentage>
               } />
-              <SummaryStat label="Avg / Day" value={summary.avg_reviews_per_day.toFixed(1)} />
+              <SummaryStat label="Avg / Active Day" value={summary.reviews_per_active_day.toFixed(1)} />
               <SummaryStat label="Current Streak" value={`${summary.current_streak} day${summary.current_streak !== 1 ? 's' : ''}`} />
               <SummaryStat label="Longest Streak" value={`${summary.longest_streak} day${summary.longest_streak !== 1 ? 's' : ''}`} />
-              <SummaryStat label="Learning" value={summary.cards_learning.toLocaleString()} />
-              <SummaryStat label="Mastered" value={summary.cards_review.toLocaleString()} />
-              {summary.cards_relearning > 0 && (
-                <SummaryStat label="Relearning" value={summary.cards_relearning.toLocaleString()} />
-              )}
-              <SummaryStat label="Unseen Cards" value={summary.cards_unseen.toLocaleString()} />
-              <SummaryStat label="Suppressed Cards" value={summary.cards_suppressed.toLocaleString()} />
 
               {summary.first_review_date && (
-                <SummaryStat label="Studying Since" value={formatFirstDate(summary.first_review_date)} />
+                <SummaryStat label="First Review" value={formatFirstDate(summary.first_review_date)} />
               )}
             </div>
           </div>

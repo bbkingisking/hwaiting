@@ -14,9 +14,9 @@ use crate::error::AppError;
 
 use super::time::{
     CORRECT_REVIEW_SQL, COUNTED_REVIEW_SQL, accuracy_percentage, logical_day_start,
-    logical_today_date, parse_flexible_datetime, review_day, sqlite_datetime,
+    logical_today_date, review_day, sqlite_datetime,
 };
-use super::{MASTERED_STATE, ReviewPrefs, review_prefs};
+use super::{ReviewPrefs, review_prefs};
 
 /// Current-streak and longest-streak, from the sorted, deduplicated list of
 /// logical days the user reviewed on and today's own logical date. Split out
@@ -79,14 +79,14 @@ pub struct DayHistory {
     pub total: i64,
     pub correct: i64,
     /// Unrounded accuracy percentage (0–100).
-    pub percentage: f64,
+    pub percentage: Option<f64>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct HistoryResponse {
     /// Rolling 5-day (today + 4 back) per-day review counts, for the small history chart.
     pub timeseries: Vec<DayHistory>,
-    /// All-time aggregate + current FSRS state distribution + streaks.
+    /// All-time review aggregates and streaks; first exposures are excluded.
     pub summary: HistorySummary,
     /// All-time accuracy broken down by part-of-speech and by origin type.
     pub breakdown: HistoryBreakdownResponse,
@@ -96,13 +96,8 @@ pub struct HistoryResponse {
 pub struct HistorySummary {
     pub total_reviews: i64,
     pub total_cards_reviewed: i64,
-    pub cards_learning: i64,
-    pub cards_review: i64,
-    pub cards_relearning: i64,
-    pub cards_unseen: i64,
-    pub cards_suppressed: i64,
-    pub total_accuracy: f64,
-    pub avg_reviews_per_day: f64,
+    pub total_accuracy: Option<f64>,
+    pub reviews_per_active_day: f64,
     pub first_review_date: Option<String>,
     pub current_streak: i64,
     pub longest_streak: i64,
@@ -228,13 +223,18 @@ async fn query_timeseries_at<Tz: TimeZone>(
         counts.0 += row.get::<i64, _>("total");
         counts.1 += row.get::<i64, _>("correct");
     }
+    let today = logical_today_date(now.naive_local(), day_boundary_hour);
+    for offset in 0..5 {
+        days.entry(today - chrono::Duration::days(offset))
+            .or_insert((0, 0));
+    }
     Ok(days
         .into_iter()
         .map(|(day, (total, correct))| DayHistory {
             date: day.to_string(),
             total,
             correct,
-            percentage: accuracy_percentage(correct, total).unwrap_or(0.0),
+            percentage: accuracy_percentage(correct, total),
         })
         .collect())
 }
@@ -245,9 +245,9 @@ async fn query_review_dates<Tz: TimeZone>(
     day_boundary_hour: i64,
     zone: &Tz,
 ) -> Result<Vec<chrono::NaiveDate>, AppError> {
-    let timestamps = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT reviewed_at FROM review_history WHERE user_id = ?",
-    )
+    let timestamps = sqlx::query_scalar::<_, String>(&format!(
+        "SELECT DISTINCT reviewed_at FROM review_history WHERE user_id = ? AND {COUNTED_REVIEW_SQL}"
+    ))
     .bind(user_id)
     .fetch_all(pool)
     .await?;
@@ -267,22 +267,16 @@ async fn query_summary(
     day_boundary_hour: i64,
     zone: &chrono_tz::Tz,
 ) -> Result<HistorySummary, AppError> {
-    // Query 1: Aggregate review stats. Accuracy only counts post-first-exposure
-    // reviews (same rule as the status bar); the volume stats count everything.
+    // All reported review metrics exclude first exposures.
     let stats_row = sqlx::query(&format!(
         r#"
         SELECT
             COUNT(*) AS total_reviews,
             COUNT(DISTINCT card_id) AS total_cards_reviewed,
-            COALESCE(
-                CAST(SUM(CASE WHEN {COUNTED_REVIEW_SQL} AND {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS REAL)
-                / NULLIF(SUM(CASE WHEN {COUNTED_REVIEW_SQL} THEN 1 ELSE 0 END), 0) * 100,
-                0.0
-            ) AS total_accuracy,
-            MIN(reviewed_at) AS first_review_date,
-            COUNT(DISTINCT date(reviewed_at)) AS distinct_days
+            CAST(SUM(CASE WHEN {CORRECT_REVIEW_SQL} THEN 1 ELSE 0 END) AS REAL)
+                / NULLIF(COUNT(*), 0) * 100 AS total_accuracy
         FROM review_history
-        WHERE user_id = ?
+        WHERE user_id = ? AND {COUNTED_REVIEW_SQL}
         "#,
     ))
     .bind(user_id)
@@ -291,74 +285,14 @@ async fn query_summary(
 
     let total_reviews: i64 = stats_row.get("total_reviews");
     let total_cards_reviewed: i64 = stats_row.get("total_cards_reviewed");
-    let total_accuracy: f64 = stats_row.get("total_accuracy");
-    let distinct_days: i64 = stats_row.get("distinct_days");
-    let avg_reviews_per_day = if distinct_days > 0 {
-        total_reviews as f64 / distinct_days as f64
-    } else {
-        0.0
-    };
-
-    // Format first_review_date as YYYY-MM-DD
-    let first_review_raw: Option<String> = stats_row.get("first_review_date");
-    let first_review_date = first_review_raw.and_then(|s| {
-        parse_flexible_datetime(&s)
-            .ok()
-            .map(|dt| dt.format("%Y-%m-%d").to_string())
-    });
-
-    // Query 2: Cards by current state
-    let state_rows = sqlx::query(
-        r#"
-        SELECT state, COUNT(*) AS cnt
-        FROM cards_states
-        WHERE user_id = ?
-        GROUP BY state
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    let mut cards_learning: i64 = 0;
-    let mut cards_review: i64 = 0;
-    let mut cards_relearning: i64 = 0;
-    for row in &state_rows {
-        let state: String = row.get("state");
-        let cnt: i64 = row.get("cnt");
-        match state.as_str() {
-            "learning" => cards_learning = cnt,
-            MASTERED_STATE => cards_review = cnt,
-            "relearning" => cards_relearning = cnt,
-            _ => {}
-        }
-    }
-
-    // Query 2b: Cards never reviewed by this user (same definition as the
-    // status bar's new count, but ignoring the daily new card limit)
-    let cards_unseen: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM cards c
-        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN users_card_flags ucf ON ucf.card_id = c.id AND ucf.user_id = ?
-        WHERE (cs.last_review IS NULL)
-        AND (ucf.suppressed IS NULL OR ucf.suppressed = 0)
-        "#,
-    )
-    .bind(user_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-
-    let cards_suppressed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users_card_flags WHERE user_id = ? AND suppressed = 1",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-
+    let total_accuracy: Option<f64> = stats_row.get("total_accuracy");
     let dates = query_review_dates(pool, user_id, day_boundary_hour, zone).await?;
+    let reviews_per_active_day = if dates.is_empty() {
+        0.0
+    } else {
+        total_reviews as f64 / dates.len() as f64
+    };
+    let first_review_date = dates.first().map(ToString::to_string);
 
     // Compute today in the user's boundary-adjusted timezone - the same
     // definition `logical_today_start` uses for the rest of the app, so a
@@ -374,13 +308,8 @@ async fn query_summary(
     Ok(HistorySummary {
         total_reviews,
         total_cards_reviewed,
-        cards_learning,
-        cards_review,
-        cards_relearning,
-        cards_unseen,
-        cards_suppressed,
         total_accuracy,
-        avg_reviews_per_day,
+        reviews_per_active_day,
         first_review_date,
         current_streak,
         longest_streak,

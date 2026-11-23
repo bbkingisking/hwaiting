@@ -1,5 +1,5 @@
 use super::*;
-use crate::cards::time::logical_today_start;
+use crate::cards::time::{logical_today_start, parse_flexible_datetime};
 use chrono::NaiveDate;
 
 fn d(s: &str) -> NaiveDate {
@@ -115,10 +115,12 @@ async fn autumn_history_and_streaks_use_historical_offsets() {
         vec![
             ("2026-10-23", 1, 1),
             ("2026-10-24", 3, 2),
-            ("2026-10-25", 1, 1)
+            ("2026-10-25", 1, 1),
+            ("2026-10-26", 0, 0),
+            ("2026-10-27", 0, 0)
         ]
     );
-    assert!((days[1].percentage - 66.66666666666667).abs() < 1e-12);
+    assert!((days[1].percentage.unwrap() - 66.66666666666667).abs() < 1e-12);
     // A window starting before the fall-back must include 4am BST,
     // rather than starting an hour late after subtracting 96 hours.
     let later = parse_flexible_datetime("2026-10-28T12:00:00Z")
@@ -132,14 +134,9 @@ async fn autumn_history_and_streaks_use_historical_offsets() {
     let dates = query_review_dates(&pool, user_id, 4, &zone).await.unwrap();
     assert_eq!(
         dates,
-        vec![
-            d("2026-10-23"),
-            d("2026-10-24"),
-            d("2026-10-25"),
-            d("2026-10-26")
-        ]
+        vec![d("2026-10-23"), d("2026-10-24"), d("2026-10-25")]
     );
-    assert_eq!(compute_streaks(&dates, d("2026-10-26")), (4, 4));
+    assert_eq!(compute_streaks(&dates, d("2026-10-26")), (0, 3));
 }
 
 #[tokio::test]
@@ -162,7 +159,16 @@ async fn spring_history_window_starts_at_local_boundary() {
         .iter()
         .map(|day| (day.date.as_str(), day.total))
         .collect();
-    assert_eq!(counts, vec![("2026-03-28", 1), ("2026-03-29", 1)]);
+    assert_eq!(
+        counts,
+        vec![
+            ("2026-03-28", 1),
+            ("2026-03-29", 1),
+            ("2026-03-30", 0),
+            ("2026-03-31", 0),
+            ("2026-04-01", 0)
+        ]
+    );
 }
 
 #[tokio::test]
@@ -194,9 +200,14 @@ async fn stats_use_each_users_saved_timezone() {
             .await
             .unwrap()
             .0;
-        assert_eq!(history.timeseries.len(), 1);
+        assert_eq!(history.timeseries.len(), 5);
         assert_eq!(
-            history.timeseries[0].date,
+            history
+                .timeseries
+                .iter()
+                .find(|day| day.total > 0)
+                .unwrap()
+                .date,
             review_day(&review_at, 4, &zone).unwrap().to_string()
         );
         assert_eq!(history.summary.current_streak, stats.reviews_today);
@@ -280,47 +291,10 @@ async fn stats_and_history_serialize_unrounded_accuracy() {
     let history_json = serde_json::to_value(history).unwrap();
     for percentage in [
         &stats_json["percentage"],
-        &history_json["timeseries"][0]["percentage"],
+        &history_json["timeseries"][4]["percentage"],
     ] {
         assert!((percentage.as_f64().unwrap() - 88.88888888888889).abs() < 1e-12);
     }
-}
-
-#[tokio::test]
-async fn history_counts_only_the_users_currently_suppressed_cards() {
-    let pool = test_pool().await;
-    let user_id = test_user(&pool).await;
-    let other_user_id = test_user(&pool).await;
-
-    let history = get_history(State(pool.clone()), crate::auth::AuthUser(user_id))
-        .await
-        .unwrap()
-        .0;
-    assert_eq!(history.summary.cards_suppressed, 0);
-
-    // Suppression includes both reviewed and unseen cards, and excludes
-    // cards that were unsuppressed or belong to another user.
-    insert_review(&pool, user_id, 1, "good", "review", "2026-03-15 12:00:00").await;
-    for (owner, card_id, suppressed) in [
-        (user_id, 1, 1),
-        (user_id, 2, 1),
-        (user_id, 3, 0),
-        (other_user_id, 3, 1),
-    ] {
-        sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, ?, ?)")
-            .bind(owner)
-            .bind(card_id)
-            .bind(suppressed)
-            .execute(&pool)
-            .await
-            .unwrap();
-    }
-
-    let history = get_history(State(pool.clone()), crate::auth::AuthUser(user_id))
-        .await
-        .unwrap()
-        .0;
-    assert_eq!(history.summary.cards_suppressed, 2);
 }
 
 #[tokio::test]
@@ -346,7 +320,7 @@ async fn history_does_not_panic_for_a_user_with_cards_states_but_no_review_histo
         .0;
 
     assert_eq!(history.summary.total_reviews, 0);
-    assert_eq!(history.summary.total_accuracy, 0.0);
+    assert_eq!(history.summary.total_accuracy, None);
 }
 
 #[tokio::test]
@@ -362,4 +336,39 @@ async fn history_breakdowns_return_slugs_without_label_tables() {
     assert_eq!(breakdown["by_pos"][0]["slug"], "bound-noun");
     assert_eq!(breakdown["by_origin"][0]["slug"], "native-korean");
     assert!(breakdown["by_pos"][0].get("label").is_none());
+}
+
+#[tokio::test]
+async fn first_views_do_not_count_and_summary_uses_logical_days() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    insert_review(&pool, user, 1, "good", "learning", "2026-03-01 12:00:00").await;
+    let empty = get_history(State(pool.clone()), crate::auth::AuthUser(user))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(empty.summary.total_reviews, 0);
+    assert_eq!(empty.summary.total_cards_reviewed, 0);
+    assert_eq!(empty.summary.total_accuracy, None);
+    assert_eq!(empty.summary.first_review_date, None);
+    assert_eq!(empty.summary.longest_streak, 0);
+    assert_eq!(empty.timeseries.len(), 5);
+    assert!(
+        empty
+            .timeseries
+            .iter()
+            .all(|day| day.total == 0 && day.percentage.is_none())
+    );
+    let json = serde_json::to_value(&empty).unwrap();
+    assert!(json["summary"].get("cards_learning").is_none());
+    insert_review(&pool, user, 1, "good", "review", "2026-03-15 23:30:00").await;
+    insert_review(&pool, user, 1, "again", "relearning", "2026-03-16 02:00:00").await;
+    let summary = query_summary(&pool, user, 4, &chrono_tz::UTC)
+        .await
+        .unwrap();
+    assert_eq!(summary.total_reviews, 2);
+    assert_eq!(summary.total_cards_reviewed, 1);
+    assert_eq!(summary.total_accuracy, Some(50.0));
+    assert_eq!(summary.reviews_per_active_day, 2.0);
+    assert_eq!(summary.first_review_date.as_deref(), Some("2026-03-15"));
 }
