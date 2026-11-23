@@ -253,7 +253,7 @@ type HistoryResponse = Schemas.HistoryResponse
 // getHistoryBreakdown) for data the stats page always fetched together;
 // the backend now runs all three queries concurrently behind one endpoint.
 export async function getHistory(): Promise<HistoryResponse> {
-  const url = `${apiBase()}/api/reviews/history`
+  const url = `${apiBase()}/api/stats/history`
   return fetchWithAuth(url)
 }
 

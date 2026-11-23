@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
             put(events::mutations::unsuppress_card),
         )
         .route("/stats/today", get(cards::get_today_stats))
-        .route("/reviews/history", get(cards::get_history))
+        .route("/stats/history", get(cards::get_history))
         .route(
             "/reviews/fsrs-parameters",
             post(events::mutations::optimize_fsrs),

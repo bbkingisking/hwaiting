@@ -1491,7 +1491,7 @@ export type GetHistoryData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/reviews/history';
+    url: '/api/stats/history';
 };
 
 export type GetHistoryErrors = {

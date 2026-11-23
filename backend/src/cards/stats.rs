@@ -474,14 +474,14 @@ async fn query_breakdown(
 
 #[utoipa::path(
     get,
-    path = "/api/reviews/history",
+    path = "/api/stats/history",
     description = "Return aggregated review history: daily counts, all-time totals and streaks, and accuracy by part of speech and word origin. Daily groupings use the user's study timezone and day-boundary hour; individual review records are available through data export.",
     responses(
         (status = 200, description = "Aggregated history: daily counts, all-time summary and streaks, and POS/origin accuracy; not individual review records", body = HistoryResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "reviews"
+    tag = "stats"
 )]
 pub async fn get_history(
     State(pool): State<SqlitePool>,

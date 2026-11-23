@@ -150,7 +150,7 @@ impl Modify for SecurityAddon {
         (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password \
             or passkey (WebAuthn) - two independent ways to reach the same JWT"),
         (name = "cards", description = "Card languages, feedback, and suppression"),
-        (name = "reviews", description = "Review queue, prompt freshness, answer submission, scheduling, and statistics"),
+        (name = "reviews", description = "Review queue, prompt freshness, answer submission, and scheduling"),
         (name = "stats", description = "Study activity statistics"),
         (name = "drills", description = "Practice activities outside scheduled reviews"),
         (name = "user", description = "Profile, settings, data export/import"),
