@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    error::AppJson,
+    error::{AppJson, AppPath},
     test_support::{test_pool, test_user},
 };
 use axum::response::IntoResponse;
@@ -107,7 +107,6 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
         .fetch_one(&pool).await.unwrap();
     let _ = mutations::check_answer(
         State(state.clone()),
-        AppPath(1),
         AuthUser(user),
         HeaderMap::new(),
         AppJson(crate::cards::CheckRequest {
@@ -128,14 +127,17 @@ async fn review_notifies_after_commit_and_stale_writes_emit_nothing() {
         serde_json::to_value(event).unwrap(),
         serde_json::json!({"type": "card-mutated", "card_id": 1})
     );
-    let Json(card) = card_state(State(pool), AuthUser(user), AppPath(1))
-        .await
-        .unwrap();
-    assert_eq!(card.review_revision, 1);
+    let revision: i64 = sqlx::query_scalar(
+        "SELECT review_revision FROM cards_states WHERE user_id = ? AND card_id = 1",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(revision, 1);
     assert!(
         mutations::check_answer(
             State(state),
-            AppPath(1),
             AuthUser(user),
             HeaderMap::new(),
             AppJson(crate::cards::CheckRequest {
@@ -170,13 +172,14 @@ async fn suppression_settings_and_import_emit_single_scoped_events() {
         sub.receiver.as_mut().unwrap().recv().await.unwrap(),
         Notification::CardMutated { card_id: 1, .. }
     ));
-    assert!(
-        card_state(State(pool.clone()), AuthUser(user), AppPath(1))
-            .await
-            .unwrap()
-            .0
-            .suppressed
-    );
+    let suppressed: bool = sqlx::query_scalar(
+        "SELECT suppressed FROM users_card_flags WHERE user_id = ? AND card_id = 1",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(suppressed);
     let _ = mutations::unsuppress_card(
         State(state.clone()),
         AppPath(1),
@@ -258,11 +261,9 @@ async fn shared_edit_advances_content_revision_and_notifies_other_users() {
         sub.receiver.as_mut().unwrap().recv().await.unwrap(),
         Notification::CardMutated { card_id: 1, .. }
     ));
-    let card = card_state(State(pool), AuthUser(admin), AppPath(1))
+    let revision: i64 = sqlx::query_scalar("SELECT content_revision FROM cards WHERE id = 1")
+        .fetch_one(&pool)
         .await
-        .unwrap()
-        .0;
-    assert_eq!(card.content_revision, 1);
-    let json = serde_json::to_value(card).unwrap();
-    assert!(json.get("target").is_none());
+        .unwrap();
+    assert_eq!(revision, 1);
 }

@@ -66,7 +66,6 @@ impl Modify for SecurityAddon {
     ),
     paths(
         crate::events::subscribe,
-        crate::events::card_state,
         crate::passkey::capabilities,
         crate::auth::login,
         crate::auth::signup,
@@ -108,7 +107,6 @@ impl Modify for SecurityAddon {
     ),
     components(schemas(
         crate::events::Notification,
-        crate::events::CardState,
         crate::error::ErrorResponse,
         crate::error::StaleAnswerResponse,
         crate::auth::LoginRequest,
@@ -151,7 +149,9 @@ impl Modify for SecurityAddon {
     tags(
         (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password \
             or passkey (WebAuthn) - two independent ways to reach the same JWT"),
-        (name = "cards", description = "Review flow, FSRS scheduling, stats"),
+        (name = "cards", description = "Card languages, feedback, and suppression"),
+        (name = "reviews", description = "Review queue, prompt freshness, answer submission, scheduling, and statistics"),
+        (name = "drills", description = "Practice activities outside scheduled reviews"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),
         (name = "misc", description = "Health check"),

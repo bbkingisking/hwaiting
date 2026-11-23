@@ -3,7 +3,7 @@ use crate::test_support::{test_pool, test_review_user as test_user};
 use crate::{
     auth::AuthUser,
     cards,
-    error::{AppJson, AppPath, AppQuery},
+    error::{AppJson, AppQuery},
     export_import, user,
 };
 use axum::extract::State;
@@ -119,7 +119,6 @@ async fn stats(pool: &SqlitePool, uid: i64) -> Value {
 async fn review(pool: &SqlitePool, uid: i64, answer: &str, revision: i64) {
     let _ = cards::check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(uid),
         AppJson(cards::CheckRequest {
             answer: answer.into(),

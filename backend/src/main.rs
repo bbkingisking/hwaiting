@@ -91,7 +91,6 @@ async fn main() -> anyhow::Result<()> {
     // Build API routes
     let api_routes = Router::new()
         .route("/events", get(events::subscribe))
-        .route("/cards/{card_id}/state", get(events::card_state))
         .route("/capabilities", get(passkey::capabilities))
         .route("/auth/login", post(auth::login))
         .route("/auth/signup", post(auth::signup))
@@ -107,35 +106,35 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/passkey/login/start", post(passkey::login_start))
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
         .route(
-            "/cards/translation-languages",
+            "/cards/languages",
             get(translation_language::available_translation_languages),
         )
-        .route("/cards/queue", get(cards::get_review_queue))
-        .route("/cards/validate", post(cards::validate_card_attempt))
-        .route("/admin/grammar-patterns", get(cards::list_grammar_patterns))
+        .route("/reviews/queue", get(cards::get_review_queue))
         .route(
-            "/cards/{card_id}/check",
-            post(events::mutations::check_answer),
+            "/reviews/check-freshness",
+            post(cards::validate_card_attempt),
         )
+        .route("/admin/grammar-patterns", get(cards::list_grammar_patterns))
+        .route("/reviews/answer", post(events::mutations::check_answer))
         .route("/cards/{card_id}/comment", post(cards::comment_on_card))
         .route(
             "/cards/{card_id}/suppress",
             put(events::mutations::suppress_card),
         )
         .route("/cards/suppressed", get(cards::list_suppressed_cards))
-        .route("/cards/hanja-drill", get(cards::get_hanja_drill))
+        .route("/drills/hanja", get(cards::get_hanja_drill))
         .route(
             "/cards/{card_id}/unsuppress",
             put(events::mutations::unsuppress_card),
         )
-        .route("/cards/stats", get(cards::get_stats))
-        .route("/cards/history", get(cards::get_history))
+        .route("/reviews/stats", get(cards::get_stats))
+        .route("/reviews/history", get(cards::get_history))
         .route(
-            "/cards/fsrs-parameters",
+            "/reviews/fsrs-parameters",
             post(events::mutations::optimize_fsrs),
         )
         .route(
-            "/cards/fsrs-parameters",
+            "/reviews/fsrs-parameters",
             delete(events::mutations::reset_fsrs_parameters),
         )
         .route("/user/me", get(user::get_profile))

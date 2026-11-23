@@ -32,7 +32,7 @@ export type HanjaHint = Api.HanjaHint
 // translations, but nothing `target` could be inferred from.
 export type ReviewQueueCard = Api.ReviewQueueCard
 
-// Disclosed by POST /api/cards/{id}/check once an attempt has been graded:
+// Disclosed by POST /api/reviews/answer once an attempt has been graded:
 // the answer, the word's citation form, the hanja reading/gloss, and the
 // grammar pattern's conjugation endings - everything ReviewQueueCard withheld.
 //

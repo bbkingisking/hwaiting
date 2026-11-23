@@ -368,7 +368,7 @@ function AppContent() {
       const startedAt = performance.now()
       // CheckResponse is CardReveal flattened with `correct` (see
       // #[serde(flatten)] on cards::CheckResponse) - split them back apart.
-      const { correct, ...reveal } = await checkAnswer(cardId, card.review.attempt_token, answer)
+      const { correct, ...reveal } = await checkAnswer(card.review.attempt_token, answer)
       if (submission !== submissionVersion.current) return null
       acceptedToken.current = card.review.attempt_token
       ++queueGeneration.current

@@ -118,7 +118,7 @@ fn leases_dir() -> io::Result<PathBuf> {
 /// Claims `card_id` for this process, so that concurrent `hwaiting-agent`
 /// invocations under the same account (see README: multiple agents can run
 /// against one dummy user at once) don't both get handed the card from
-/// `GET /api/cards/queue` before either has answered it - the endpoint is a
+/// `GET /api/reviews/queue` before either has answered it - the endpoint is a
 /// pure read with no server-side notion of "already shown to someone".
 ///
 /// The claim is a `create_new` file: SQLite isn't involved, but the

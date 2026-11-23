@@ -376,7 +376,6 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
         .fetch_one(&pool).await.unwrap();
     let _ = super::super::check::check_answer(
         State(pool.clone()),
-        crate::error::AppPath(1),
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer: answer.clone(),
@@ -394,7 +393,6 @@ async fn prompts_return_current_revision_and_due_again_accepts_it() {
     );
     let _ = super::super::check::check_answer(
         State(pool.clone()),
-        crate::error::AppPath(1),
         AuthUser(user_id),
         crate::error::AppJson(super::super::check::CheckRequest {
             answer,
@@ -441,7 +439,6 @@ async fn repeated_reviews_keep_the_cards_single_sentence() {
         );
         let result = super::super::check::check_answer(
             State(pool.clone()),
-            crate::error::AppPath(1),
             AuthUser(user_id),
             crate::error::AppJson(super::super::check::CheckRequest {
                 answer: answer.into(),
@@ -458,7 +455,7 @@ async fn repeated_reviews_keep_the_cards_single_sentence() {
         )
         .await
         .unwrap();
-        assert!(result.0.correct);
+        assert!(result.1.0.correct);
         sqlx::query("UPDATE cards_states SET due_at = 0 WHERE user_id = ? AND card_id = 1")
             .bind(user_id)
             .execute(&pool)

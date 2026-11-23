@@ -17,14 +17,12 @@ use axum::{
 
 pub async fn check_answer(
     State(state): State<AppState>,
-    path: AppPath<i64>,
     auth: AuthUser,
     headers: HeaderMap,
     payload: AppJson<cards::CheckRequest>,
 ) -> Result<Json<cards::CheckResponse>, AppError> {
     let user_id = auth.0;
-    let card_id = path.0;
-    let response = cards::check_answer(State(state.pool), path, auth, payload).await?;
+    let (card_id, response) = cards::check_answer(State(state.pool), auth, payload).await?;
     state.events.publish(Some(user_id), Some(card_id), &headers);
     Ok(response)
 }

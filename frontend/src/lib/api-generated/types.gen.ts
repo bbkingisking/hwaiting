@@ -171,7 +171,7 @@ export type CardInflectionsResponse = {
 };
 
 /**
- * Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
+ * Disclosed only once `POST /api/reviews/answer` has graded an attempt:
  * `CardBack` plus the fields that are genuinely review-flow-specific
  * rather than properties of the card itself - `hanja_hints` depends on the
  * requesting user's review history (see `hanja_hints_on_connection`), and
@@ -196,15 +196,11 @@ export type CardReveal = CardBack & {
     hanja_hints?: Array<HanjaHint> | null;
 };
 
-export type CardState = {
-    content_revision: number;
-    exists: boolean;
-    review_revision: number;
-    suppressed: boolean;
-};
-
 export type CheckRequest = {
     answer: string;
+    /**
+     * Signed prompt identity returned by the review queue; no separate card ID is needed.
+     */
     attempt_token: string;
 };
 
@@ -633,10 +629,16 @@ export type UserSettingsExport = UserSettingsCore & {
 };
 
 export type ValidateRequest = {
+    /**
+     * Signed prompt identity returned by the review queue; includes the card and revisions.
+     */
     attempt_token: string;
 };
 
 export type ValidateResponse = {
+    /**
+     * True if the prompt still matches current content and review state and is available.
+     */
     valid: boolean;
 };
 
@@ -1071,189 +1073,18 @@ export type CapabilitiesResponses = {
 
 export type CapabilitiesResponse = CapabilitiesResponses[keyof CapabilitiesResponses];
 
-export type ResetFsrsParametersData = {
-    body?: never;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path?: never;
-    query?: never;
-    url: '/api/cards/fsrs-parameters';
-};
-
-export type ResetFsrsParametersErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type ResetFsrsParametersError = ResetFsrsParametersErrors[keyof ResetFsrsParametersErrors];
-
-export type ResetFsrsParametersResponses = {
-    /**
-     * FSRS parameters reset to library defaults
-     */
-    204: void;
-};
-
-export type ResetFsrsParametersResponse = ResetFsrsParametersResponses[keyof ResetFsrsParametersResponses];
-
-export type OptimizeFsrsData = {
-    body?: never;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path?: never;
-    query?: never;
-    url: '/api/cards/fsrs-parameters';
-};
-
-export type OptimizeFsrsErrors = {
-    /**
-     * No/insufficient review history to optimize from
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type OptimizeFsrsError = OptimizeFsrsErrors[keyof OptimizeFsrsErrors];
-
-export type OptimizeFsrsResponses = {
-    /**
-     * FSRS parameters optimized from full review history
-     */
-    200: OptimizeFsrsResponse;
-};
-
-export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResponses];
-
-export type GetHanjaDrillData = {
+export type AvailableTranslationLanguagesData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/cards/hanja-drill';
+    url: '/api/cards/languages';
 };
 
-export type GetHanjaDrillErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
+export type AvailableTranslationLanguagesResponses = {
+    200: Array<AvailableTranslationLanguage>;
 };
 
-export type GetHanjaDrillError = GetHanjaDrillErrors[keyof GetHanjaDrillErrors];
-
-export type GetHanjaDrillResponses = {
-    /**
-     * A random hanja drawn from the user's mastered cards, or null if none exist yet
-     */
-    200: HanjaDrillResponse;
-};
-
-export type GetHanjaDrillResponse = GetHanjaDrillResponses[keyof GetHanjaDrillResponses];
-
-export type GetHistoryData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/cards/history';
-};
-
-export type GetHistoryErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type GetHistoryError = GetHistoryErrors[keyof GetHistoryErrors];
-
-export type GetHistoryResponses = {
-    /**
-     * Time series, all-time summary + streaks, and POS/origin accuracy breakdown, run concurrently
-     */
-    200: HistoryResponse;
-};
-
-export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
-
-export type GetReviewQueueData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Maximum number of cards. Omit to return the full currently eligible queue.
-         * The daily new-card allowance applies independently of this response limit.
-         */
-        limit?: number;
-    };
-    url: '/api/cards/queue';
-};
-
-export type GetReviewQueueErrors = {
-    /**
-     * Invalid batch size or preferred translation language not configured
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
-
-export type GetReviewQueueResponses = {
-    /**
-     * Ordered review queue snapshot
-     */
-    200: ReviewQueueResponse;
-};
-
-export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
-
-export type GetStatsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/cards/stats';
-};
-
-export type GetStatsErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-};
-
-export type GetStatsError = GetStatsErrors[keyof GetStatsErrors];
-
-export type GetStatsResponses = {
-    /**
-     * Status-bar summary stats
-     */
-    200: StatsResponse;
-};
-
-export type GetStatsResponse = GetStatsResponses[keyof GetStatsResponses];
+export type AvailableTranslationLanguagesResponse = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];
 
 export type ListSuppressedCardsData = {
     body?: never;
@@ -1279,118 +1110,6 @@ export type ListSuppressedCardsResponses = {
 };
 
 export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof ListSuppressedCardsResponses];
-
-export type AvailableTranslationLanguagesData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/cards/translation-languages';
-};
-
-export type AvailableTranslationLanguagesResponses = {
-    200: Array<AvailableTranslationLanguage>;
-};
-
-export type AvailableTranslationLanguagesResponse = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];
-
-export type ValidateCardAttemptData = {
-    body: ValidateRequest;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path?: never;
-    query?: never;
-    url: '/api/cards/validate';
-};
-
-export type ValidateCardAttemptErrors = {
-    /**
-     * Malformed request body
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Operational failure
-     */
-    500: ErrorResponse;
-};
-
-export type ValidateCardAttemptError = ValidateCardAttemptErrors[keyof ValidateCardAttemptErrors];
-
-export type ValidateCardAttemptResponses = {
-    /**
-     * Whether the token still matches an available prompt
-     */
-    200: ValidateResponse;
-};
-
-export type ValidateCardAttemptResponse = ValidateCardAttemptResponses[keyof ValidateCardAttemptResponses];
-
-export type CheckAnswerData = {
-    body: CheckRequest;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path: {
-        /**
-         * Card ID
-         */
-        card_id: number;
-    };
-    query?: never;
-    url: '/api/cards/{card_id}/check';
-};
-
-export type CheckAnswerErrors = {
-    /**
-     * Invalid request or invalid, forged, wrong-user, or wrong-card attempt token
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Card is suppressed
-     */
-    403: ErrorResponse;
-    /**
-     * Card doesn't exist
-     */
-    404: ErrorResponse;
-    /**
-     * Review state, selected sentence, or card content changed since the card was fetched
-     */
-    409: StaleAnswerResponse;
-};
-
-export type CheckAnswerError = CheckAnswerErrors[keyof CheckAnswerErrors];
-
-export type CheckAnswerResponses = {
-    /**
-     * Answer graded, FSRS state updated, secret fields revealed
-     */
-    200: CheckResponse;
-};
-
-export type CheckAnswerResponse = CheckAnswerResponses[keyof CheckAnswerResponses];
 
 export type CommentOnCardData = {
     body: CommentRequest;
@@ -1435,31 +1154,6 @@ export type CommentOnCardResponses = {
 };
 
 export type CommentOnCardResponse = CommentOnCardResponses[keyof CommentOnCardResponses];
-
-export type CardStateData = {
-    body?: never;
-    path: {
-        card_id: number;
-    };
-    query?: never;
-    url: '/api/cards/{card_id}/state';
-};
-
-export type CardStateErrors = {
-    /**
-     * Missing authentication
-     */
-    401: unknown;
-};
-
-export type CardStateResponses = {
-    /**
-     * Current prompt validity, without answer fields
-     */
-    200: CardState;
-};
-
-export type CardStateResponse = CardStateResponses[keyof CardStateResponses];
 
 export type SuppressCardData = {
     body?: never;
@@ -1545,6 +1239,31 @@ export type UnsuppressCardResponses = {
 
 export type UnsuppressCardResponse = UnsuppressCardResponses[keyof UnsuppressCardResponses];
 
+export type GetHanjaDrillData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/drills/hanja';
+};
+
+export type GetHanjaDrillErrors = {
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type GetHanjaDrillError = GetHanjaDrillErrors[keyof GetHanjaDrillErrors];
+
+export type GetHanjaDrillResponses = {
+    /**
+     * A random hanja drawn from the user's mastered cards, or null if none exist yet
+     */
+    200: HanjaDrillResponse;
+};
+
+export type GetHanjaDrillResponse = GetHanjaDrillResponses[keyof GetHanjaDrillResponses];
+
 export type SubscribeData = {
     body?: never;
     path?: never;
@@ -1583,6 +1302,259 @@ export type HealthCheckResponses = {
 };
 
 export type HealthCheckResponse = HealthCheckResponses[keyof HealthCheckResponses];
+
+export type CheckAnswerData = {
+    body: CheckRequest;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/reviews/answer';
+};
+
+export type CheckAnswerErrors = {
+    /**
+     * Invalid request or invalid, forged, or wrong-user attempt token
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Card is suppressed
+     */
+    403: ErrorResponse;
+    /**
+     * Card doesn't exist
+     */
+    404: ErrorResponse;
+    /**
+     * Review state, selected sentence, or card content changed since the card was fetched
+     */
+    409: StaleAnswerResponse;
+};
+
+export type CheckAnswerError = CheckAnswerErrors[keyof CheckAnswerErrors];
+
+export type CheckAnswerResponses = {
+    /**
+     * Answer graded, FSRS state updated, secret fields revealed
+     */
+    200: CheckResponse;
+};
+
+export type CheckAnswerResponse = CheckAnswerResponses[keyof CheckAnswerResponses];
+
+export type ValidateCardAttemptData = {
+    body: ValidateRequest;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/reviews/check-freshness';
+};
+
+export type ValidateCardAttemptErrors = {
+    /**
+     * Malformed request body
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Operational failure
+     */
+    500: ErrorResponse;
+};
+
+export type ValidateCardAttemptError = ValidateCardAttemptErrors[keyof ValidateCardAttemptErrors];
+
+export type ValidateCardAttemptResponses = {
+    /**
+     * Whether the token still matches an available prompt
+     */
+    200: ValidateResponse;
+};
+
+export type ValidateCardAttemptResponse = ValidateCardAttemptResponses[keyof ValidateCardAttemptResponses];
+
+export type ResetFsrsParametersData = {
+    body?: never;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/reviews/fsrs-parameters';
+};
+
+export type ResetFsrsParametersErrors = {
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type ResetFsrsParametersError = ResetFsrsParametersErrors[keyof ResetFsrsParametersErrors];
+
+export type ResetFsrsParametersResponses = {
+    /**
+     * FSRS parameters reset to library defaults
+     */
+    204: void;
+};
+
+export type ResetFsrsParametersResponse = ResetFsrsParametersResponses[keyof ResetFsrsParametersResponses];
+
+export type OptimizeFsrsData = {
+    body?: never;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/reviews/fsrs-parameters';
+};
+
+export type OptimizeFsrsErrors = {
+    /**
+     * No/insufficient review history to optimize from
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type OptimizeFsrsError = OptimizeFsrsErrors[keyof OptimizeFsrsErrors];
+
+export type OptimizeFsrsResponses = {
+    /**
+     * FSRS parameters optimized from full review history
+     */
+    200: OptimizeFsrsResponse;
+};
+
+export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResponses];
+
+export type GetHistoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/reviews/history';
+};
+
+export type GetHistoryErrors = {
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type GetHistoryError = GetHistoryErrors[keyof GetHistoryErrors];
+
+export type GetHistoryResponses = {
+    /**
+     * Aggregated history: daily counts, all-time summary and streaks, and POS/origin accuracy; not individual review records
+     */
+    200: HistoryResponse;
+};
+
+export type GetHistoryResponse = GetHistoryResponses[keyof GetHistoryResponses];
+
+export type GetReviewQueueData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum number of cards. Omit to return the full currently eligible queue.
+         * The daily new-card allowance applies independently of this response limit.
+         */
+        limit?: number;
+    };
+    url: '/api/reviews/queue';
+};
+
+export type GetReviewQueueErrors = {
+    /**
+     * Invalid batch size or preferred translation language not configured
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
+
+export type GetReviewQueueResponses = {
+    /**
+     * Ordered review queue snapshot
+     */
+    200: ReviewQueueResponse;
+};
+
+export type GetReviewQueueResponse = GetReviewQueueResponses[keyof GetReviewQueueResponses];
+
+export type GetStatsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/reviews/stats';
+};
+
+export type GetStatsErrors = {
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+};
+
+export type GetStatsError = GetStatsErrors[keyof GetStatsErrors];
+
+export type GetStatsResponses = {
+    /**
+     * Current new/due counts and next due time, plus today’s review counts and accuracy
+     */
+    200: StatsResponse;
+};
+
+export type GetStatsResponse = GetStatsResponses[keyof GetStatsResponses];
 
 export type ExportDataData = {
     body?: never;

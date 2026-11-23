@@ -324,7 +324,7 @@ async fn history_counts_only_the_users_currently_suppressed_cards() {
 
 #[tokio::test]
 async fn history_does_not_panic_for_a_user_with_cards_states_but_no_review_history() {
-    // The exact shape of the fixed "panic in /api/cards/history for
+    // The exact shape of the fixed "panic in /api/reviews/history for
     // users with no graded reviews" bug: a cards_states row with no
     // matching review_history at all (e.g. from a restored backup, or
     // state seeded directly).

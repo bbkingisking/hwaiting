@@ -1,4 +1,4 @@
-//! User-level FSRS parameter management: `POST /api/cards/fsrs-parameters`
+//! User-level FSRS parameter management: `POST /api/reviews/fsrs-parameters`
 //! fits parameters to the user's own review history via `fsrs::compute_parameters`;
 //! `DELETE` on the same path reverts to library defaults. Distinct from
 //! [`super::check`], which applies whichever parameters are currently
@@ -85,14 +85,14 @@ fn build_fsrs_items(rows: &[(i64, String, String)]) -> Result<Vec<FSRSItem>, App
 // Optimize FSRS parameters from user's review history
 #[utoipa::path(
     post,
-    path = "/api/cards/fsrs-parameters",
+    path = "/api/reviews/fsrs-parameters",
     responses(
         (status = 200, description = "FSRS parameters optimized from full review history", body = OptimizeFsrsResponse),
         (status = 400, description = "No/insufficient review history to optimize from", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn optimize_fsrs(
     State(pool): State<SqlitePool>,
@@ -185,13 +185,13 @@ pub async fn optimize_fsrs(
 // Reset FSRS parameters to defaults
 #[utoipa::path(
     delete,
-    path = "/api/cards/fsrs-parameters",
+    path = "/api/reviews/fsrs-parameters",
     responses(
         (status = 204, description = "FSRS parameters reset to library defaults"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn reset_fsrs_parameters(
     State(pool): State<SqlitePool>,

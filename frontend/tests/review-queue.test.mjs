@@ -106,7 +106,7 @@ test('a queue change during a queue request discards its stale response', async 
   let completeOldRead
   let reads = 0
   respond = url => {
-    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
+    if (!url.includes('/api/reviews/queue')) return Response.json({ success: true })
     reads++
     if (reads === 1) return new Promise(resolve => { completeOldRead = resolve })
     return Response.json({ card: { card_id: 42 } })
@@ -117,8 +117,8 @@ test('a queue change during a queue request discards its stale response', async 
 
   assert.deepEqual(await nextCard, { card: { card_id: 42 } })
   assert.equal(reads, 2)
-  assert.ok(requests.filter(request => request.url.includes('/api/cards/queue'))
-    .every(request => request.url.endsWith('/api/cards/queue?limit=2')))
+  assert.ok(requests.filter(request => request.url.includes('/api/reviews/queue'))
+    .every(request => request.url.endsWith('/api/reviews/queue?limit=2')))
 })
 
 test('removing a queue subscription stops further notifications', async () => {
@@ -147,7 +147,7 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
   let finish
   let reads = 0
   respond = url => {
-    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
+    if (!url.includes('/api/reviews/queue')) return Response.json({ success: true })
     reads++
     if (reads === 1) return new Promise(resolve => { finish = resolve })
     return Response.json({ cards: [{ card_id: 8 }], refresh_at: '2026-11-10T04:00:00Z' })
@@ -157,7 +157,7 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
   finish(Response.json({ cards: [{ card_id: 1 }] }))
   assert.deepEqual((await pending).cards, [{ card_id: 8 }])
   assert.equal(reads, 2)
-  assert.ok(requests.filter(r => r.url.includes('/api/cards/queue')).every(r => r.url.endsWith('/api/cards/queue?limit=2')))
+  assert.ok(requests.filter(r => r.url.includes('/api/reviews/queue')).every(r => r.url.endsWith('/api/reviews/queue?limit=2')))
 })
 
 const { reconcileQueue } = await import(moduleUrl(transpile('../src/lib/review-queue.ts')))
@@ -214,7 +214,7 @@ test('a saved L1 change invalidates a queue read started in the previous languag
   let finish
   let reads = 0
   respond = url => {
-    if (!url.includes('/api/cards/queue')) return Response.json({ success: true })
+    if (!url.includes('/api/reviews/queue')) return Response.json({ success: true })
     if (++reads === 1) return new Promise(resolve => { finish = resolve })
     return Response.json({ cards: [{ card: { trans_word: 'chose' } }] })
   }

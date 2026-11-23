@@ -12,20 +12,14 @@
 // Clients resynchronise after reconnecting.
 pub mod mutations;
 
-use crate::{
-    auth::AuthUser,
-    error::{AppError, AppPath},
-    passkey::AppState,
-};
+use crate::{auth::AuthUser, error::AppError, passkey::AppState};
 use axum::{
-    Json,
     extract::State,
     http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
 };
 use futures_util::{Stream, stream};
 use serde::Serialize;
-use sqlx::{Row, SqlitePool};
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -200,53 +194,6 @@ fn notification_stream(
             }
         },
     )
-}
-
-// Prompt validity without answer fields. This does not say whether the card
-// ranks first or would be selected under current queue preferences. Both
-// revisions also travel with next-card responses; content revisions detect
-// edits missed while disconnected.
-#[derive(Serialize, ToSchema)]
-pub struct CardState {
-    pub exists: bool,
-    pub suppressed: bool,
-    pub review_revision: i64,
-    pub content_revision: i64,
-}
-#[utoipa::path(get, path = "/api/cards/{card_id}/state", params(("card_id" = i64, Path)), responses(
-    (status = 200, description = "Current prompt validity, without answer fields", body = CardState),
-    (status = 401, description = "Missing authentication")
-), security(("cookie_auth" = [])), tag = "cards")]
-pub async fn card_state(
-    State(pool): State<SqlitePool>,
-    auth: AuthUser,
-    AppPath(card_id): AppPath<i64>,
-) -> Result<Json<CardState>, AppError> {
-    let row = sqlx::query(
-        "SELECT c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision,
-        COALESCE(f.suppressed, 0) AS suppressed FROM cards c
-        LEFT JOIN cards_states cs ON cs.card_id = c.id AND cs.user_id = ?
-        LEFT JOIN users_card_flags f ON f.card_id = c.id AND f.user_id = ? WHERE c.id = ?",
-    )
-    .bind(auth.0)
-    .bind(auth.0)
-    .bind(card_id)
-    .fetch_optional(&pool)
-    .await?;
-    Ok(Json(match row {
-        Some(row) => CardState {
-            exists: true,
-            suppressed: row.get("suppressed"),
-            review_revision: row.get("review_revision"),
-            content_revision: row.get("content_revision"),
-        },
-        None => CardState {
-            exists: false,
-            suppressed: false,
-            review_revision: 0,
-            content_revision: 0,
-        },
-    }))
 }
 
 #[cfg(test)]

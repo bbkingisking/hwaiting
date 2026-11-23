@@ -71,7 +71,7 @@ fn serve_queue(listener: &TcpListener, limit: usize, cards: &[i64]) {
     let (mut socket, _) = listener.accept().unwrap();
     let (headers, _) = read_request(&mut socket);
     assert!(
-        headers.starts_with(&format!("get /api/cards/queue?limit={limit} ")),
+        headers.starts_with(&format!("get /api/reviews/queue?limit={limit} ")),
         "{headers}"
     );
     assert!(headers.contains("cookie: hwaiting-auth=test-jwt"));
@@ -111,8 +111,8 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
     let server = std::thread::spawn(move || {
         serve_login(&listener);
         for path in [
-            "get /api/cards/queue?limit=1 ",
-            "post /api/cards/991/check ",
+            "get /api/reviews/queue?limit=1 ",
+            "post /api/reviews/answer ",
             "put /api/cards/991/suppress ",
         ] {
             let (mut socket, _) = listener.accept().unwrap();
@@ -123,7 +123,7 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
                 json!({"cards":[{"card":{"card_id":991,"grammar_pattern":{"slug":"realization","name":"Realization","explanation":"Authored content"}},"review":{"attempt_token":"signed-attempt","hanja_hint_words":[]}}],"next_due_at":null,"refresh_at":"2026-11-23T04:00:00Z"})
             } else {
                 assert!(headers.contains("x-requested-with: hwaiting"));
-                if path.contains("check") {
+                if path.contains("answer") {
                     assert_eq!(
                         serde_json::from_slice::<Value>(&body).unwrap(),
                         json!({"answer":"answer","attempt_token":"signed-attempt"})
@@ -182,7 +182,7 @@ fn review_retries_lost_claims_but_stops_when_all_entries_are_already_leased() {
         serve_login(&listener);
         let (mut socket, _) = listener.accept().unwrap();
         let (headers, _) = read_request(&mut socket);
-        assert!(headers.starts_with("get /api/cards/queue?limit=1 "));
+        assert!(headers.starts_with("get /api/reviews/queue?limit=1 "));
         // Take the card after the client has read its leases but before it claims.
         fs::write(
             sibling_directory.join("hwaiting-agent/leases/991.lease"),

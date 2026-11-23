@@ -122,13 +122,13 @@ pub struct HistoryBreakdownResponse {
 // Get statistics
 #[utoipa::path(
     get,
-    path = "/api/cards/stats",
+    path = "/api/reviews/stats",
     responses(
-        (status = 200, description = "Status-bar summary stats", body = StatsResponse),
+        (status = 200, description = "Current new/due counts and next due time, plus today’s review counts and accuracy", body = StatsResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn get_stats(
     State(pool): State<SqlitePool>,
@@ -568,13 +568,13 @@ async fn query_breakdown(
 
 #[utoipa::path(
     get,
-    path = "/api/cards/history",
+    path = "/api/reviews/history",
     responses(
-        (status = 200, description = "Time series, all-time summary + streaks, and POS/origin accuracy breakdown, run concurrently", body = HistoryResponse),
+        (status = 200, description = "Aggregated history: daily counts, all-time summary and streaks, and POS/origin accuracy; not individual review records", body = HistoryResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn get_history(
     State(pool): State<SqlitePool>,

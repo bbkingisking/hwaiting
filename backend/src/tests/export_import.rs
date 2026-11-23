@@ -740,7 +740,6 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
     assert_eq!(state, "new");
     let stale = crate::cards::check_answer(
         State(pool.clone()),
-        crate::error::AppPath(10),
         AuthUser(dest_id),
         AppJson(crate::cards::CheckRequest {
             answer: "test".into(),

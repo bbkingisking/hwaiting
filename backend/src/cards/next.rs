@@ -1,4 +1,4 @@
-//! `GET /api/cards/queue` - selects the next due/new card and shapes it into
+//! `GET /api/reviews/queue` - selects the next due/new card and shapes it into
 //! the pre-answer [`ReviewQueueCard`], withholding everything [`super::CardReveal`]
 //! would give away.
 
@@ -101,13 +101,13 @@ pub struct ReviewQueueQuery {
 }
 
 #[utoipa::path(
-    get, path = "/api/cards/queue", params(ReviewQueueQuery),
+    get, path = "/api/reviews/queue", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
         (status = 400, description = "Invalid batch size or preferred translation language not configured", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse)
     ),
-    security(("cookie_auth" = [])), tag = "cards"
+    security(("cookie_auth" = [])), tag = "reviews"
 )]
 pub async fn get_review_queue(
     State(pool): State<SqlitePool>,

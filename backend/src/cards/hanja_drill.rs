@@ -33,13 +33,13 @@ pub struct HanjaDrillResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/cards/hanja-drill",
+    path = "/api/drills/hanja",
     responses(
         (status = 200, description = "A random hanja drawn from the user's mastered cards, or null if none exist yet", body = HanjaDrillResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "drills"
 )]
 pub async fn get_hanja_drill(
     State(pool): State<SqlitePool>,

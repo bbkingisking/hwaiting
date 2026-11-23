@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::AppPath;
 
 #[test]
 fn exact_match_is_correct() {
@@ -84,7 +85,6 @@ async fn new_card_graded_correct_becomes_learning() {
 
     let response = check_answer(
         State(pool.clone()),
-        AppPath(card_id),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
@@ -95,7 +95,7 @@ async fn new_card_graded_correct_becomes_learning() {
     .await
     .unwrap();
 
-    assert!(response.0.correct);
+    assert!(response.1.0.correct);
 
     let (stability, difficulty, last_review, state) = card_state(&pool, user_id, card_id).await;
     assert_eq!(state.as_deref(), Some("learning"));
@@ -130,7 +130,6 @@ async fn new_card_graded_wrong_is_incorrect_but_still_learning() {
 
     let response = check_answer(
         State(pool.clone()),
-        AppPath(card_id),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
@@ -141,7 +140,7 @@ async fn new_card_graded_wrong_is_incorrect_but_still_learning() {
     .await
     .unwrap();
 
-    assert!(!response.0.correct);
+    assert!(!response.1.0.correct);
 
     // A first-ever review is "learning" regardless of correctness - the
     // rating (again vs. good) only changes the FSRS-scheduled state
@@ -160,7 +159,6 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
     // First review: correct, establishes a memory state.
     let _ = check_answer(
         State(pool.clone()),
-        AppPath(card_id),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
@@ -175,7 +173,6 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
     // demote to "relearning", not stay "learning".
     let response = check_answer(
         State(pool.clone()),
-        AppPath(card_id),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely wrong".to_string(),
@@ -186,7 +183,7 @@ async fn wrong_answer_after_a_review_becomes_relearning() {
     .await
     .unwrap();
 
-    assert!(!response.0.correct);
+    assert!(!response.1.0.correct);
 
     let (_, _, _, state) = card_state(&pool, user_id, card_id).await;
     assert_eq!(state.as_deref(), Some("relearning"));
@@ -227,7 +224,6 @@ async fn existing_row_with_no_last_review_is_treated_as_a_new_card() {
 
     let response = check_answer(
         State(pool.clone()),
-        AppPath(card_id),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target,
@@ -238,7 +234,7 @@ async fn existing_row_with_no_last_review_is_treated_as_a_new_card() {
     .await
     .unwrap();
 
-    assert!(response.0.correct);
+    assert!(response.1.0.correct);
 
     let (stability, _, _, state) = card_state(&pool, user_id, card_id).await;
     assert_eq!(state.as_deref(), Some("learning"));
@@ -261,7 +257,6 @@ async fn stale_answer_preserves_state_and_history() {
     let answer = target_for(&pool, 1).await;
     let _ = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer,
@@ -273,7 +268,6 @@ async fn stale_answer_preserves_state_and_history() {
     let before = card_state(&pool, user_id, 1).await;
     let result = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "wrong".into(),
@@ -314,7 +308,6 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
 
     let stale = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: old_answer,
@@ -340,7 +333,6 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
 
     let fresh = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "답".into(),
@@ -357,8 +349,8 @@ async fn edit_rejects_old_prompt_without_recording_a_review() {
     )
     .await
     .unwrap();
-    assert!(fresh.0.correct);
-    assert_eq!(fresh.0.reveal.back.target, "답");
+    assert!(fresh.1.0.correct);
+    assert_eq!(fresh.1.0.reveal.back.target, "답");
 }
 
 #[tokio::test]
@@ -373,7 +365,6 @@ async fn grading_rejects_a_sentence_the_backend_did_not_select() {
     for sentence_id in [-999, other_sentence] {
         let result = check_answer(
             State(pool.clone()),
-            AppPath(1),
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer: "anything".into(),
@@ -409,7 +400,6 @@ async fn simultaneous_answers_only_record_one_review_per_revision() {
         let submit = || {
             check_answer(
                 State(pool.clone()),
-                AppPath(1),
                 AuthUser(user_id),
                 AppJson(CheckRequest {
                     answer: answer.clone(),
@@ -506,7 +496,6 @@ async fn answer_with_hanja_hints_needs_only_one_available_connection() {
         std::time::Duration::from_secs(2),
         check_answer(
             State(pool.clone()),
-            AppPath(1),
             AuthUser(user_id),
             AppJson(CheckRequest {
                 answer,
@@ -518,6 +507,7 @@ async fn answer_with_hanja_hints_needs_only_one_available_connection() {
     .await
     .expect("answer checking must not acquire a second connection")
     .unwrap()
+    .1
     .0;
     assert!(response.correct);
     assert_eq!(response.reveal.hanja_hints.as_ref().unwrap().len(), 1);
@@ -539,7 +529,6 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
         .unwrap();
     let result = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely incorrect".into(),
@@ -566,7 +555,6 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
         .unwrap();
     let response = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: "definitely incorrect".into(),
@@ -575,7 +563,7 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
     )
     .await
     .unwrap();
-    assert!(!response.0.correct);
+    assert!(!response.1.0.correct);
     assert_eq!(revision_for(&pool, user_id, 1).await, 1);
 }
 
@@ -588,7 +576,6 @@ async fn decomposed_correct_answer_records_a_good_review() {
     assert_ne!(target, decomposed);
     let response = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: decomposed,
@@ -597,6 +584,7 @@ async fn decomposed_correct_answer_records_a_good_review() {
     )
     .await
     .unwrap()
+    .1
     .0;
     assert!(response.correct);
     assert_eq!(response.reveal.back.target, target);
@@ -626,7 +614,6 @@ async fn review_does_not_depend_on_conjugation_matrix() {
         .unwrap();
     let response = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer,
@@ -635,6 +622,7 @@ async fn review_does_not_depend_on_conjugation_matrix() {
     )
     .await
     .unwrap()
+    .1
     .0;
     assert!(response.correct);
     let body = serde_json::to_value(response).unwrap();
@@ -665,7 +653,6 @@ async fn reveal_respects_disabled_hanja_hints() {
         .unwrap();
     let response = check_answer(
         State(pool.clone()),
-        AppPath(1),
         AuthUser(user_id),
         AppJson(CheckRequest {
             answer: target_for(&pool, 1).await,
@@ -674,8 +661,71 @@ async fn reveal_respects_disabled_hanja_hints() {
     )
     .await
     .unwrap()
+    .1
     .0;
     assert!(response.correct);
     assert!(response.reveal.hanja_hints.is_none());
     assert!(serde_json::to_value(response).unwrap()["hanja_hints"].is_null());
+}
+
+#[tokio::test]
+async fn token_identifies_card_and_freshness_does_not_record_a_review() {
+    let pool = test_pool().await;
+    let user = test_user(&pool).await;
+    let token = crate::cards::issue_attempt_token(user, 2, 2, 0, 0, "eng").unwrap();
+    let fresh = crate::cards::validate_card_attempt(
+        State(pool.clone()),
+        AuthUser(user),
+        AppJson(crate::cards::ValidateRequest {
+            attempt_token: token.clone(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(fresh.0.valid);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+
+    // An authentic token for another user still cannot authorize an answer.
+    let rejected = check_answer(
+        State(pool.clone()),
+        AuthUser(user + 1000),
+        AppJson(CheckRequest {
+            answer: "wrong".into(),
+            attempt_token: token.clone(),
+        }),
+    )
+    .await;
+    assert!(matches!(rejected, Err(AppError::BadRequest(_))));
+
+    let (card_id, _) = check_answer(
+        State(pool.clone()),
+        AuthUser(user),
+        AppJson(CheckRequest {
+            answer: "wrong".into(),
+            attempt_token: token.clone(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(card_id, 2);
+    assert_eq!(revision_for(&pool, user, 2).await, 1);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE card_id != 2")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let fresh = crate::cards::validate_card_attempt(
+        State(pool),
+        AuthUser(user),
+        AppJson(crate::cards::ValidateRequest {
+            attempt_token: token,
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(!fresh.0.valid);
 }

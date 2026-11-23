@@ -63,7 +63,6 @@ async fn selected_grammar_content_is_embedded_without_revealing_endings() {
         .unwrap();
     let answer = cards::check_answer(
         State(pool),
-        AppPath(1),
         AuthUser(user),
         AppJson(cards::CheckRequest {
             answer: target,
@@ -72,6 +71,7 @@ async fn selected_grammar_content_is_embedded_without_revealing_endings() {
     )
     .await
     .unwrap()
+    .1
     .0;
     assert!(answer.correct);
     assert_eq!(answer.reveal.grammar_pattern_endings, vec!["-example"]);

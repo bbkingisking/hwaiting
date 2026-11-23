@@ -159,7 +159,7 @@ pub fn review() -> Result<Value, AppError> {
         // At most leased.len() entries can be held by known sibling processes.
         // One more is enough to find an available entry without expanding the deck.
         let limit = leased.len().saturating_add(1);
-        let envelope = parse(&get(&format!("/api/cards/queue?limit={limit}"), &client)?)?;
+        let envelope = parse(&get(&format!("/api/reviews/queue?limit={limit}"), &client)?)?;
         let mut lost_claim = false;
         for entry in envelope
             .get("cards")
@@ -205,11 +205,7 @@ pub fn review() -> Result<Value, AppError> {
 pub fn answer(card_id: &str, guess: &str, attempt_token: &str) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
     let body = json!({ "answer": guess, "attempt_token": attempt_token });
-    let mut result = parse(&post_json(
-        &format!("/api/cards/{card_id}/check"),
-        &client,
-        &body,
-    )?)?;
+    let mut result = parse(&post_json("/api/reviews/answer", &client, &body)?)?;
 
     // Personalized review assistance is not needed for this content-review flow.
     if let Some(obj) = result.as_object_mut() {

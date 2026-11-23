@@ -43,7 +43,8 @@ pub struct AvailableTranslationLanguage {
     pub card_count: i64,
 }
 
-#[utoipa::path(get, path = "/api/cards/translation-languages", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
+/// Available translation languages for Korean card content.
+#[utoipa::path(get, path = "/api/cards/languages", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
 pub async fn available_translation_languages(
     State(pool): State<SqlitePool>,
     _auth: AuthUser,
@@ -183,7 +184,6 @@ mod tests {
         tx.rollback().await.unwrap();
         let result = crate::cards::check_answer(
             State(pool.clone()),
-            AppPath(1),
             AuthUser(admin),
             AppJson(crate::cards::CheckRequest {
                 answer: "답".into(),
@@ -192,7 +192,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result.0.correct);
+        assert!(result.1.0.correct);
         let found = crate::admin::search_card_summaries(
             crate::auth::AdminUser(admin),
             State(pool.clone()),

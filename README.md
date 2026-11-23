@@ -50,6 +50,29 @@ This repo contains a Rust backend and a static React frontend. However, the back
 
 The backend can generate a complete OpenAPI contract if you run it with the `--print-openapi` CLI option (prints to `stdout` and exits immediately). That lets you bootstrap a new client/frontend much more easily. The GitHub CI workflow in this repo also publishes the latest OpenAPI contract on https://hwaitingapi.surge.sh/.
 
+### API organization
+
+Card content operations live under `/api/cards`, scheduled study under `/api/reviews`,
+and separate practice activities under `/api/drills`.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/reviews/queue` | Ordered due and eligible new prompts, with next-due and refresh times. |
+| POST | `/api/reviews/check-freshness` | Check whether an `attempt_token` still identifies an available, unchanged prompt; returns `{ "valid": true }` or `{ "valid": false }`. |
+| POST | `/api/reviews/answer` | Submit `{ "attempt_token": "…", "answer": "…" }`, grade the answer, record the review, update FSRS scheduling, and reveal the answer. |
+| GET | `/api/reviews/stats` | Current new/due counts and next due time, plus today's activity and accuracy. |
+| GET | `/api/reviews/history` | Aggregated daily history, all-time totals, streaks, and accuracy breakdowns. |
+| POST / DELETE | `/api/reviews/fsrs-parameters` | Optimize or reset the user's FSRS parameters. |
+| GET | `/api/cards/languages` | Available translation languages for Korean card content. |
+| GET | `/api/drills/hanja` | Hanja recall practice outside scheduled reviews. |
+
+Answer submission needs no separate card ID: the signed attempt token returned by
+`/api/reviews/queue` identifies the card, sentence, user, and content/review revisions.
+Freshness checks are read-only snapshots, not reservations or queue-position checks;
+answer submission rechecks freshness atomically with recording the review. Both use
+POST with JSON bodies to carry the token without putting it in the URL.
+Card comments and suppression retain their `/api/cards/{card_id}/…` routes.
+
 ### Data shape
 
 All data is stored in a single SQLite database. The shape of the data is highly domain-specific for Korean, and unlikely to be useful for any other language unless explicitly repurposed. A fresh backend run bootstraps the database with 50 cards, so you can inspect the standard/expected structure for the cards, how they appear in the frontend, and use that information to add your own cards. 

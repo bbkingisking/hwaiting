@@ -115,17 +115,22 @@ pub(crate) async fn validate_attempt(
 
 #[derive(Deserialize, ToSchema)]
 pub struct ValidateRequest {
+    /// Signed prompt identity returned by the review queue; includes the card and revisions.
     pub attempt_token: String,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct ValidateResponse {
+    /// True if the prompt still matches current content and review state and is available.
     pub valid: bool,
 }
 
+/// Check whether a displayed review prompt is still fresh, without grading or recording a review.
+/// A successful check is only a snapshot: answer submission validates again atomically.
+/// This does not check queue position or current queue preferences.
 #[utoipa::path(
     post,
-    path = "/api/cards/validate",
+    path = "/api/reviews/check-freshness",
     request_body = ValidateRequest,
     responses(
         (status = 200, description = "Whether the token still matches an available prompt", body = ValidateResponse),
@@ -134,7 +139,7 @@ pub struct ValidateResponse {
         (status = 500, description = "Operational failure", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn validate_card_attempt(
     State(pool): State<SqlitePool>,

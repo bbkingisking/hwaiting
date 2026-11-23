@@ -1,4 +1,4 @@
-//! `POST /api/cards/{id}/check` - grades an attempt, advances the card's
+//! `POST /api/reviews/answer` - grades an attempt, advances the card's
 //! FSRS state, and reveals the half of the card withheld by
 //! [`super::next::ReviewQueueCard`].
 
@@ -11,7 +11,7 @@ use tracing::info;
 use unicode_normalization::UnicodeNormalization;
 use utoipa::ToSchema;
 
-use crate::error::{AppError, AppJson, AppPath};
+use crate::error::{AppError, AppJson};
 
 use super::scheduling::{Scheduler, due_at};
 use super::time::parse_flexible_datetime;
@@ -20,6 +20,7 @@ use super::{HanjaHint, hanja_hints_on_connection};
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
     pub answer: String,
+    /// Signed prompt identity returned by the review queue; no separate card ID is needed.
     pub attempt_token: String,
 }
 
@@ -39,7 +40,7 @@ pub struct CardBack {
     pub alternatives: Vec<String>,
 }
 
-/// Disclosed only once `POST /api/cards/{id}/check` has graded an attempt:
+/// Disclosed only once `POST /api/reviews/answer` has graded an attempt:
 /// `CardBack` plus the fields that are genuinely review-flow-specific
 /// rather than properties of the card itself - `hanja_hints` depends on the
 /// requesting user's review history (see `hanja_hints_on_connection`), and
@@ -80,30 +81,29 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
             .any(|alt| normalized.chars().eq(alt.nfc()))
 }
 
-// Check an answer against a card: grade it, record the FSRS review, and
-// reveal the card's secret half.
+/// Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer.
+/// Validates prompt freshness within the same transaction; stale prompts record no review.
+/// The returned card ID is internal metadata for publishing the committed mutation.
 #[utoipa::path(
     post,
-    path = "/api/cards/{card_id}/check",
-    params(("card_id" = i64, Path, description = "Card ID")),
+    path = "/api/reviews/answer",
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
-        (status = 400, description = "Invalid request or invalid, forged, wrong-user, or wrong-card attempt token", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid request or invalid, forged, or wrong-user attempt token", body = crate::error::ErrorResponse),
         (status = 409, description = "Review state, selected sentence, or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
         (status = 403, description = "Card is suppressed", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "cards"
+    tag = "reviews"
 )]
 pub async fn check_answer(
     State(pool): State<SqlitePool>,
-    AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
     AppJson(payload): AppJson<CheckRequest>,
-) -> Result<Json<CheckResponse>, AppError> {
+) -> Result<(i64, Json<CheckResponse>), AppError> {
     let user_id = auth.0;
 
     // Reserve the writer before reading any grading content. Admin edits
@@ -112,8 +112,8 @@ pub async fn check_answer(
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
     let claims =
-        super::attempt::validate_attempt(&mut tx, &payload.attempt_token, user_id, Some(card_id))
-            .await?;
+        super::attempt::validate_attempt(&mut tx, &payload.attempt_token, user_id, None).await?;
+    let card_id = claims.card_id;
     let content = load_answer_content(&mut tx, card_id, claims.sentence_id).await?;
     let correct = is_correct(
         &payload.answer,
@@ -134,7 +134,7 @@ pub async fn check_answer(
     .await?;
     tx.commit().await?;
 
-    Ok(Json(CheckResponse { correct, reveal }))
+    Ok((card_id, Json(CheckResponse { correct, reveal })))
 }
 
 /// Content loaded from the validated attempt's snapshot, shared by grading

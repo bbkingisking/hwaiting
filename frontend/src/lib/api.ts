@@ -81,13 +81,13 @@ export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 // Review content requests send the account’s saved translation language explicitly.
 // Admin browsing and editing choose their translation language independently.
 export async function getAvailableTranslationLanguages(signal?: AbortSignal): Promise<Schemas.AvailableTranslationLanguage[]> {
-  return fetchWithAuth(`${apiBase()}/api/cards/translation-languages`, { signal })
+  return fetchWithAuth(`${apiBase()}/api/cards/languages`, { signal })
 }
 
 export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
   while (true) {
     const revision = reviewQueueRevision
-    const result = await fetchWithAuth(`${apiBase()}/api/cards/queue?limit=2`, { signal })
+    const result = await fetchWithAuth(`${apiBase()}/api/reviews/queue?limit=2`, { signal })
     if (revision === reviewQueueRevision) return result
   }
 }
@@ -97,11 +97,11 @@ export async function getGrammarPatterns(signal?: AbortSignal): Promise<Schemas.
   return fetchWithAuth(`${apiBase()}/api/admin/grammar-patterns`, { signal })
 }
 
-// Grades `answer` against `cardId` server-side, records the FSRS review,
+// Grades `answer` against the token’s prompt server-side, records the FSRS review,
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
-export async function checkAnswer(cardId: number, attemptToken: string, answer: string): Promise<CheckResponse> {
-  const url = `${apiBase()}/api/cards/${cardId}/check`
+export async function checkAnswer(attemptToken: string, answer: string): Promise<CheckResponse> {
+  const url = `${apiBase()}/api/reviews/answer`
   const body: CheckRequest = { answer, attempt_token: attemptToken }
   return fetchWithAuth(url, {
     method: 'POST',
@@ -112,7 +112,7 @@ export async function checkAnswer(cardId: number, attemptToken: string, answer: 
 // A successful validation is a snapshot, not a reservation; grading validates again.
 export async function validateAttempt(attemptToken: string): Promise<boolean> {
   const body: Schemas.ValidateRequest = { attempt_token: attemptToken }
-  const result: Schemas.ValidateResponse = await fetchWithAuth(`${apiBase()}/api/cards/validate`, {
+  const result: Schemas.ValidateResponse = await fetchWithAuth(`${apiBase()}/api/reviews/check-freshness`, {
     method: 'POST',
     body: JSON.stringify(body),
   })
@@ -150,7 +150,7 @@ type HanjaDrillResponse = Schemas.HanjaDrillResponse
 // already mastered, for free-form recall practice. Never grades the answer
 // and never touches FSRS state - see backend cards/hanja_drill.rs.
 export async function getHanjaDrill(signal?: AbortSignal): Promise<HanjaDrillResponse> {
-  const url = `${apiBase()}/api/cards/hanja-drill`
+  const url = `${apiBase()}/api/drills/hanja`
   return fetchWithAuth(url, { signal })
 }
 
@@ -253,12 +253,12 @@ type HistoryResponse = Schemas.HistoryResponse
 // getHistoryBreakdown) for data the stats page always fetched together;
 // the backend now runs all three queries concurrently behind one endpoint.
 export async function getHistory(): Promise<HistoryResponse> {
-  const url = `${apiBase()}/api/cards/history`
+  const url = `${apiBase()}/api/reviews/history`
   return fetchWithAuth(url)
 }
 
 export async function getStats(): Promise<StatsResponse> {
-  const url = `${apiBase()}/api/cards/stats`
+  const url = `${apiBase()}/api/reviews/stats`
   return fetchWithAuth(url)
 }
 
@@ -338,7 +338,7 @@ export async function getCardInflections(cardId: number, signal?: AbortSignal): 
 type OptimizeFsrsResponse = Schemas.OptimizeFsrsResponse
 
 export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
-  const url = `${apiBase()}/api/cards/fsrs-parameters`
+  const url = `${apiBase()}/api/reviews/fsrs-parameters`
   const result = await fetchWithAuth(url, {
     method: 'POST',
   })
@@ -347,7 +347,7 @@ export async function optimizeFsrs(): Promise<OptimizeFsrsResponse> {
 }
 
 export async function resetFsrsParameters(): Promise<{ success: boolean }> {
-  const url = `${apiBase()}/api/cards/fsrs-parameters`
+  const url = `${apiBase()}/api/reviews/fsrs-parameters`
   const result = await fetchWithAuth(url, {
     method: 'DELETE',
   })
@@ -363,8 +363,4 @@ export type {
   HanjaDrill,
   AdminCard,
   PasskeySummary,
-}
-
-export function getCardState(cardId: number): Promise<Schemas.CardState> {
-  return fetchWithAuth(`${apiBase()}/api/cards/${cardId}/state`)
 }
