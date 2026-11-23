@@ -433,6 +433,10 @@ export type ReviewQueueCard = {
  * A fresh ordered snapshot; fetching does not consume an allowance.
  */
 export type ReviewQueueResponse = {
+    /**
+     * Total eligible prompts before the response limit, including allowed new cards.
+     */
+    available_count: number;
     cards: Array<ReviewQueueCard>;
     /**
      * Earliest future eligibility change: a scheduled review or an allowance

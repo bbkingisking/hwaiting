@@ -7,7 +7,8 @@ import { useTimeUntil } from '@/hooks/use-time-until'
 import { scheduleReviewRefresh } from '@/lib/review-timing'
 import { Percentage } from '@/components/percentage'
 
-export function StatusIndicator({ refreshKey = 0, nextAvailableAt = null, onCardsAvailable }: {
+export function StatusIndicator({ refreshKey = 0, availableCount = null, nextAvailableAt = null, onCardsAvailable }: {
+  availableCount?: number | null
   refreshKey?: number
   nextAvailableAt?: string | null
   onCardsAvailable?: () => Promise<boolean>
@@ -50,12 +51,17 @@ export function StatusIndicator({ refreshKey = 0, nextAvailableAt = null, onCard
 
   useEffect(() => scheduleReviewRefresh(dayEndsAt, () => refresh(false)), [dayEndsAt])
 
+  useEffect(() => {
+    document.title = availableCount ? `(${availableCount}) Hwaiting` : 'Hwaiting'
+    return () => { document.title = 'Hwaiting' }
+  }, [availableCount])
 
   return (
     <footer
       aria-label="Review stats"
       className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground lg:col-start-2 lg:row-start-1"
     >
+      {availableCount !== null && <span>Available: {availableCount}</span>}
       {remaining && <span>Next in {remaining}</span>}
       {newTodayCount !== null && (
         <span>

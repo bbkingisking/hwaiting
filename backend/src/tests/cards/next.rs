@@ -113,6 +113,8 @@ async fn omitted_limit_returns_all_due_cards_and_allowance_bounded_new_cards() {
     .unwrap()
     .0;
     assert_eq!(all.cards.len(), 28);
+    assert_eq!(all.available_count, 28);
+    assert_eq!(queue(&pool, user, 5).await.available_count, 28);
     assert!(ids(&all)[..25].iter().all(|id| *id <= 25));
     assert_eq!(ids(&queue(&pool, user, 5).await), ids(&all)[..5]);
     assert_eq!(ids(&queue(&pool, user, 100).await), ids(&all));
@@ -139,6 +141,9 @@ async fn batch_clients_share_the_same_allowance_bounded_set() {
     assert_eq!(ids(&a), vec![1]);
     assert_eq!(ids(&a), ids(&b));
     assert_eq!(ids(&b), ids(&c));
+    assert_eq!(a.available_count, 1);
+    assert_eq!(b.available_count, 1);
+    assert_eq!(c.available_count, 1);
     assert!(a.next_available_at.is_none());
 }
 
@@ -218,6 +223,7 @@ async fn batch_size_is_validated_and_zero_daily_limit_is_empty() {
         .unwrap();
     let result = queue(&pool, user, 5).await;
     assert!(result.cards.is_empty());
+    assert_eq!(result.available_count, 0);
     assert!(result.next_available_at.is_none());
 }
 
@@ -592,6 +598,7 @@ async fn availability_is_independent_of_queue_size_and_ignores_disabled_new_card
         .unwrap();
     let available = queue(&pool, user, 1).await;
     assert_eq!(available.cards.len(), 1);
+    assert_eq!(available.available_count, 2);
     assert!(
         available.next_available_at.is_none(),
         "already eligible cards outside the response limit are not future availability"
@@ -645,5 +652,6 @@ async fn allowance_reset_only_reports_new_cards_with_eligible_content() {
         .unwrap();
     let empty = queue(&pool, user, 1).await;
     assert!(empty.cards.is_empty());
+    assert_eq!(empty.available_count, 0);
     assert!(empty.next_available_at.is_none());
 }

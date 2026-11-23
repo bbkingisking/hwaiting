@@ -151,12 +151,15 @@ test('batch queue reads retry when overtaken by a queue mutation', async () => {
     if (!url.includes('/api/reviews/queue')) return Response.json({ success: true })
     reads++
     if (reads === 1) return new Promise(resolve => { finish = resolve })
-    return Response.json({ cards: [{ card_id: 8 }], next_available_at: '2026-11-10T04:00:00Z' })
+    return Response.json({ cards: [{ card_id: 8 }], available_count: 120, next_available_at: '2026-11-10T04:00:00Z' })
   }
   const pending = api.getReviewQueue()
   await api.unsuppressCard(8)
   finish(Response.json({ cards: [{ card_id: 1 }] }))
-  assert.deepEqual((await pending).cards, [{ card_id: 8 }])
+  const result = await pending
+  assert.deepEqual(result.cards, [{ card_id: 8 }])
+  assert.equal(result.available_count, 120)
+  assert.equal(result.next_available_at, '2026-11-10T04:00:00Z')
   assert.equal(reads, 2)
   assert.ok(requests.filter(r => r.url.includes('/api/reviews/queue')).every(r => r.url.endsWith('/api/reviews/queue?limit=2')))
 })

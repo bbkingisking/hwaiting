@@ -87,6 +87,8 @@ pub struct ReviewQueueCard {
 #[derive(Serialize, ToSchema)]
 pub struct ReviewQueueResponse {
     pub cards: Vec<ReviewQueueCard>,
+    /// Total eligible prompts before the response limit, including allowed new cards.
+    pub available_count: i64,
     /// Earliest future eligibility change: a scheduled review or an allowance
     /// reset that unlocks waiting new cards. Independent of response limit or
     /// whether cards are available now; null when no future availability is known.
@@ -234,7 +236,7 @@ async fn select_cards(
             SELECT id FROM candidates WHERE reviewed = 0
             ORDER BY frequency_rank ASC NULLS LAST, id LIMIT ?
         )
-        SELECT * FROM candidates
+        SELECT *, COUNT(*) OVER () AS available_count FROM candidates
         WHERE reviewed = 1 OR id IN (SELECT id FROM eligible_new)
         ORDER BY
             CASE WHEN last_review IS NULL THEN 1 ELSE 0 END,
@@ -255,6 +257,10 @@ async fn select_cards(
         .bind(limit.unwrap_or(-1)) // SQLite: negative LIMIT means no response limit.
         .fetch_all(&mut *tx)
         .await?;
+    let available_count = rows
+        .first()
+        .map(|row| row.get("available_count"))
+        .unwrap_or(0);
     // Apply the same content and suppression requirements as queue selection.
     // New cards behind the daily allowance become available at the boundary
     // only when that reset actually expands the eligible set.
@@ -397,6 +403,7 @@ async fn select_cards(
     }
     Ok(ReviewQueueResponse {
         cards,
+        available_count,
         next_available_at,
     })
 }

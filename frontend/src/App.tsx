@@ -42,6 +42,7 @@ function AppContent() {
   const [checking, setChecking] = useState(false)
   const [lastCheckMs, setLastCheckMs] = useState<number | null>(null)
   const [noCards, setNoCards] = useState(false)
+  const [availableCount, setAvailableCount] = useState<number | null>(null)
   const [nextAvailableAt, setNextAvailableAt] = useState<string | null>(null)
   const [statsKey, setStatsKey] = useState(0)
   const [staleReason, setStaleReason] = useState<string | null>(null)
@@ -76,6 +77,7 @@ function AppContent() {
       currentCard.current = updated
       setCard(updated)
     }
+    setAvailableCount(result.available_count)
     buffer.current = reconcileQueue(result.cards, active)
     availableAt.current = result.next_available_at ? Date.parse(result.next_available_at) : Infinity
     setQueueDeadline(result.next_available_at ?? null)
@@ -277,6 +279,7 @@ function AppContent() {
         currentCard.current = null
         setCard(null)
         setNoCards(true)
+        setAvailableCount(envelope.available_count)
         setNextAvailableAt(envelope.next_available_at ?? null)
         availableAt.current = envelope.next_available_at ? Date.parse(envelope.next_available_at) : Infinity
       }
@@ -506,6 +509,7 @@ function AppContent() {
           <DebugStatusBar lastCheckMs={lastCheckMs} cardId={card?.card.card_id ?? null} />
           <StatusIndicator
             refreshKey={statsKey}
+            availableCount={availableCount}
             nextAvailableAt={noCards ? nextAvailableAt : null}
             onCardsAvailable={handleCardsAvailable}
           />
