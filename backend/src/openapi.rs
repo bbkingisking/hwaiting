@@ -149,17 +149,16 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
-        (name = "resources", description = "Shared reference resources for authenticated users"),
-        (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password \
-            or passkey (WebAuthn) - two independent ways to reach the same JWT"),
-        (name = "cards", description = "Card languages and suppression"),
-        (name = "feedback", description = "Sentence content feedback for admin triage"),
+        (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password or passkey (WebAuthn) - two independent ways to reach the same JWT"),
         (name = "reviews", description = "Review queue, prompt freshness, and answer submission"),
-        (name = "scheduling", description = "Personal FSRS parameter fitting, reset, and card rescheduling"),
-        (name = "stats", description = "Study activity statistics"),
-        (name = "drills", description = "Practice activities outside scheduled reviews"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),
+        (name = "cards", description = "Card languages and suppression"),
+        (name = "scheduling", description = "Personal FSRS parameter fitting, reset, and card rescheduling"),
+        (name = "stats", description = "Study activity statistics"),
+        (name = "feedback", description = "Sentence content feedback for admin triage"),
+        (name = "drills", description = "Practice activities outside scheduled reviews"),
+        (name = "resources", description = "Shared reference resources for authenticated users"),
         (name = "misc", description = "Health check"),
     )
 )]
