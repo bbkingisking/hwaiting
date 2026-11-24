@@ -26,6 +26,15 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// Missing fields default to None; present fields must contain a non-null value.
+fn non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListUsersQuery {
@@ -209,10 +218,10 @@ pub async fn get_card_inflections(
     Ok(Json(CardInflectionsResponse { inflections }))
 }
 
-/// Partial card edit. Omitted fields are unchanged. For text content, target,
-/// translations, and alternatives, explicit null also means unchanged.
-/// Nullable metadata fields can be cleared with null; honorific/humble flags
-/// reset to false with null. Classification and grammar values use slugs.
+/// Partial card edit. Omitted fields are unchanged; supplied values replace them.
+/// Null clears nullable fields and is rejected for non-nullable fields.
+/// Clear alternatives with [] and reset flags with false.
+/// Classification and grammar values use slugs.
 #[derive(Deserialize, ToSchema, Default)]
 pub struct UpdateCardRequest {
     /// Internal revision check; the aggregate HTTP request supplies its revision once.
@@ -221,7 +230,9 @@ pub struct UpdateCardRequest {
     /// Internal: the card's single sentence, filled in by the editor.
     #[serde(skip)]
     pub sentence_id: i64,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
@@ -238,18 +249,28 @@ pub struct UpdateCardRequest {
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
     pub grade: Option<Option<String>>,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub trans_word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
     pub trans_dfn: Option<Option<String>>,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub sentence: Option<String>,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub sentence_translation: Option<String>,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub target: Option<String>,
-    /// Omitted or null leaves the current value unchanged.
+    /// Omitted leaves the current value unchanged; null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
     pub alternatives: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
@@ -260,12 +281,14 @@ pub struct UpdateCardRequest {
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
     pub grammar_pattern: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option")]
-    /// Omitted leaves the current value unchanged; null resets it to false.
-    pub is_honorific: Option<Option<bool>>,
-    #[serde(default, deserialize_with = "double_option")]
-    /// Omitted leaves the current value unchanged; null resets it to false.
-    pub is_humble: Option<Option<bool>>,
+    /// Omitted leaves the current value unchanged; use false to reset. Null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
+    pub is_honorific: Option<bool>,
+    /// Omitted leaves the current value unchanged; use false to reset. Null is rejected.
+    #[serde(default, deserialize_with = "non_null_option")]
+    #[schema(nullable = false)]
+    pub is_humble: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -398,9 +421,8 @@ async fn edit_card_in_transaction(
             .filter(|value| !value.is_empty())
             .collect::<Vec<_>>()
     });
-    // Explicit null clears these NOT NULL columns to false.
-    let mut is_honorific = is_honorific.map(|value| value.unwrap_or(false));
-    let mut is_humble = is_humble.map(|value| value.unwrap_or(false));
+    let mut is_honorific = is_honorific;
+    let mut is_humble = is_humble;
 
     omit_unchanged(&mut word, current.get("word"));
     omit_unchanged(&mut definition, current.get("definition"));

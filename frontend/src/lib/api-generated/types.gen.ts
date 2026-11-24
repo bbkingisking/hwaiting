@@ -623,16 +623,16 @@ export type TodayStatsResponse = {
 };
 
 /**
- * Partial card edit. Omitted fields are unchanged. For text content, target,
- * translations, and alternatives, explicit null also means unchanged.
- * Nullable metadata fields can be cleared with null; honorific/humble flags
- * reset to false with null. Classification and grammar values use slugs.
+ * Partial card edit. Omitted fields are unchanged; supplied values replace them.
+ * Null clears nullable fields and is rejected for non-nullable fields.
+ * Clear alternatives with [] and reset flags with false.
+ * Classification and grammar values use slugs.
  */
 export type UpdateCardRequest = {
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    alternatives?: Array<string> | null;
+    alternatives?: Array<string>;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
@@ -650,13 +650,13 @@ export type UpdateCardRequest = {
      */
     hanja?: string | null;
     /**
-     * Omitted leaves the current value unchanged; null resets it to false.
+     * Omitted leaves the current value unchanged; use false to reset. Null is rejected.
      */
-    is_honorific?: boolean | null;
+    is_honorific?: boolean;
     /**
-     * Omitted leaves the current value unchanged; null resets it to false.
+     * Omitted leaves the current value unchanged; use false to reset. Null is rejected.
      */
-    is_humble?: boolean | null;
+    is_humble?: boolean;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
@@ -666,21 +666,21 @@ export type UpdateCardRequest = {
      */
     pos?: string | null;
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    sentence?: string | null;
+    sentence?: string;
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    sentence_translation?: string | null;
+    sentence_translation?: string;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
     speech_level?: string | null;
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    target?: string | null;
+    target?: string;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
@@ -690,13 +690,13 @@ export type UpdateCardRequest = {
      */
     trans_dfn?: string | null;
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    trans_word?: string | null;
+    trans_word?: string;
     /**
-     * Omitted or null leaves the current value unchanged.
+     * Omitted leaves the current value unchanged; null is rejected.
      */
-    word?: string | null;
+    word?: string;
 };
 
 export type UpdatePasskeyRequest = {

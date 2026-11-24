@@ -29,10 +29,60 @@ fn key_with_value_is_some_some() {
     assert_eq!(req.hanja, Some(Some("漢字".to_string())));
 }
 
-// No separate bool-field or plain-Option-field variants: `double_option`
-// is generic over `T`, and a plain `Option<T>` field is just derived
-// serde with no custom code of ours behind it - neither would exercise
-// anything the three cases above don't already cover.
+#[test]
+fn non_nullable_patch_fields_reject_null() {
+    for field in [
+        "word",
+        "trans_word",
+        "sentence",
+        "sentence_translation",
+        "target",
+        "alternatives",
+        "is_honorific",
+        "is_humble",
+    ] {
+        let payload = serde_json::json!({field: null});
+        assert!(
+            serde_json::from_value::<UpdateCardRequest>(payload).is_err(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn nullable_patch_fields_accept_clear() {
+    for field in [
+        "definition",
+        "pos",
+        "origin_type",
+        "hanja",
+        "grade",
+        "trans_dfn",
+        "speech_level",
+        "tense",
+        "grammar_pattern",
+    ] {
+        let payload = serde_json::json!({field: null});
+        assert!(
+            serde_json::from_value::<UpdateCardRequest>(payload).is_ok(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn patch_accepts_explicit_resets_and_omission() {
+    let omitted: UpdateCardRequest = serde_json::from_str("{}").unwrap();
+    assert!(omitted.is_honorific.is_none());
+    assert!(omitted.is_humble.is_none());
+    assert!(omitted.alternatives.is_none());
+    let reset: UpdateCardRequest =
+        serde_json::from_str(r#"{"is_honorific":false,"is_humble":false,"alternatives":[]}"#)
+            .unwrap();
+    assert_eq!(reset.is_honorific, Some(false));
+    assert_eq!(reset.is_humble, Some(false));
+    assert_eq!(reset.alternatives, Some(vec![]));
+}
 
 // --- edit_card (handler-level, in-process SQLite,crate::translation_language::TranslationLanguage("eng".into())) -------------------------
 
@@ -139,8 +189,8 @@ async fn edit_returns_the_same_canonical_projection_as_search() {
             sentence_id: 1,
             sentence: Some("새 답입니다.".into()),
             target: Some("답".into()),
-            is_honorific: Some(Some(true)),
-            is_humble: Some(Some(true)),
+            is_honorific: Some(true),
+            is_humble: Some(true),
             ..Default::default()
         }),
         crate::translation_language::TranslationLanguage("eng".into()),
