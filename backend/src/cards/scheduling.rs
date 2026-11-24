@@ -16,13 +16,19 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
+    /// Builds from the JSON text stored in `users_fsrs_parameters`.
     pub fn new(parameters: Option<&str>, retention: f64) -> Result<Self, AppError> {
-        let parameters: Vec<f32> = match parameters {
-            Some(json) => serde_json::from_str(json)
-                .map_err(|e| AppError::BadRequest(format!("Invalid FSRS parameters: {e}")))?,
-            None => DEFAULT_PARAMETERS.to_vec(),
-        };
-        let model = FSRS::new(Some(&parameters))
+        let parameters: Option<Vec<f32>> = parameters
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|e| AppError::BadRequest(format!("Invalid FSRS parameters: {e}")))?;
+        Self::from_parameters(parameters.as_deref(), retention)
+    }
+
+    /// Builds from explicit parameters; `None` uses the library defaults.
+    pub fn from_parameters(parameters: Option<&[f32]>, retention: f64) -> Result<Self, AppError> {
+        let parameters = parameters.unwrap_or(&DEFAULT_PARAMETERS);
+        let model = FSRS::new(Some(parameters))
             .map_err(|e| AppError::BadRequest(format!("Invalid FSRS parameters: {e:?}")))?;
         if !(0.5..=0.99).contains(&retention) {
             return Err(AppError::BadRequest("Invalid desired retention".into()));

@@ -151,7 +151,7 @@ async fn invalid_backup_cannot_replace_existing_history_or_state() {
         (
             "FSRS shape",
             "fsrs_parameters",
-            serde_json::json!("[1,2,3]"),
+            serde_json::json!([1, 2, 3]),
         ),
         (
             "export timestamp",
@@ -430,12 +430,7 @@ async fn export_then_import_round_trips_settings_history_and_suppressions() {
         Some("Asia/Seoul")
     );
     assert!(!dest_settings.core.show_hanja_hints);
-    assert_eq!(
-        dest_settings.fsrs_parameters.as_deref(),
-        Some(
-            "[0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2]"
-        )
-    );
+    assert_eq!(dest_settings.fsrs_parameters, Some(vec![0.2; 21]));
 
     // cards_states derived from the *latest* review per card: card 1's
     // last review (1/4) had stability 3, not the first review's 1.
@@ -507,12 +502,7 @@ async fn import_fsrs_parameters_respects_overwrite_and_backup_defaults() {
     setup_source_user(&pool, source_id).await;
 
     for overwrite in [false, true] {
-        for replacement in [
-            None,
-            Some(
-                "[0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3]",
-            ),
-        ] {
+        for replacement in [None, Some(vec![0.3_f32; 21])] {
             let dest_id = test_user(&pool).await;
             sqlx::query("INSERT INTO users_fsrs_parameters (user_id, parameters) VALUES (?, '[0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4]')")
                 .bind(dest_id).execute(&pool).await.unwrap();
@@ -520,7 +510,7 @@ async fn import_fsrs_parameters_respects_overwrite_and_backup_defaults() {
                 .await
                 .unwrap()
                 .0;
-            data.settings.fsrs_parameters = replacement.map(str::to_owned);
+            data.settings.fsrs_parameters = replacement.clone();
 
             let _ = import_data(
                 State(pool.clone()),
@@ -531,22 +521,11 @@ async fn import_fsrs_parameters_respects_overwrite_and_backup_defaults() {
             .unwrap();
 
             let settings = get_user_settings(&pool, dest_id).await.unwrap();
-            let expected = replacement.or({
-                if overwrite {
-                    None
-                } else {
-                    Some("[0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4]")
-                }
-            });
-            assert_eq!(settings.fsrs_parameters.as_deref(), expected);
+            let expected = replacement.or(if overwrite { None } else { Some(vec![0.4; 21]) });
+            assert_eq!(settings.fsrs_parameters, expected);
             // Clearing the destination must leave other users' parameters intact.
             let source = get_user_settings(&pool, source_id).await.unwrap();
-            assert_eq!(
-                source.fsrs_parameters.as_deref(),
-                Some(
-                    "[0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2]"
-                )
-            );
+            assert_eq!(source.fsrs_parameters, Some(vec![0.2; 21]));
         }
     }
 }

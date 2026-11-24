@@ -58,9 +58,11 @@ pub struct ExportData {
 pub struct UserSettingsExport {
     #[serde(flatten)]
     pub core: crate::user::UserSettingsCore,
-    /// JSON-encoded array of fitted FSRS floating-point parameters. On import, null
-    /// resets to defaults with overwrite=true and preserves existing parameters otherwise.
-    pub fsrs_parameters: Option<String>,
+    /// Fitted FSRS parameters, or null when the library defaults are in use. On import,
+    /// null resets to defaults with overwrite=true and preserves existing parameters otherwise.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required)]
+    pub fsrs_parameters: Option<Vec<f32>>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -144,7 +146,7 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
 
     // Construct the actual model; parsing the JSON alone does not establish
     // that its parameter count and values can schedule a card.
-    crate::cards::scheduling::Scheduler::new(
+    crate::cards::scheduling::Scheduler::from_parameters(
         data.settings.fsrs_parameters.as_deref(),
         data.settings.core.desired_retention,
     )?;
@@ -615,6 +617,8 @@ pub async fn import_data(
 
     // Import FSRS parameters if present
     if let Some(ref fsrs_params) = data.settings.fsrs_parameters {
+        let fsrs_params =
+            serde_json::to_string(fsrs_params).map_err(|e| AppError::Internal(e.to_string()))?;
         sqlx::query(
             r#"
             INSERT INTO users_fsrs_parameters (user_id, parameters)
@@ -623,7 +627,7 @@ pub async fn import_data(
             "#,
         )
         .bind(user_id)
-        .bind(fsrs_params)
+        .bind(&fsrs_params)
         .execute(&mut *tx)
         .await?;
     }
@@ -664,6 +668,10 @@ async fn get_user_settings(
             .bind(user_id)
             .fetch_optional(pool)
             .await?;
+    let fsrs_parameters = fsrs_parameters
+        .map(|json| serde_json::from_str(&json))
+        .transpose()
+        .map_err(|e| AppError::Internal(format!("Stored FSRS parameters are invalid: {e}")))?;
 
     Ok(UserSettingsExport {
         core,

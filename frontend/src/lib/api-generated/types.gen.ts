@@ -792,10 +792,10 @@ export type UserSettingsCore = {
 
 export type UserSettingsExport = UserSettingsCore & {
     /**
-     * JSON-encoded array of fitted FSRS floating-point parameters. On import, null
-     * resets to defaults with overwrite=true and preserves existing parameters otherwise.
+     * Fitted FSRS parameters, or null when the library defaults are in use. On import,
+     * null resets to defaults with overwrite=true and preserves existing parameters otherwise.
      */
-    fsrs_parameters?: string | null;
+    fsrs_parameters: Array<number> | null;
 };
 
 export type ValidateRequest = {

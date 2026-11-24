@@ -302,7 +302,7 @@ async fn export_restore_reconstructs_deadlines_and_rejects_unusable_models_atomi
         .await
         .unwrap()
         .0;
-    data.settings.fsrs_parameters = Some("[1,2,3]".into());
+    data.settings.fsrs_parameters = Some(vec![1.0, 2.0, 3.0]);
     assert!(
         export_import::import_data(
             State(pool.clone()),
