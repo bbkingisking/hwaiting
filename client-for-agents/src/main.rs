@@ -29,7 +29,7 @@ enum Command {
     },
     /// Submit content feedback about a sentence.
     Feedback { sentence_id: i64, text: String },
-    /// Fetch authored grammar patterns for editing (requires an admin account).
+    /// Fetch the shared grammar catalog (requires login).
     GrammarPatterns,
     /// Look up a card's target word in the official KRDict API.
     Krdict {

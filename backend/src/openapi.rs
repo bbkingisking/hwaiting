@@ -149,6 +149,7 @@ impl Modify for SecurityAddon {
     )),
     modifiers(&SecurityAddon),
     tags(
+        (name = "resources", description = "Shared reference resources for authenticated users"),
         (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password \
             or passkey (WebAuthn) - two independent ways to reach the same JWT"),
         (name = "cards", description = "Card languages and suppression"),

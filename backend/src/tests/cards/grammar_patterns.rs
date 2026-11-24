@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    auth::AuthUser,
+    auth::{AdminUser, AuthUser},
     cards,
     error::{AppJson, AppPath, AppQuery},
     test_support::{test_pool, test_review_user},
@@ -42,7 +42,7 @@ async fn selected_grammar_content_is_embedded_without_revealing_endings() {
         "new-pattern"
     );
     let catalog = serde_json::to_value(
-        list_grammar_patterns(AdminUser(user), State(pool.clone()))
+        list_grammar_patterns(AuthUser(user), State(pool.clone()))
             .await
             .unwrap()
             .0,
@@ -78,7 +78,7 @@ async fn selected_grammar_content_is_embedded_without_revealing_endings() {
 }
 
 #[tokio::test]
-async fn grammar_catalog_requires_admin_authorization() {
+async fn grammar_catalog_allows_normal_users_and_requires_authentication() {
     use axum::{
         Router,
         body::Body,
@@ -90,17 +90,37 @@ async fn grammar_catalog_requires_admin_authorization() {
     let user = test_review_user(&pool).await;
     let token = crate::auth::generate_token(user).unwrap();
     let app = Router::new()
-        .route("/api/admin/grammar-patterns", get(list_grammar_patterns))
+        .route(
+            "/api/resources/grammar-patterns",
+            get(list_grammar_patterns),
+        )
         .with_state(pool);
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/admin/grammar-patterns")
+                .uri("/api/resources/grammar-patterns")
                 .header("cookie", format!("hwaiting-auth={token}"))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(!catalog.as_array().unwrap().is_empty());
+    assert!(catalog[0]["endings"].is_array());
+    let anonymous = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/resources/grammar-patterns")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
 }

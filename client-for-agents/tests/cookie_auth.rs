@@ -62,7 +62,7 @@ fn login_persists_private_scoped_cookies_for_the_next_process() {
                 assert!(request.contains("x-requested-with: hwaiting"));
                 r#"{"username":"test","is_admin":false}"#
             } else {
-                assert!(request.starts_with("get /api/admin/grammar-patterns "));
+                assert!(request.starts_with("get /api/resources/grammar-patterns "));
                 assert!(request.contains("cookie: hwaiting-auth=test-jwt"));
                 "{}"
             };

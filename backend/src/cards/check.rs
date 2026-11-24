@@ -57,7 +57,7 @@ pub struct CardReveal {
     /// the referenced `grammar_patterns` row, not of this card, but exactly
     /// as spoiling as `target` for any card that uses the pattern, so it
     /// travels with the reveal rather than in the pattern's public
-    /// name/explanation. The admin grammar catalog also includes endings
+    /// name/explanation. The grammar resource catalog also includes endings
     /// for authoring. Empty if
     /// the card has no grammar pattern.
     pub grammar_pattern_endings: Vec<String>,

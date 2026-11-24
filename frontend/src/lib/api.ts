@@ -94,7 +94,7 @@ export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueR
 
 export type CardInflection = Schemas.CardInflection
 export async function getGrammarPatterns(signal?: AbortSignal): Promise<Schemas.GrammarPatternOption[]> {
-  return fetchWithAuth(`${apiBase()}/api/admin/grammar-patterns`, { signal })
+  return fetchWithAuth(`${apiBase()}/api/resources/grammar-patterns`, { signal })
 }
 
 // Grades `answer` against the token’s prompt server-side, records the FSRS review,

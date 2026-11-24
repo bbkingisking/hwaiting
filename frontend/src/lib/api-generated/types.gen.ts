@@ -185,7 +185,7 @@ export type CardReveal = CardBack & {
      * the referenced `grammar_patterns` row, not of this card, but exactly
      * as spoiling as `target` for any card that uses the pattern, so it
      * travels with the reveal rather than in the pattern's public
-     * name/explanation. The admin grammar catalog also includes endings
+     * name/explanation. The grammar resource catalog also includes endings
      * for authoring. Empty if
      * the card has no grammar pattern.
      */
@@ -262,7 +262,7 @@ export type FeedbackResponse = {
 
 /**
  * The selected pattern's authored content. Literal endings belong to the
- * answer reveal or the admin catalog, never to the pre-answer prompt.
+ * answer reveal or the resource catalog, never embedded in the pre-answer prompt.
  */
 export type GrammarPattern = {
     explanation?: string | null;
@@ -821,25 +821,6 @@ export type ListFeedbackResponses = {
 
 export type ListFeedbackResponse2 = ListFeedbackResponses[keyof ListFeedbackResponses];
 
-export type ListGrammarPatternsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/admin/grammar-patterns';
-};
-
-export type ListGrammarPatternsErrors = {
-    403: ErrorResponse;
-};
-
-export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
-
-export type ListGrammarPatternsResponses = {
-    200: Array<GrammarPatternOption>;
-};
-
-export type ListGrammarPatternsResponse = ListGrammarPatternsResponses[keyof ListGrammarPatternsResponses];
-
 export type ListUsersData = {
     body?: never;
     path?: never;
@@ -1374,6 +1355,25 @@ export type HealthCheckResponses = {
 };
 
 export type HealthCheckResponse = HealthCheckResponses[keyof HealthCheckResponses];
+
+export type ListGrammarPatternsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/resources/grammar-patterns';
+};
+
+export type ListGrammarPatternsErrors = {
+    401: ErrorResponse;
+};
+
+export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
+
+export type ListGrammarPatternsResponses = {
+    200: Array<GrammarPatternOption>;
+};
+
+export type ListGrammarPatternsResponse = ListGrammarPatternsResponses[keyof ListGrammarPatternsResponses];
 
 export type CheckAnswerData = {
     body: CheckRequest;

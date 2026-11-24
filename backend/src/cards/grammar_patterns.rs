@@ -1,12 +1,12 @@
 //! Authored grammar content, separate from fixed client presentation vocabulary.
-use crate::{auth::AdminUser, error::AppError};
+use crate::{auth::AuthUser, error::AppError};
 use axum::{Json, extract::State};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use utoipa::ToSchema;
 
 /// The selected pattern's authored content. Literal endings belong to the
-/// answer reveal or the admin catalog, never to the pre-answer prompt.
+/// answer reveal or the resource catalog, never embedded in the pre-answer prompt.
 #[derive(Serialize, ToSchema)]
 pub struct GrammarPattern {
     pub slug: String,
@@ -34,10 +34,10 @@ pub struct GrammarPatternOption {
     pub endings: Vec<String>,
 }
 
-#[utoipa::path(get, path = "/api/admin/grammar-patterns",
-    description = "List authored grammar patterns with English labels, explanations, and accepted endings for the admin card editor.", responses((status = 200, body = Vec<GrammarPatternOption>), (status = 403, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "admin")]
+#[utoipa::path(get, path = "/api/resources/grammar-patterns",
+    description = "List authored grammar patterns with English labels, explanations, and accepted endings for authenticated users and card editors.", responses((status = 200, body = Vec<GrammarPatternOption>), (status = 401, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "resources")]
 pub async fn list_grammar_patterns(
-    _admin: AdminUser,
+    _auth: AuthUser,
     State(pool): State<SqlitePool>,
 ) -> Result<Json<Vec<GrammarPatternOption>>, AppError> {
     let rows = sqlx::query(r#"

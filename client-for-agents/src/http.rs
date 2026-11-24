@@ -1,6 +1,6 @@
 //! Talks to the hwaiting review API. Every function here returns the
 //! server's JSON response as a `serde_json::Value`, trimmed of fields this
-//! review flow has no use for (`review`, `answer`, `grammar_patterns` each
+//! review flow has no use for (`review` and `answer` each
 //! note their own) but otherwise untouched - nothing here interprets card
 //! content, that's the skill's job, not this binary's.
 
@@ -245,9 +245,9 @@ pub fn feedback(sentence_id: i64, text: &str) -> Result<Value, AppError> {
     )?)
 }
 
-/// Authored grammar catalog for admin editing. Fixed vocabulary labels are
+/// Shared authored grammar catalog for authenticated users. Fixed vocabulary labels are
 /// client presentation resources; selected grammar content already rides on cards.
 pub fn grammar_patterns() -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    parse(&get("/api/admin/grammar-patterns", &client)?)
+    parse(&get("/api/resources/grammar-patterns", &client)?)
 }

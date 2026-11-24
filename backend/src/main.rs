@@ -115,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
             "/reviews/check-freshness",
             post(cards::validate_card_attempt),
         )
-        .route("/admin/grammar-patterns", get(cards::list_grammar_patterns))
+        .route(
+            "/resources/grammar-patterns",
+            get(cards::list_grammar_patterns),
+        )
         .route("/reviews/answer", post(events::mutations::check_answer))
         .route("/feedback/submit", post(feedback::submit_feedback))
         .route("/admin/feedback", get(feedback::list_feedback))
