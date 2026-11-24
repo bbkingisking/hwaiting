@@ -24,7 +24,6 @@ enum Command {
     Review,
     /// Submit a guess for a card and get back the graded result.
     Answer {
-        card_id: String,
         answer: String,
         attempt_token: String,
     },
@@ -46,10 +45,9 @@ fn main() -> ExitCode {
         Command::Login => cmd_login(),
         Command::Review => http::review(),
         Command::Answer {
-            card_id,
             answer,
             attempt_token,
-        } => http::answer(&card_id, &answer, &attempt_token),
+        } => http::answer(&answer, &attempt_token),
         Command::Feedback { sentence_id, text } => http::feedback(sentence_id, &text),
         Command::GrammarPatterns => http::grammar_patterns(),
         Command::Krdict { word_id } => lookup::lookup(word_id),

@@ -4,6 +4,7 @@
 //! note their own) but otherwise untouched - nothing here interprets card
 //! content, that's the skill's job, not this binary's.
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use std::fmt;
 
@@ -202,7 +203,17 @@ pub fn review() -> Result<Value, AppError> {
 /// again for this user - right or wrong, the agent has now seen it once, and
 /// the point is coverage of the deck rather than mastering it via spaced
 /// repetition.
-pub fn answer(card_id: &str, guess: &str, attempt_token: &str) -> Result<Value, AppError> {
+pub fn answer(guess: &str, attempt_token: &str) -> Result<Value, AppError> {
+    // Read identity locally, but let the backend authenticate this exact token
+    // before using its card ID for suppression or lease cleanup.
+    let card_id = attempt_token
+        .split('.')
+        .nth(1)
+        .and_then(|payload| URL_SAFE_NO_PAD.decode(payload).ok())
+        .and_then(|payload| serde_json::from_slice::<Value>(&payload).ok())
+        .and_then(|claims| claims["card_id"].as_i64())
+        .filter(|id| *id > 0)
+        .ok_or_else(|| AppError::Message("invalid attempt token: missing card identity".into()))?;
     let client = authenticated_agent()?;
     let body = json!({ "answer": guess, "attempt_token": attempt_token });
     let mut result = parse(&post_json("/api/reviews/answer", &client, &body)?)?;
@@ -218,9 +229,7 @@ pub fn answer(card_id: &str, guess: &str, attempt_token: &str) -> Result<Value, 
     // suppressed server-side and will never be handed out again anyway.
     // Best-effort: a parse/IO failure here shouldn't fail an otherwise-
     // successful answer, and a leftover lease just self-expires.
-    if let Ok(id) = card_id.parse::<i64>() {
-        let _ = config::release_card(id);
-    }
+    let _ = config::release_card(card_id);
 
     Ok(result)
 }

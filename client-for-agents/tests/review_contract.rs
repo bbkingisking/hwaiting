@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -108,7 +109,13 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
     let directory = state_directory();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
+    let token = format!(
+        "header.{}.signature",
+        URL_SAFE_NO_PAD.encode(br#"{"card_id":991}"#)
+    );
+    let server_token = token.clone();
     let server = std::thread::spawn(move || {
+        let token = server_token;
         serve_login(&listener);
         for path in [
             "get /api/reviews/queue?limit=1 ",
@@ -120,13 +127,13 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
             assert!(headers.starts_with(path), "{headers}");
             assert!(headers.contains("cookie: hwaiting-auth=test-jwt"));
             let body = if path.contains("queue") {
-                json!({"cards":[{"card":{"card_id":991,"grammar_pattern":{"slug":"realization","name":"Realization","explanation":"Authored content"}},"review":{"attempt_token":"signed-attempt","hanja_hint_words":[]}}],"next_due_at":null,"refresh_at":"2026-11-23T04:00:00Z"})
+                json!({"cards":[{"card":{"card_id":991,"grammar_pattern":{"slug":"realization","name":"Realization","explanation":"Authored content"}},"review":{"attempt_token":token,"hanja_hint_words":[]}}],"next_due_at":null,"refresh_at":"2026-11-23T04:00:00Z"})
             } else {
                 assert!(headers.contains("x-requested-with: hwaiting"));
                 if path.contains("answer") {
                     assert_eq!(
                         serde_json::from_slice::<Value>(&body).unwrap(),
-                        json!({"answer":"answer","attempt_token":"signed-attempt"})
+                        json!({"answer":"answer","attempt_token":token})
                     );
                     json!({"correct":true,"hanja_hints":[]})
                 } else {
@@ -139,14 +146,10 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
     run(&base, &directory, &["login"]);
     let entry = run(&base, &directory, &["review"]);
     assert_eq!(entry["card"]["grammar_pattern"]["name"], "Realization");
-    assert_eq!(entry["review"]["attempt_token"], "signed-attempt");
+    assert_eq!(entry["review"]["attempt_token"], token);
     assert!(entry["review"].get("hanja_hint_words").is_none());
     assert_eq!(
-        run(
-            &base,
-            &directory,
-            &["answer", "991", "answer", "signed-attempt"]
-        )["correct"],
+        run(&base, &directory, &["answer", "answer", &token])["correct"],
         true
     );
     server.join().unwrap();
@@ -205,4 +208,19 @@ fn review_retries_lost_claims_but_stops_when_all_entries_are_already_leased() {
     assert_eq!(empty["refresh_at"], "2026-11-23T04:00:00Z");
     server.join().unwrap();
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn answer_rejects_missing_card_identity_before_contacting_server() {
+    let directory = state_directory();
+    for token in ["malformed", "header.e30.signature"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_hwaiting-agent"))
+            .args(["answer", "answer", token])
+            .env("HWAITING_API_URL", "http://127.0.0.1:1")
+            .env("XDG_CONFIG_HOME", &directory)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("missing card identity"));
+    }
 }
