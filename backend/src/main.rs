@@ -26,6 +26,7 @@ mod enum_lookup;
 mod error;
 mod events;
 mod export_import;
+mod feedback;
 mod inflection_hints;
 mod openapi;
 mod passkey;
@@ -116,7 +117,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/grammar-patterns", get(cards::list_grammar_patterns))
         .route("/reviews/answer", post(events::mutations::check_answer))
-        .route("/cards/{card_id}/comment", post(cards::comment_on_card))
+        .route("/feedback/submit", post(feedback::submit_feedback))
+        .route("/admin/feedback", get(feedback::list_feedback))
         .route(
             "/cards/{card_id}/suppress",
             put(events::mutations::suppress_card),

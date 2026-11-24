@@ -28,8 +28,8 @@ enum Command {
         answer: String,
         attempt_token: String,
     },
-    /// Record a content-review note against a card.
-    Comment { card_id: String, text: String },
+    /// Submit content feedback about a sentence.
+    Feedback { sentence_id: i64, text: String },
     /// Fetch authored grammar patterns for editing (requires an admin account).
     GrammarPatterns,
     /// Look up a card's target word in the official KRDict API.
@@ -50,7 +50,7 @@ fn main() -> ExitCode {
             answer,
             attempt_token,
         } => http::answer(&card_id, &answer, &attempt_token),
-        Command::Comment { card_id, text } => http::comment(&card_id, &text),
+        Command::Feedback { sentence_id, text } => http::feedback(sentence_id, &text),
         Command::GrammarPatterns => http::grammar_patterns(),
         Command::Krdict { word_id } => lookup::lookup(word_id),
     };

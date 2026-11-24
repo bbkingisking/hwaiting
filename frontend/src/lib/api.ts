@@ -364,3 +364,17 @@ export type {
   AdminCard,
   PasskeySummary,
 }
+
+export type FeedbackEntry = Schemas.FeedbackEntry
+
+export async function submitFeedback(sentenceId: number, text: string): Promise<Schemas.FeedbackResponse> {
+  const body: Schemas.FeedbackRequest = { body: text }
+  return fetchWithAuth(`${apiBase()}/api/feedback/submit?sentence_id=${sentenceId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function listFeedback(signal?: AbortSignal): Promise<Schemas.ListFeedbackResponse> {
+  return fetchWithAuth(`${apiBase()}/api/admin/feedback`, { signal })
+}

@@ -7,17 +7,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { CheckFeedbackDialog } from '@/components/check-feedback-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SuppressedCardsDialog } from '@/components/suppressed-cards-dialog'
 import { ReviewHistoryDialog } from '@/components/review-history-dialog'
 import { BrowseCardsDialog } from '@/components/browse-cards-dialog'
 import { ConjugationTablesDialog } from '@/components/conjugation-tables-dialog'
 import { HanjaDrillsDialog } from '@/components/hanja-drills-dialog'
-import { Settings, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User } from 'lucide-react'
+import { Settings, LogOut, EyeOff, BarChart2, Search, Table, Shuffle, User, MessageSquare } from 'lucide-react'
 
 export function AppHeader() {
   const { isAuthenticated, isAdmin, logout } = useAuth()
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [browseCardsOpen, setBrowseCardsOpen] = useState(false)
   const [conjugationTablesOpen, setConjugationTablesOpen] = useState(false)
@@ -67,6 +69,12 @@ export function AppHeader() {
                 Conjugation Tables
               </DropdownMenuItem>
             )}
+            {isAdmin && (
+              <DropdownMenuItem onClick={() => setFeedbackOpen(true)}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Check feedback
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setSuppressedCardsOpen(true)}>
               <EyeOff className="mr-2 h-4 w-4" />
               Suppressed Cards
@@ -89,6 +97,7 @@ export function AppHeader() {
         )}
       </header>
 
+      {isAdmin && <CheckFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {isAdmin && (
         <BrowseCardsDialog open={browseCardsOpen} onOpenChange={setBrowseCardsOpen} />

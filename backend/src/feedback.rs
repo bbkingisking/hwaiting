@@ -1,0 +1,135 @@
+//! Sentence feedback for admin triage.
+
+use axum::{Json, extract::State};
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use tracing::info;
+use utoipa::{IntoParams, ToSchema};
+
+use crate::error::{AppError, AppJson, AppQuery};
+
+#[derive(Deserialize)]
+pub struct FeedbackQuery {
+    pub sentence_id: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct FeedbackRequest {
+    pub body: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct FeedbackResponse {
+    pub id: i64,
+}
+
+#[derive(Deserialize, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ListFeedbackQuery {
+    /// Maximum number of entries. Omit to return all feedback.
+    #[param(minimum = 1)]
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
+pub struct FeedbackEntry {
+    pub id: i64,
+    /// Card containing the feedback sentence, for admin editing.
+    pub card_id: i64,
+    pub sentence_id: i64,
+    pub user_id: i64,
+    pub body: String,
+    /// Submission time in UTC (SQLite YYYY-MM-DD HH:MM:SS format).
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ListFeedbackResponse {
+    pub feedback: Vec<FeedbackEntry>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/feedback/submit",
+    description = "Submit content feedback about a sentence for admin triage. Feedback does not change review scheduling or card content.",
+    params(("sentence_id" = i64, Query, description = "Sentence ID")),
+    request_body = FeedbackRequest,
+    responses(
+        (status = 200, description = "Feedback recorded", body = FeedbackResponse),
+        (status = 400, description = "Missing or invalid sentence_id or JSON body", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 404, description = "Sentence not found", body = crate::error::ErrorResponse),
+    ),
+    security(("cookie_auth" = [])),
+    tag = "feedback"
+)]
+pub async fn submit_feedback(
+    State(pool): State<SqlitePool>,
+    AppQuery(query): AppQuery<FeedbackQuery>,
+    auth: crate::auth::AuthUser,
+    AppJson(payload): AppJson<FeedbackRequest>,
+) -> Result<Json<FeedbackResponse>, AppError> {
+    let user_id = auth.0;
+
+    // Return the API's 404 for an unknown sentence. The FK also protects this
+    // relationship if another write path forgets the check.
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM sentences WHERE id = ?")
+        .bind(query.sentence_id)
+        .fetch_optional(&pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+
+    let id = sqlx::query("INSERT INTO feedback (sentence_id, user_id, body) VALUES (?, ?, ?)")
+        .bind(query.sentence_id)
+        .bind(user_id)
+        .bind(&payload.body)
+        .execute(&pool)
+        .await?
+        .last_insert_rowid();
+
+    info!(
+        "Feedback submitted for sentence_id: {}, user_id: {}, feedback_id: {}",
+        query.sentence_id, user_id, id
+    );
+
+    Ok(Json(FeedbackResponse { id }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/feedback",
+    description = "List everyone's sentence feedback for admin triage, oldest first (submission time, then ID). Omit limit to return all entries. Requires an admin account.",
+    params(ListFeedbackQuery),
+    responses(
+        (status = 200, description = "Feedback for admin triage", body = ListFeedbackResponse),
+        (status = 400, description = "Limit must be a positive integer", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
+        (status = 403, description = "Admin access required", body = crate::error::ErrorResponse),
+    ),
+    security(("cookie_auth" = [])),
+    tag = "admin"
+)]
+pub async fn list_feedback(
+    State(pool): State<SqlitePool>,
+    _admin: crate::auth::AdminUser,
+    AppQuery(params): AppQuery<ListFeedbackQuery>,
+) -> Result<Json<ListFeedbackResponse>, AppError> {
+    if params.limit.is_some_and(|limit| limit <= 0) {
+        return Err(AppError::BadRequest("limit must be positive".into()));
+    }
+    let feedback = sqlx::query_as::<_, FeedbackEntry>(
+        "SELECT f.id, s.card_id, f.sentence_id, f.user_id, f.body, f.created_at
+         FROM feedback f JOIN sentences s ON s.id = f.sentence_id
+         ORDER BY f.created_at ASC, f.id ASC LIMIT ?",
+    )
+    .bind(params.limit.unwrap_or(-1))
+    .fetch_all(&pool)
+    .await?;
+    Ok(Json(ListFeedbackResponse { feedback }))
+}
+
+#[cfg(test)]
+#[path = "tests/feedback.rs"]
+mod tests;

@@ -208,14 +208,6 @@ export type CheckResponse = CardReveal & {
     correct: boolean;
 };
 
-export type CommentRequest = {
-    body: string;
-};
-
-export type CommentResponse = {
-    id: number;
-};
-
 export type DayHistory = {
     correct: number;
     date: string;
@@ -243,6 +235,29 @@ export type ExportData = {
     settings: UserSettingsExport;
     suppressed_cards: Array<number>;
     version: string;
+};
+
+export type FeedbackEntry = {
+    body: string;
+    /**
+     * Card containing the feedback sentence, for admin editing.
+     */
+    card_id: number;
+    /**
+     * Submission time in UTC (SQLite YYYY-MM-DD HH:MM:SS format).
+     */
+    created_at: string;
+    id: number;
+    sentence_id: number;
+    user_id: number;
+};
+
+export type FeedbackRequest = {
+    body: string;
+};
+
+export type FeedbackResponse = {
+    id: number;
 };
 
 /**
@@ -345,6 +360,10 @@ export type InflectionHint = {
     is_humble?: boolean;
     speech_level?: string | null;
     tense?: string | null;
+};
+
+export type ListFeedbackResponse = {
+    feedback: Array<FeedbackEntry>;
 };
 
 export type ListPasskeysResponse = {
@@ -764,6 +783,44 @@ export type GetCardInflectionsResponses = {
 
 export type GetCardInflectionsResponse = GetCardInflectionsResponses[keyof GetCardInflectionsResponses];
 
+export type ListFeedbackData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum number of entries. Omit to return all feedback.
+         */
+        limit?: number;
+    };
+    url: '/api/admin/feedback';
+};
+
+export type ListFeedbackErrors = {
+    /**
+     * Limit must be a positive integer
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required
+     */
+    403: ErrorResponse;
+};
+
+export type ListFeedbackError = ListFeedbackErrors[keyof ListFeedbackErrors];
+
+export type ListFeedbackResponses = {
+    /**
+     * Feedback for admin triage
+     */
+    200: ListFeedbackResponse;
+};
+
+export type ListFeedbackResponse2 = ListFeedbackResponses[keyof ListFeedbackResponses];
+
 export type ListGrammarPatternsData = {
     body?: never;
     path?: never;
@@ -1122,50 +1179,6 @@ export type ListSuppressedCardsResponses = {
 
 export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof ListSuppressedCardsResponses];
 
-export type CommentOnCardData = {
-    body: CommentRequest;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path: {
-        /**
-         * Card ID
-         */
-        card_id: number;
-    };
-    query?: never;
-    url: '/api/cards/{card_id}/comment';
-};
-
-export type CommentOnCardErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Card not found
-     */
-    404: ErrorResponse;
-};
-
-export type CommentOnCardError = CommentOnCardErrors[keyof CommentOnCardErrors];
-
-export type CommentOnCardResponses = {
-    /**
-     * Comment recorded
-     */
-    200: CommentResponse;
-};
-
-export type CommentOnCardResponse = CommentOnCardResponses[keyof CommentOnCardResponses];
-
 export type SuppressCardData = {
     body?: never;
     headers: {
@@ -1298,6 +1311,54 @@ export type SubscribeResponses = {
 
 export type SubscribeResponse = SubscribeResponses[keyof SubscribeResponses];
 
+export type SubmitFeedbackData = {
+    body: FeedbackRequest;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query: {
+        /**
+         * Sentence ID
+         */
+        sentence_id: number;
+    };
+    url: '/api/feedback/submit';
+};
+
+export type SubmitFeedbackErrors = {
+    /**
+     * Missing or invalid sentence_id or JSON body
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Sentence not found
+     */
+    404: ErrorResponse;
+};
+
+export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
+
+export type SubmitFeedbackResponses = {
+    /**
+     * Feedback recorded
+     */
+    200: FeedbackResponse;
+};
+
+export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
+
 export type HealthCheckData = {
     body?: never;
     path?: never;
@@ -1401,7 +1462,7 @@ export type ValidateCardAttemptError = ValidateCardAttemptErrors[keyof ValidateC
 
 export type ValidateCardAttemptResponses = {
     /**
-     * Whether the token still matches an available prompt
+     * The token is still valid for review
      */
     200: ValidateResponse;
 };

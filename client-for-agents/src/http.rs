@@ -225,12 +225,12 @@ pub fn answer(card_id: &str, guess: &str, attempt_token: &str) -> Result<Value, 
     Ok(result)
 }
 
-/// Records a content-review note against a card server-side.
-pub fn comment(card_id: &str, text: &str) -> Result<Value, AppError> {
+/// Submits content feedback about a sentence server-side.
+pub fn feedback(sentence_id: i64, text: &str) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
     let body = json!({ "body": text });
     parse(&post_json(
-        &format!("/api/cards/{card_id}/comment"),
+        &format!("/api/feedback/submit?sentence_id={sentence_id}"),
         &client,
         &body,
     )?)

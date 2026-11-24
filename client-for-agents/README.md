@@ -1,6 +1,6 @@
 This is a simple CLI interface to a running ../backend. It allows anyone (but is especially useful for AI agents) to go through the database content, one card at a time, like a user would, in a programmatic way, receiving predictable JSON objects for cards and allowing them to POST their answer.
 
-Among other things (see the --help option of the compiled binary for a full list of commands), the `comment` command allows the agent to flag specific things about a card and have that comment be inserted in a separate table in the database that FKs to the card in question.
+The `feedback <sentence_id> <text>` command submits sentence feedback for admin triage through `POST /api/feedback/submit?sentence_id=…`. Feedback is stored with foreign keys to the sentence and submitting user.
 
 The `krdict` command is unrelated to the review flow above: it takes a KRDICT target code and dumps the full dictionary entry (via the [`krdict`](https://crates.io/crates/krdict) crate, with English translations included) as JSON, for looking up the words a card is built from. It talks straight to KRDICT, not to the hwaiting backend, and needs `KRDICT_API_KEY` set in the environment.
 

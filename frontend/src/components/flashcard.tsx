@@ -16,6 +16,7 @@ import {
 import { MoreVertical } from 'lucide-react'
 import { suppressCard } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
+import { FeedbackDialog } from '@/components/feedback-dialog'
 import { EditCardDialog } from '@/components/edit-card-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { pos as posLookup, speechLevel as speechLevelLookup, tense as tenseLookup } from '@/lib/vocabulary'
@@ -197,6 +198,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   const [submittedAnswer, setSubmittedAnswer] = useState('')
   const [suppressing, setSuppressing] = useState(false)
   const [isAutoProgressing, setIsAutoProgressing] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [advancing, setAdvancing] = useState(false)
@@ -238,6 +240,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     setReveal(null)
     setSubmittedAnswer('')
     setIsAutoProgressing(false)
+    setFeedbackOpen(false)
     setEditOpen(false)
     setMenuOpen(false)
     setAdvancing(false)
@@ -252,7 +255,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editOpen || menuOpen) return
+      if (editOpen || feedbackOpen || menuOpen) return
       if (answered && (e.key === KEYS.ENTER || e.key === KEYS.SPACE)) {
         e.preventDefault()
         handleAdvance()
@@ -261,7 +264,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [answered, handleAdvance, editOpen, menuOpen])
+  }, [answered, handleAdvance, editOpen, feedbackOpen, menuOpen])
 
   // The backend splits `sentence` around `target` for us (see
   // cards::split_sentence) - it owns both strings and is the only place that
@@ -270,6 +273,13 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
   const after = card.card.sentence_after
 
   const krdictLink = krdictUrl(card.card.krdict_id)
+
+  function openFeedback() {
+    clearTimeout(autoProgressTimer.current)
+    if (reveal) setAnswered(true)
+    setIsAutoProgressing(false)
+    setFeedbackOpen(true)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -423,6 +433,9 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
               }
             />
             <DropdownMenuContent align="end" className="min-w-50">
+              <DropdownMenuItem onClick={openFeedback}>
+                Send feedback
+              </DropdownMenuItem>
               {/*
                 Open authoring tools after the answer so the complete editor
                 does not reveal the target during review.
@@ -564,6 +577,11 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
       {/* Mounting is gated the same as the menu item that opens it (above) -
           `reveal` is guaranteed non-null here. */}
+      {feedbackOpen && (
+        <FeedbackDialog sentenceId={card.card.sentence_id}
+          sentence={`${card.card.sentence_before}${reveal?.target ?? "_____"}${card.card.sentence_after}`}
+          onOpenChange={setFeedbackOpen} />
+      )}
       {isAdmin && reveal && (
         <EditCardDialog
           open={editOpen}

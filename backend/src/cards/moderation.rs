@@ -1,23 +1,13 @@
 //! Per-card moderation/curation actions that sit outside the FSRS review
-//! flow: content-review comments and the suppress/unsuppress rotation flags.
+//! flow: the suppress/unsuppress rotation flags.
 
 use axum::{Json, extract::State};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 use utoipa::ToSchema;
 
-use crate::error::{AppError, AppJson, AppPath};
-
-#[derive(Deserialize, ToSchema)]
-pub struct CommentRequest {
-    pub body: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct CommentResponse {
-    pub id: i64,
-}
+use crate::error::{AppError, AppPath};
 
 #[derive(Serialize, ToSchema)]
 pub struct ReviewResponse {
@@ -38,57 +28,6 @@ pub struct SuppressedCard {
 #[derive(Serialize, ToSchema)]
 pub struct SuppressedCardsResponse {
     cards: Vec<SuppressedCard>,
-}
-
-// Record a content-review note against a card - e.g. "tense looks wrong",
-// "좀 should be an accepted alternative here". Purely a backlog for admin
-// triage; doesn't affect scheduling or what the review UI shows.
-#[utoipa::path(
-    post,
-    path = "/api/cards/{card_id}/comment",
-    description = "Record a content-feedback comment on a card for admin triage. Comments do not change review scheduling or card content.",
-    params(("card_id" = i64, Path, description = "Card ID")),
-    request_body = CommentRequest,
-    responses(
-        (status = 200, description = "Comment recorded", body = CommentResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-        (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
-    ),
-    security(("cookie_auth" = [])),
-    tag = "cards"
-)]
-pub async fn comment_on_card(
-    State(pool): State<SqlitePool>,
-    AppPath(card_id): AppPath<i64>,
-    auth: crate::auth::AuthUser,
-    AppJson(payload): AppJson<CommentRequest>,
-) -> Result<Json<CommentResponse>, AppError> {
-    let user_id = auth.0;
-
-    // Return the API's 404 for an unknown card. The FK also protects this
-    // relationship if another write path forgets the check.
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM cards WHERE id = ?")
-        .bind(card_id)
-        .fetch_optional(&pool)
-        .await?;
-    if exists.is_none() {
-        return Err(AppError::NotFound);
-    }
-
-    let id = sqlx::query("INSERT INTO cards_comments (card_id, user_id, body) VALUES (?, ?, ?)")
-        .bind(card_id)
-        .bind(user_id)
-        .bind(&payload.body)
-        .execute(&pool)
-        .await?
-        .last_insert_rowid();
-
-    info!(
-        "Comment added for card_id: {}, user_id: {}, comment_id: {}",
-        card_id, user_id, id
-    );
-
-    Ok(Json(CommentResponse { id }))
 }
 
 #[utoipa::path(
