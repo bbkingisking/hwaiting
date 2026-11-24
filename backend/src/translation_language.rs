@@ -33,8 +33,18 @@ impl TranslationLanguage {
     }
 }
 
+/// Rejects codes that are not three lowercase ASCII letters (`^[a-z]{3}$`)
+/// before any lookup, so a malformed code is distinct from an unknown one.
+pub(crate) fn validate_code(code: &str) -> Result<(), AppError> {
+    if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
+        return Err(AppError::InvalidTranslationLanguage);
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize, utoipa::ToSchema, sqlx::FromRow, Debug)]
 pub struct AvailableTranslationLanguage {
+    #[schema(pattern = "^[a-z]{3}$")]
     pub code: String,
     /// Distinct cards with at least one complete sentence in this language.
     pub card_count: i64,

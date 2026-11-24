@@ -280,6 +280,10 @@ export type FeedbackEntry = {
 };
 
 export type FeedbackRequest = {
+    /**
+     * Stored with leading and trailing whitespace trimmed; must not be empty
+     * after trimming. `maxLength` counts characters as sent.
+     */
     body: string;
     /**
      * The sentence the feedback is about.
@@ -724,6 +728,10 @@ export type UpdateSettingsRequest = {
      * Browser default, applied only if no timezone has been saved yet.
      */
     initial_study_timezone?: string | null;
+    /**
+     * History accuracy percentage below which days are shown red. Must stay
+     * below the yellow threshold, including the saved one when only this is sent.
+     */
     red_threshold?: number | null;
     show_hanja_hints?: boolean | null;
     study_timezone?: string | null;
@@ -731,6 +739,10 @@ export type UpdateSettingsRequest = {
      * Preferred content language code; use an available code from /api/cards/languages.
      */
     translation_language?: string | null;
+    /**
+     * History accuracy percentage below which days are shown yellow. Must stay
+     * above the red threshold, including the saved one when only this is sent.
+     */
     yellow_threshold?: number | null;
 };
 
@@ -767,6 +779,9 @@ export type UserSettingsCore = {
     history_colored_dots: boolean;
     history_colorized_area: boolean;
     history_threshold_lines: boolean;
+    /**
+     * History accuracy percentage below which days are shown red; below `yellow_threshold`.
+     */
     red_threshold: number;
     /**
      * Controls Hanja hint visibility on review cards.
@@ -782,6 +797,9 @@ export type UserSettingsCore = {
      * Null until chosen. In a backup import, null keeps the saved language.
      */
     translation_language: string | null;
+    /**
+     * History accuracy percentage below which days are shown yellow; above `red_threshold`.
+     */
     yellow_threshold: number;
 };
 
@@ -915,7 +933,7 @@ export type SaveAdminCardData = {
 
 export type SaveAdminCardErrors = {
     /**
-     * Invalid edit (`invalid_request` or `unknown_translation_language`)
+     * Invalid edit (`invalid_request`, `invalid_translation_language`, or `unknown_translation_language`)
      */
     400: ErrorResponse;
     /**
@@ -1638,7 +1656,7 @@ export type SubmitFeedbackData = {
 
 export type SubmitFeedbackErrors = {
     /**
-     * Invalid JSON body
+     * Invalid JSON body, or a body that is empty after trimming or longer than 2000 characters
      */
     400: ErrorResponse;
     /**

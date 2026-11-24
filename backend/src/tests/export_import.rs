@@ -75,6 +75,10 @@ async fn invalid_settings_match_patch_and_preserve_existing_data() {
         ("desired_retention", serde_json::json!(0.49)),
         ("desired_retention", serde_json::json!(1.0)),
         ("daily_new_card_limit", serde_json::json!(-1)),
+        ("red_threshold", serde_json::json!(-1)),
+        ("yellow_threshold", serde_json::json!(101)),
+        // 100 is in range but can never be below the saved yellow threshold.
+        ("red_threshold", serde_json::json!(100)),
     ] {
         let patch: crate::user::UpdateSettingsRequest =
             serde_json::from_value(serde_json::json!({field: value})).unwrap();

@@ -183,3 +183,68 @@ async fn translation_language_is_explicit_persisted_and_validated() {
             .is_foreign_key_violation()
     );
 }
+
+#[tokio::test]
+async fn thresholds_stay_in_range_and_ordered_against_saved_values() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let patch = |body: serde_json::Value| {
+        let pool = pool.clone();
+        async move {
+            update_settings(
+                State(pool),
+                AuthUser(user_id),
+                AppJson(serde_json::from_value(body).unwrap()),
+            )
+            .await
+        }
+    };
+    // Start from a known saved pair.
+    let saved = patch(serde_json::json!({"red_threshold": 60, "yellow_threshold": 75}))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (saved.core.red_threshold, saved.core.yellow_threshold),
+        (60, 75)
+    );
+    for body in [
+        serde_json::json!({"red_threshold": -1}),
+        serde_json::json!({"yellow_threshold": 101}),
+        // Crossing the saved yellow (75) or saved red (60) with a partial update.
+        serde_json::json!({"red_threshold": 75}),
+        serde_json::json!({"yellow_threshold": 60}),
+        serde_json::json!({"red_threshold": 50, "yellow_threshold": 50}),
+    ] {
+        let result = patch(body.clone()).await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))), "{body}");
+    }
+    let unchanged = get_settings(State(pool.clone()), AuthUser(user_id))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (
+            unchanged.core.red_threshold,
+            unchanged.core.yellow_threshold
+        ),
+        (60, 75)
+    );
+    // Moving both together past the old values is fine when the pair is ordered.
+    let moved = patch(serde_json::json!({"red_threshold": 80, "yellow_threshold": 95}))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (moved.core.red_threshold, moved.core.yellow_threshold),
+        (80, 95)
+    );
+    let partial = patch(serde_json::json!({"red_threshold": 0}))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (partial.core.red_threshold, partial.core.yellow_threshold),
+        (0, 95)
+    );
+}

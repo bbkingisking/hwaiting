@@ -53,7 +53,7 @@ export function FeedbackDialog({ sentenceId, sentence, onOpenChange }: FeedbackD
             <div className="space-y-2">
               <label htmlFor={inputId} className="font-medium">What needs checking?</label>
               <textarea id={inputId} value={text} onChange={event => setText(event.target.value)}
-                required disabled={sending} rows={5} placeholder="Tell us what looks wrong…"
+                required maxLength={2000} disabled={sending} rows={5} placeholder="Tell us what looks wrong…"
                 className="w-full resize-y rounded-md border border-input bg-background p-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" />
             </div>
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

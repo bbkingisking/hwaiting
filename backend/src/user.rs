@@ -46,7 +46,11 @@ pub struct UserSettingsCore {
     /// Controls Hanja hint visibility on review cards.
     #[schema(default = true)]
     pub show_hanja_hints: bool,
+    /// History accuracy percentage below which days are shown red; below `yellow_threshold`.
+    #[schema(minimum = 0, maximum = 100)]
     pub red_threshold: i64,
+    /// History accuracy percentage below which days are shown yellow; above `red_threshold`.
+    #[schema(minimum = 0, maximum = 100)]
     pub yellow_threshold: i64,
     #[schema(minimum = 0, maximum = 23)]
     pub day_boundary_hour: i64,
@@ -76,12 +80,39 @@ pub struct UserSettingsCore {
 }
 
 /// Shared bounds for partial settings updates and full data imports.
+/// Red must stay strictly below yellow, or the history colors overlap.
+pub(crate) fn validate_threshold_order(red: i64, yellow: i64) -> Result<(), AppError> {
+    if red >= yellow {
+        return Err(AppError::BadRequest(
+            "red_threshold must be below yellow_threshold".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_settings_values(
+    red_threshold: Option<i64>,
+    yellow_threshold: Option<i64>,
     day_boundary_hour: Option<i64>,
     auto_progress_delay: Option<i64>,
     desired_retention: Option<f64>,
     daily_new_card_limit: Option<i64>,
 ) -> Result<(), AppError> {
+    for (name, value) in [
+        ("red_threshold", red_threshold),
+        ("yellow_threshold", yellow_threshold),
+    ] {
+        if let Some(v) = value
+            && !(0..=100).contains(&v)
+        {
+            return Err(AppError::BadRequest(format!(
+                "{name} must be between 0 and 100"
+            )));
+        }
+    }
+    if let (Some(red), Some(yellow)) = (red_threshold, yellow_threshold) {
+        validate_threshold_order(red, yellow)?;
+    }
     if let Some(v) = day_boundary_hour
         && !(0..=23).contains(&v)
     {
@@ -127,7 +158,13 @@ pub struct UserSettings {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
     pub show_hanja_hints: Option<bool>,
+    /// History accuracy percentage below which days are shown red. Must stay
+    /// below the yellow threshold, including the saved one when only this is sent.
+    #[schema(minimum = 0, maximum = 100)]
     pub red_threshold: Option<i64>,
+    /// History accuracy percentage below which days are shown yellow. Must stay
+    /// above the red threshold, including the saved one when only this is sent.
+    #[schema(minimum = 0, maximum = 100)]
     pub yellow_threshold: Option<i64>,
     #[schema(minimum = 0, maximum = 23)]
     pub day_boundary_hour: Option<i64>,
@@ -267,14 +304,14 @@ pub async fn update_settings(
     } = payload;
 
     if let Some(code) = &translation_language {
-        if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
-            return Err(AppError::InvalidTranslationLanguage);
-        }
+        crate::translation_language::validate_code(code)?;
         crate::translation_language::TranslationLanguage(code.clone())
             .id(&pool)
             .await?;
     }
     validate_settings_values(
+        red_threshold,
+        yellow_threshold,
         day_boundary_hour,
         auto_progress_delay,
         desired_retention,
@@ -297,6 +334,19 @@ pub async fn update_settings(
     // half-applied.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     ensure_settings_row(&mut *tx, user_id).await?;
+    // A partial update must keep the thresholds ordered against the saved values.
+    if red_threshold.is_some() || yellow_threshold.is_some() {
+        let (saved_red, saved_yellow): (i64, i64) = sqlx::query_as(
+            "SELECT red_threshold, yellow_threshold FROM users_settings WHERE user_id = ?",
+        )
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        validate_threshold_order(
+            red_threshold.unwrap_or(saved_red),
+            yellow_threshold.unwrap_or(saved_yellow),
+        )?;
+    }
 
     let mut sets: Vec<&str> = Vec::new();
     if show_hanja_hints.is_some() {

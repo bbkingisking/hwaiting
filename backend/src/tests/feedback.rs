@@ -326,3 +326,40 @@ async fn admins_delete_feedback_once_and_others_are_forbidden() {
         .unwrap();
     assert_eq!(remaining, 0);
 }
+
+#[tokio::test]
+async fn feedback_bodies_are_trimmed_and_bounded() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let sentence_id: i64 = sqlx::query_scalar("SELECT id FROM sentences LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let submit = |body: String| {
+        let pool = pool.clone();
+        async move {
+            submit_feedback(
+                State(pool),
+                AuthUser(user_id),
+                AppJson(FeedbackRequest { sentence_id, body }),
+            )
+            .await
+        }
+    };
+    for body in [
+        String::new(),
+        " \n\t ".into(),
+        "x".repeat(FEEDBACK_MAX_CHARS + 1),
+    ] {
+        assert!(matches!(submit(body).await, Err(AppError::BadRequest(_))));
+    }
+    // The limit counts characters, not bytes.
+    assert!(submit("가".repeat(FEEDBACK_MAX_CHARS)).await.is_ok());
+    let (_, axum::Json(created)) = submit("  Typo here \n".into()).await.unwrap();
+    let stored: String = sqlx::query_scalar("SELECT body FROM feedback WHERE id = ?")
+        .bind(created.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "Typo here");
+}

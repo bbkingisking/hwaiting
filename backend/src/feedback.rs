@@ -12,8 +12,15 @@ use crate::error::{AppError, AppJson, AppPath, AppQuery};
 pub struct FeedbackRequest {
     /// The sentence the feedback is about.
     pub sentence_id: i64,
+    /// Stored with leading and trailing whitespace trimmed; must not be empty
+    /// after trimming. `maxLength` counts characters as sent.
+    #[schema(min_length = 1, max_length = 2000)]
     pub body: String,
 }
+
+/// Longest accepted feedback body, in Unicode characters. utoipa's
+/// `max_length` needs a literal, so `FeedbackRequest` repeats it.
+pub(crate) const FEEDBACK_MAX_CHARS: usize = 2000;
 
 #[derive(Serialize, ToSchema)]
 pub struct FeedbackResponse {
@@ -53,7 +60,7 @@ pub struct ListFeedbackResponse {
     request_body = FeedbackRequest,
     responses(
         (status = 201, description = "Feedback recorded", body = FeedbackResponse),
-        (status = 400, description = "Invalid JSON body", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid JSON body, or a body that is empty after trimming or longer than 2000 characters", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Sentence not found", body = crate::error::ErrorResponse),
     ),
@@ -67,6 +74,15 @@ pub async fn submit_feedback(
 ) -> Result<(StatusCode, Json<FeedbackResponse>), AppError> {
     let user_id = auth.0;
     let sentence_id = payload.sentence_id;
+    if payload.body.chars().count() > FEEDBACK_MAX_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "feedback must be at most {FEEDBACK_MAX_CHARS} characters"
+        )));
+    }
+    let body = payload.body.trim();
+    if body.is_empty() {
+        return Err(AppError::BadRequest("feedback must not be empty".into()));
+    }
 
     // Return the API's 404 for an unknown sentence. The FK also protects this
     // relationship if another write path forgets the check.
@@ -81,7 +97,7 @@ pub async fn submit_feedback(
     let id = sqlx::query("INSERT INTO feedback (sentence_id, user_id, body) VALUES (?, ?, ?)")
         .bind(sentence_id)
         .bind(user_id)
-        .bind(&payload.body)
+        .bind(body)
         .execute(&pool)
         .await?
         .last_insert_rowid();

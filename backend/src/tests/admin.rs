@@ -549,3 +549,34 @@ async fn invalid_merged_sentence_and_target_roll_back_the_entire_save() {
     .unwrap();
     assert_eq!(after, before);
 }
+
+#[tokio::test]
+async fn malformed_and_unknown_language_codes_are_distinct_errors() {
+    let pool = test_pool().await;
+    let admin = test_admin_user(&pool).await;
+    for (code, malformed) in [("EN", true), ("english", true), ("zzz", false)] {
+        let request = serde_json::from_value(serde_json::json!({
+            "expected_content_revision": 0,
+            "changes": [{"sentence_id": 1, "translation_language": code, "trans_word": "x"}]
+        }))
+        .unwrap();
+        let result = save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(request),
+        )
+        .await;
+        if malformed {
+            assert!(
+                matches!(result, Err(AppError::InvalidTranslationLanguage)),
+                "{code}"
+            );
+        } else {
+            assert!(
+                matches!(result, Err(AppError::UnknownTranslationLanguage)),
+                "{code}"
+            );
+        }
+    }
+}

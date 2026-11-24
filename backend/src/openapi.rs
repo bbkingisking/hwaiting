@@ -63,6 +63,23 @@ impl Modify for SecurityAddon {
                     .required("data")
                     .into(),
             );
+            // Translation maps are keyed by language code; utoipa only types keys as strings.
+            for name in ["AdminSentence", "AdminCardDetail"] {
+                if let Some(utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                    object,
+                ))) = components.schemas.get_mut(name)
+                    && let Some(utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                        map,
+                    ))) = object.properties.get_mut("translations")
+                {
+                    map.property_names = Some(Box::new(
+                        ObjectBuilder::new()
+                            .schema_type(Type::String)
+                            .pattern(Some("^[a-z]{3}$"))
+                            .into(),
+                    ));
+                }
+            }
             components.add_security_scheme(
                 "cookie_auth",
                 SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(
@@ -310,6 +327,16 @@ mod tests {
     fn document_is_openapi_3_2_with_typed_event_stream() {
         let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
         assert_eq!(spec["openapi"], "3.2.0");
+        let schemas = &spec["components"]["schemas"];
+        for (schema, property) in [
+            ("AdminSentence", "translations"),
+            ("AdminCardDetail", "translations"),
+        ] {
+            assert_eq!(
+                schemas[schema]["properties"][property]["propertyNames"]["pattern"], "^[a-z]{3}$",
+                "{schema}.{property} keys"
+            );
+        }
         let stream = &spec["paths"]["/api/events"]["get"]["responses"]["200"]["content"]["text/event-stream"];
         assert_eq!(
             stream["itemSchema"]["$ref"],
