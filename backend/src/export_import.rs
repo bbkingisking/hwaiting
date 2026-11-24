@@ -95,7 +95,7 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
     if let Some(code) = &data.settings.core.translation_language {
         if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
             return Err(AppError::TranslationLanguage(
-                "invalid_translation_language",
+                crate::error::TranslationLanguageErrorCode::InvalidTranslationLanguage,
             ));
         }
     }

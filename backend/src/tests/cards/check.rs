@@ -539,7 +539,7 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
     assert!(matches!(
         result,
         Err(AppError::TranslationLanguage(
-            "unknown_translation_language"
+            crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage
         ))
     ));
     for table in ["cards_states", "review_history", "wrong_answers"] {

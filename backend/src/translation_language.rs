@@ -18,7 +18,7 @@ impl TranslationLanguage {
                 .await?
                 .flatten();
         code.map(Self).ok_or(AppError::TranslationLanguage(
-            "translation_language_not_configured",
+            crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured,
         ))
     }
 
@@ -31,7 +31,7 @@ impl TranslationLanguage {
             .fetch_optional(executor)
             .await?
             .ok_or(AppError::TranslationLanguage(
-                "unknown_translation_language",
+                crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage,
             ))
     }
 }
@@ -75,7 +75,7 @@ mod tests {
         assert!(matches!(
             TranslationLanguage("zzz".into()).id(&pool).await,
             Err(AppError::TranslationLanguage(
-                "unknown_translation_language"
+                crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage
             ))
         ));
         let languages = available_translation_languages(State(pool.clone()), AuthUser(user))
@@ -263,14 +263,14 @@ mod tests {
         assert!(matches!(
             result,
             Err(AppError::TranslationLanguage(
-                "translation_language_not_configured"
+                crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured
             ))
         ));
         crate::user::ensure_settings_row(&pool, user).await.unwrap();
         assert!(matches!(
             TranslationLanguage::for_user(&pool, user).await,
             Err(AppError::TranslationLanguage(
-                "translation_language_not_configured"
+                crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured
             ))
         ));
     }

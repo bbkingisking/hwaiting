@@ -5,31 +5,44 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::json;
 use tracing::error;
 use utoipa::ToSchema;
 
-/// Schema-only mirror of the `{"error": "..."}` envelope every error
-/// response uses (built ad hoc via `serde_json::json!` in
-/// `AppError::into_response`, not actually constructed from this struct) -
-/// exists purely so `#[utoipa::path]` annotations have something to point
-/// error responses at.
+/// Common error envelope; language selection failures include an actionable code.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
     pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<TranslationLanguageErrorCode>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslationLanguageErrorCode {
+    TranslationLanguageNotConfigured,
+    UnknownTranslationLanguage,
+    InvalidTranslationLanguage,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StaleAnswerCode {
+    StaleReview,
+    StaleContent,
+    StalePrompt,
 }
 
 /// Machine-readable response for a rejected stale answer.
 #[derive(Serialize, ToSchema)]
 pub struct StaleAnswerResponse {
     pub error: String,
-    pub code: String,
+    pub code: StaleAnswerCode,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Invalid translation-language selection: {0}")]
-    TranslationLanguage(&'static str),
+    #[error("Invalid translation-language selection: {0:?}")]
+    TranslationLanguage(TranslationLanguageErrorCode),
     #[error("Card review state has changed")]
     StaleReview,
 
@@ -112,16 +125,23 @@ impl From<argon2::password_hash::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         if let AppError::TranslationLanguage(code) = &self {
-            let message = match *code {
-                "translation_language_not_configured" => {
+            let message = match code {
+                TranslationLanguageErrorCode::TranslationLanguageNotConfigured => {
                     "Choose a preferred translation language in your settings"
                 }
-                "unknown_translation_language" => "Unknown translation-language code",
-                _ => "Expected a lowercase three-letter translation language code",
+                TranslationLanguageErrorCode::UnknownTranslationLanguage => {
+                    "Unknown translation-language code"
+                }
+                TranslationLanguageErrorCode::InvalidTranslationLanguage => {
+                    "Expected a lowercase three-letter translation language code"
+                }
             };
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": message, "code": code})),
+                Json(ErrorResponse {
+                    error: message.into(),
+                    code: Some(*code),
+                }),
             )
                 .into_response();
         }
@@ -132,7 +152,7 @@ impl IntoResponse for AppError {
                     StatusCode::CONFLICT,
                     Json(StaleAnswerResponse {
                         error: "Card review state has changed".to_string(),
-                        code: "stale_review".to_string(),
+                        code: StaleAnswerCode::StaleReview,
                     }),
                 )
                     .into_response();
@@ -142,7 +162,7 @@ impl IntoResponse for AppError {
                     StatusCode::CONFLICT,
                     Json(StaleAnswerResponse {
                         error: "Card content has changed".to_string(),
-                        code: "stale_content".to_string(),
+                        code: StaleAnswerCode::StaleContent,
                     }),
                 )
                     .into_response();
@@ -152,7 +172,7 @@ impl IntoResponse for AppError {
                     StatusCode::CONFLICT,
                     Json(StaleAnswerResponse {
                         error: "The selected sentence has changed".to_string(),
-                        code: "stale_prompt".to_string(),
+                        code: StaleAnswerCode::StalePrompt,
                     }),
                 )
                     .into_response();
@@ -216,7 +236,14 @@ impl IntoResponse for AppError {
             }
         };
 
-        (status, Json(json!({ "error": message }))).into_response()
+        (
+            status,
+            Json(ErrorResponse {
+                error: message,
+                code: None,
+            }),
+        )
+            .into_response()
     }
 }
 

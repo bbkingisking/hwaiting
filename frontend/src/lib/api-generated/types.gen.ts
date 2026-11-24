@@ -219,13 +219,10 @@ export type DayHistory = {
 };
 
 /**
- * Schema-only mirror of the `{"error": "..."}` envelope every error
- * response uses (built ad hoc via `serde_json::json!` in
- * `AppError::into_response`, not actually constructed from this struct) -
- * exists purely so `#[utoipa::path]` annotations have something to point
- * error responses at.
+ * Common error envelope; language selection failures include an actionable code.
  */
 export type ErrorResponse = {
+    code?: null | TranslationLanguageErrorCode;
     error: string;
 };
 
@@ -491,11 +488,13 @@ export type SignupRequest = {
     username: string;
 };
 
+export type StaleAnswerCode = 'stale_review' | 'stale_content' | 'stale_prompt';
+
 /**
  * Machine-readable response for a rejected stale answer.
  */
 export type StaleAnswerResponse = {
-    code: string;
+    code: StaleAnswerCode;
     error: string;
 };
 
@@ -552,6 +551,8 @@ export type TodayStatsResponse = {
      */
     study_day: string;
 };
+
+export type TranslationLanguageErrorCode = 'translation_language_not_configured' | 'unknown_translation_language' | 'invalid_translation_language';
 
 /**
  * Partial card edit. Any field left out of the JSON body is untouched;
