@@ -79,7 +79,7 @@ impl Modify for SecurityAddon {
                 }
             }
         }
-        // Keep the write requirement executable in Swagger UI and visible
+        // Keep the write requirement executable in the API reference and visible
         // to generated clients, including unauthenticated login endpoints.
         for path in openapi.paths.paths.values_mut() {
             for operation in [

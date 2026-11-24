@@ -30,7 +30,6 @@ unicode-normalization = "0.1.25"
 # to the tree, just a direct edge to a crate already being built.
 url = "2.5.8"
 utoipa = { version = "5.5.0", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.26.0", features = ["v4", "serde"] }
 # Pure-Rust WebAuthn relying-party library (RustCrypto backend: p256/p384/
 # ed25519-dalek/rsa) - no openssl-sys anywhere in the dependency tree. See
