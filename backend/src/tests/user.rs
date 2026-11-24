@@ -86,7 +86,7 @@ async fn hanja_hint_preference_defaults_on_and_partial_updates_preserve_it() {
         )
         .await
         .unwrap();
-        assert!(response.success);
+        assert!(!response.core.show_hanja_hints);
         let saved = get_settings(State(pool.clone()), AuthUser(user_id))
             .await
             .unwrap()
@@ -111,7 +111,7 @@ async fn hanja_hint_preference_defaults_on_and_partial_updates_preserve_it() {
     )
     .await
     .unwrap();
-    assert!(response.success);
+    assert!(response.core.show_hanja_hints);
     let restored = get_settings(State(pool), AuthUser(user_id))
         .await
         .unwrap()

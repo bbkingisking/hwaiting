@@ -19,7 +19,6 @@ use super::time::parse_flexible_datetime;
 
 #[derive(Serialize, ToSchema)]
 pub struct OptimizeFsrsResponse {
-    success: bool,
     parameters: Vec<f32>,
     /// Delayed review outcomes supplied to the optimizer, excluding repeated history prefixes.
     #[schema(value_type = u64)]
@@ -178,7 +177,6 @@ pub async fn optimize_fsrs(
     info!("FSRS parameters optimized from {} reviews", review_count);
 
     Ok(Json(OptimizeFsrsResponse {
-        success: true,
         parameters,
         review_count,
     }))

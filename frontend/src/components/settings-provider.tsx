@@ -115,7 +115,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const timeout = setTimeout(() => controller.abort(), 12000)
     try {
       if (hasServerChanges) {
-        const result = await updateUserSettings({
+        await updateUserSettings({
           translation_language: serverChanges.translationLanguage ?? undefined,
           show_hanja_hints: serverChanges.showHanjaHints,
           red_threshold: serverChanges.redThreshold,
@@ -130,7 +130,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           history_colored_dots: serverChanges.historyColoredDots,
           history_threshold_lines: serverChanges.historyThresholdLines,
         }, controller.signal)
-        if (!result.success) throw new Error('Could not save settings')
       }
       if (debugStatusBar !== undefined) localStorage.setItem(STORAGE_KEYS.DEBUG_STATUS_BAR, String(debugStatusBar))
       setSettings(previous => ({ ...previous, ...changes }))

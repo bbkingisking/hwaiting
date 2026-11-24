@@ -266,21 +266,19 @@ export async function getTodayStats(): Promise<TodayStatsResponse> {
 
 type UserSettings = Schemas.UserSettings
 type UpdateSettingsRequest = Schemas.UpdateSettingsRequest
-type UpdateSettingsResponse = Schemas.UpdateSettingsResponse
 
 export async function getUserSettings(): Promise<UserSettings> {
   const url = `${apiBase()}/api/user/settings`
   let settings: UserSettings = await fetchWithAuth(url)
   if (settings.study_timezone == null) {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-    await updateUserSettings({ initial_study_timezone: timezone })
-    // A different device may have initialized it first. Always use the saved value.
-    settings = await fetchWithAuth(url)
+    // A different device may have initialized it first; the response is the saved value.
+    settings = await updateUserSettings({ initial_study_timezone: timezone })
   }
   return settings
 }
 
-export async function updateUserSettings(settings: UpdateSettingsRequest, signal?: AbortSignal): Promise<UpdateSettingsResponse> {
+export async function updateUserSettings(settings: UpdateSettingsRequest, signal?: AbortSignal): Promise<UserSettings> {
   const url = `${apiBase()}/api/user/settings`
   const result = await fetchWithAuth(url, {
     method: 'PATCH',

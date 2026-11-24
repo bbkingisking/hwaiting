@@ -375,9 +375,7 @@ export type ImportDataRequest = {
 };
 
 export type ImportDataResponse = {
-    message: string;
     stats: ImportStats;
-    success: boolean;
 };
 
 export type ImportStats = {
@@ -445,7 +443,6 @@ export type OptimizeFsrsResponse = {
      * Delayed review outcomes supplied to the optimizer, excluding repeated history prefixes.
      */
     review_count: number;
-    success: boolean;
 };
 
 /**
@@ -557,7 +554,6 @@ export type SaveAdminCardRequest = {
 
 export type SaveAdminCardResponse = {
     card: AdminCardDetail;
-    success: boolean;
 };
 
 export type SignupRequest = {
@@ -745,10 +741,6 @@ export type UpdateSettingsRequest = {
      */
     translation_language?: string | null;
     yellow_threshold?: number | null;
-};
-
-export type UpdateSettingsResponse = {
-    success: boolean;
 };
 
 export type UserProfile = {
@@ -2408,9 +2400,9 @@ export type UpdateSettingsError = UpdateSettingsErrors[keyof UpdateSettingsError
 
 export type UpdateSettingsResponses = {
     /**
-     * Settings updated (partial update, only provided fields written)
+     * Settings updated (only provided fields are written); returns the full saved settings
      */
-    200: UpdateSettingsResponse;
+    200: UserSettings;
 };
 
-export type UpdateSettingsResponse2 = UpdateSettingsResponses[keyof UpdateSettingsResponses];
+export type UpdateSettingsResponse = UpdateSettingsResponses[keyof UpdateSettingsResponses];

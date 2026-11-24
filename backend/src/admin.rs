@@ -270,7 +270,6 @@ pub struct UpdateCardRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct EditCardResponse {
-    pub success: bool,
     pub content_revision: i64,
     pub card: Card,
     #[serde(skip)]
@@ -433,7 +432,6 @@ async fn edit_card_in_transaction(
                 .await?;
         let card = project_card(current, current_alternatives);
         return Ok(EditCardResponse {
-            success: true,
             content_revision,
             card,
             changed: false,
@@ -705,7 +703,6 @@ async fn edit_card_in_transaction(
 
     info!("Card {} updated successfully", card_id);
     Ok(EditCardResponse {
-        success: true,
         content_revision,
         card,
         changed: true,

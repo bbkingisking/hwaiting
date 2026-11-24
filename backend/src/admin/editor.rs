@@ -167,7 +167,6 @@ pub struct SaveAdminCardRequest {
 }
 #[derive(Serialize, ToSchema)]
 pub struct SaveAdminCardResponse {
-    pub success: bool,
     pub card: AdminCardDetail,
     #[serde(skip)]
     pub(crate) changed: bool,
@@ -268,9 +267,5 @@ pub async fn save_admin_card(
     }
     let card = load_admin_card(&mut tx, card_id).await?;
     tx.commit().await?;
-    Ok(Json(SaveAdminCardResponse {
-        success: true,
-        card,
-        changed,
-    }))
+    Ok(Json(SaveAdminCardResponse { card, changed }))
 }

@@ -56,7 +56,7 @@ pub async fn update_settings(
     auth: AuthUser,
     headers: HeaderMap,
     payload: AppJson<user::UpdateSettingsRequest>,
-) -> Result<Json<user::UpdateSettingsResponse>, AppError> {
+) -> Result<Json<user::UserSettings>, AppError> {
     let user_id = auth.0;
     let response = user::update_settings(State(state.pool), auth, payload).await?;
     state.events.publish(Some(user_id), None, &headers);

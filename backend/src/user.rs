@@ -146,11 +146,6 @@ pub struct UpdateSettingsRequest {
     pub history_threshold_lines: Option<bool>,
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct UpdateSettingsResponse {
-    pub success: bool,
-}
-
 // Get current user's profile
 #[utoipa::path(
     get,
@@ -199,7 +194,10 @@ pub async fn get_settings(
     info!("Getting settings for user_id: {}", user_id);
 
     ensure_settings_row(&pool, user_id).await?;
+    Ok(Json(load_settings(&pool, user_id).await?))
+}
 
+async fn load_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettings, AppError> {
     let core = sqlx::query_as::<_, UserSettingsCore>(
         r#"
         SELECT show_hanja_hints, red_threshold, yellow_threshold, day_boundary_hour, study_timezone, translation_language, auto_progress_on_correct, auto_progress_delay, desired_retention, daily_new_card_limit, history_colorized_area, history_colored_dots, history_threshold_lines
@@ -208,20 +206,20 @@ pub async fn get_settings(
         "#
     )
     .bind(user_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     // Check if user has custom FSRS parameters
     let has_fsrs_parameters: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users_fsrs_parameters WHERE user_id = ?)")
             .bind(user_id)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await?;
 
-    Ok(Json(UserSettings {
+    Ok(UserSettings {
         core,
         has_fsrs_parameters,
-    }))
+    })
 }
 
 // Update user settings
@@ -231,7 +229,7 @@ pub async fn get_settings(
     description = "Update only the supplied study and display settings, validating values and saving the changes atomically. The initial study timezone is applied only if none is saved yet.",
     request_body = UpdateSettingsRequest,
     responses(
-        (status = 200, description = "Settings updated (partial update, only provided fields written)", body = UpdateSettingsResponse),
+        (status = 200, description = "Settings updated (only provided fields are written); returns the full saved settings", body = UserSettings),
         (status = 400, description = "Out-of-range value or malformed request", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
@@ -242,7 +240,7 @@ pub async fn update_settings(
     State(pool): State<SqlitePool>,
     auth: AuthUser,
     AppJson(payload): AppJson<UpdateSettingsRequest>,
-) -> Result<Json<UpdateSettingsResponse>, AppError> {
+) -> Result<Json<UserSettings>, AppError> {
     let user_id = auth.0;
     info!("Updating settings for user_id: {}", user_id);
 
@@ -393,7 +391,7 @@ pub async fn update_settings(
 
     info!("Settings updated successfully");
 
-    Ok(Json(UpdateSettingsResponse { success: true }))
+    Ok(Json(load_settings(&pool, user_id).await?))
 }
 
 #[cfg(test)]

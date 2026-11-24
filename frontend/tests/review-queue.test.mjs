@@ -184,18 +184,18 @@ test('saved study timezone is not changed by the browser timezone', async () => 
 })
 
 test('first settings load proposes the browser timezone and uses the saved winner', async () => {
-  let reads = 0
   respond = (_url, options) => {
     if (options.method === 'PATCH') {
       assert.deepEqual(JSON.parse(options.body), {
         initial_study_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       })
-      return Response.json({ success: true })
+      // Another device saved first; the PATCH returns the stored winner.
+      return Response.json({ study_timezone: 'Asia/Seoul' })
     }
-    return Response.json({ study_timezone: reads++ === 0 ? null : 'Asia/Seoul' })
+    return Response.json({ study_timezone: null })
   }
   assert.equal((await api.getUserSettings()).study_timezone, 'Asia/Seoul')
-  assert.equal(requests.length, 3)
+  assert.equal(requests.length, 2)
   assert.deepEqual(changes, ['availability'])
 })
 

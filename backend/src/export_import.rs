@@ -105,8 +105,6 @@ pub struct ImportDataRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct ImportDataResponse {
-    pub success: bool,
-    pub message: String,
     pub stats: ImportStats,
 }
 
@@ -637,11 +635,7 @@ pub async fn import_data(
 
     info!("Import complete: {:?}", stats);
 
-    Ok(Json(ImportDataResponse {
-        success: true,
-        message: "Data imported successfully".to_string(),
-        stats,
-    }))
+    Ok(Json(ImportDataResponse { stats }))
 }
 
 // Helper function to get user settings
