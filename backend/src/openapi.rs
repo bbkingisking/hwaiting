@@ -38,12 +38,56 @@ impl Modify for SecurityAddon {
         }
         openapi.servers = Some(vec![utoipa::openapi::Server::new("/")]);
         if let Some(components) = openapi.components.as_mut() {
+            // One SSE event on /api/events: the event name, and the
+            // Notification serialized as JSON in `data`.
+            components.schemas.insert(
+                "NotificationEvent".into(),
+                ObjectBuilder::new()
+                    .description(Some(
+                        "One server-sent event: `event` names the notification type and `data` carries the Notification as JSON.",
+                    ))
+                    .property(
+                        "event",
+                        ObjectBuilder::new()
+                            .schema_type(Type::String)
+                            .enum_values(Some(["card-mutated", "state-changed", "resync-required"])),
+                    )
+                    .property(
+                        "data",
+                        ObjectBuilder::new()
+                            .schema_type(Type::String)
+                            .content_media_type("application/json")
+                            .content_schema(Some(Ref::from_schema_name("Notification"))),
+                    )
+                    .required("event")
+                    .required("data")
+                    .into(),
+            );
             components.add_security_scheme(
                 "cookie_auth",
                 SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(
                     crate::auth_cookie::COOKIE_NAME,
                 ))),
             );
+        }
+        if let Some(content) = openapi
+            .paths
+            .paths
+            .get_mut("/api/events")
+            .and_then(|path| path.get.as_mut())
+            .and_then(|operation| operation.responses.responses.get_mut("200"))
+            .and_then(|response| match response {
+                utoipa::openapi::RefOr::T(response) => {
+                    response.content.get_mut("text/event-stream")
+                }
+                utoipa::openapi::RefOr::Ref(_) => None,
+            })
+            .and_then(|content| match content {
+                utoipa::openapi::RefOr::T(content) => Some(content),
+                utoipa::openapi::RefOr::Ref(_) => None,
+            })
+        {
+            content.item_schema = Some(Ref::from_schema_name("NotificationEvent").into());
         }
         // Shared failures follow the same authentication and middleware rules as
         // the router. Preserve endpoint-specific descriptions when present.
@@ -126,7 +170,8 @@ impl Modify for SecurityAddon {
                         .required(Required::False)
                         .description(Some("Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key."))
                         .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
-                        .build(),
+                        .build()
+                        .into(),
                 );
                 }
                 operation.parameters.get_or_insert_with(Vec::new).push(
@@ -138,7 +183,8 @@ impl Modify for SecurityAddon {
                         .schema(Some(ObjectBuilder::new().schema_type(Type::String)
                             .default(Some(serde_json::json!(crate::auth_cookie::CSRF_VALUE)))
                             .enum_values(Some([crate::auth_cookie::CSRF_VALUE]))))
-                        .build(),
+                        .build()
+                        .into(),
                 );
             }
         }
@@ -147,6 +193,7 @@ impl Modify for SecurityAddon {
 
 #[derive(OpenApi)]
 #[openapi(
+    version = "3.2.0",
     info(
         title = "hwaiting API",
         version = "1.0.0",
@@ -258,6 +305,51 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_is_openapi_3_2_with_typed_event_stream() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        assert_eq!(spec["openapi"], "3.2.0");
+        let stream = &spec["paths"]["/api/events"]["get"]["responses"]["200"]["content"]["text/event-stream"];
+        assert_eq!(
+            stream["itemSchema"]["$ref"],
+            "#/components/schemas/NotificationEvent"
+        );
+        let event = &spec["components"]["schemas"]["NotificationEvent"];
+        assert_eq!(
+            event["properties"]["data"]["contentSchema"]["$ref"],
+            "#/components/schemas/Notification"
+        );
+        // The documented event names must cover every Notification variant.
+        let names = event["properties"]["event"]["enum"].as_array().unwrap();
+        for notification in [
+            crate::events::Notification::CardMutated {
+                card_id: 1,
+                mutation_id: None,
+            },
+            crate::events::Notification::StateChanged { mutation_id: None },
+            crate::events::Notification::ResyncRequired { mutation_id: None },
+        ] {
+            let kind = serde_json::to_value(notification).unwrap()["type"].clone();
+            assert!(
+                names.contains(&kind),
+                "{kind} missing from NotificationEvent"
+            );
+        }
+        // OpenAPI requires a description on every response object.
+        for (path, operations) in spec["paths"].as_object().unwrap() {
+            for (method, operation) in operations.as_object().unwrap() {
+                for (status, response) in operation["responses"].as_object().unwrap() {
+                    assert!(
+                        response["description"]
+                            .as_str()
+                            .is_some_and(|d| !d.is_empty()),
+                        "{method} {path} {status} has no description"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn shared_failures_match_authentication_and_write_middleware() {

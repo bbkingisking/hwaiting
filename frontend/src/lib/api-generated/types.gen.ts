@@ -52,7 +52,7 @@ export type AdminSentence = {
 export type AdminTarget = InflectionHint & {
     alternatives: Array<string>;
     form: string;
-    grammar_pattern: null | GrammarPattern;
+    grammar_pattern: GrammarPattern | null;
 };
 
 export type AdminTranslation = {
@@ -131,7 +131,7 @@ export type CardFront = InflectionHint & {
     card_id: number;
     content_revision: number;
     grade: string | null;
-    grammar_pattern: null | GrammarPattern;
+    grammar_pattern: GrammarPattern | null;
     hanja: string | null;
     /**
      * KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
@@ -317,7 +317,7 @@ export type HanjaDrill = {
 };
 
 export type HanjaDrillResponse = {
-    drill: null | HanjaDrill;
+    drill: HanjaDrill | null;
 };
 
 export type HanjaHint = {
@@ -429,6 +429,14 @@ export type Notification = {
     type: 'resync-required';
 };
 
+/**
+ * One server-sent event: `event` names the notification type and `data` carries the Notification as JSON.
+ */
+export type NotificationEvent = {
+    data: string;
+    event: 'card-mutated' | 'state-changed' | 'resync-required';
+};
+
 export type OptimizeFsrsResponse = {
     parameters: Array<number>;
     /**
@@ -500,8 +508,8 @@ export type ReviewHistoryExport = {
      * Positive FSRS stability in days, supplied together with difficulty, or both null.
      */
     stability?: number | null;
-    state?: null | ReviewState;
-    wrong_answer?: null | WrongAnswerExport;
+    state?: ReviewState | null;
+    wrong_answer?: WrongAnswerExport | null;
 };
 
 export type ReviewQueueCard = {
@@ -835,6 +843,9 @@ export type SearchCardSummariesErrors = {
 export type SearchCardSummariesError = SearchCardSummariesErrors[keyof SearchCardSummariesErrors];
 
 export type SearchCardSummariesResponses = {
+    /**
+     * Matching card summaries (at most 50)
+     */
     200: AdminSearchResponse;
 };
 
@@ -862,6 +873,9 @@ export type GetAdminCardErrors = {
      * Admin access required
      */
     403: ErrorResponse;
+    /**
+     * Card not found
+     */
     404: ErrorResponse;
     /**
      * Internal server error
@@ -872,6 +886,9 @@ export type GetAdminCardErrors = {
 export type GetAdminCardError = GetAdminCardErrors[keyof GetAdminCardErrors];
 
 export type GetAdminCardResponses = {
+    /**
+     * The card's complete authoring content
+     */
     200: AdminCardDetail;
 };
 
@@ -1357,6 +1374,9 @@ export type AvailableTranslationLanguagesErrors = {
 export type AvailableTranslationLanguagesError = AvailableTranslationLanguagesErrors[keyof AvailableTranslationLanguagesErrors];
 
 export type AvailableTranslationLanguagesResponses = {
+    /**
+     * Languages with at least one complete card, and how many cards each has
+     */
     200: AvailableTranslationLanguagesResponse;
 };
 
@@ -1554,7 +1574,7 @@ export type SubscribeError = SubscribeErrors[keyof SubscribeErrors];
 
 export type SubscribeResponses = {
     /**
-     * Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS and generic background updates (same user); resync-required {type, mutation_id?: UUID string} requests broad refresh and card validation after imports (same user) or initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.
+     * Server-sent events, each described by `NotificationEvent` (the stream's itemSchema): the SSE event name equals the Notification `type`, and `data` is the Notification as JSON. card-mutated is sent for successful reviews and suppression (same user) and changed card edits (all users); state-changed for settings/FSRS and other background updates (same user); resync-required after imports (same user) and on initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. No replay or Last-Event-ID contract.
      */
     200: string;
 };
@@ -1735,6 +1755,9 @@ export type ListGrammarPatternsData = {
 };
 
 export type ListGrammarPatternsErrors = {
+    /**
+     * Missing or invalid authentication cookie
+     */
     401: ErrorResponse;
     /**
      * Internal server error
@@ -1745,6 +1768,9 @@ export type ListGrammarPatternsErrors = {
 export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
 
 export type ListGrammarPatternsResponses = {
+    /**
+     * The grammar pattern catalog
+     */
     200: GrammarPatternsResponse;
 };
 

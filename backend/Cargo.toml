@@ -29,7 +29,7 @@ unicode-normalization = "0.1.25"
 # in transitively by sqlx and webauthn_rp, so this adds no new dependency
 # to the tree, just a direct edge to a crate already being built.
 url = "2.5.8"
-utoipa = { version = "5.5.0", features = ["axum_extras", "chrono"] }
+utoipa = { version = "6.0.0", features = ["axum_extras", "chrono"] }
 uuid = { version = "1.26.0", features = ["v4", "serde"] }
 # Pure-Rust WebAuthn relying-party library (RustCrypto backend: p256/p384/
 # ed25519-dalek/rsa) - no openssl-sys anywhere in the dependency tree. See

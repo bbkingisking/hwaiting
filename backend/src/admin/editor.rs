@@ -96,7 +96,7 @@ async fn load_admin_card(
 }
 
 #[utoipa::path(get, path = "/api/admin/cards/{card_id}",
-    description = "Return a card's complete authoring content for administrators, including all translations, sentence targets, alternatives, and the current content revision.", params(("card_id" = i64, Path)), responses((status = 400, description = "Invalid path or query parameters", body = crate::error::ErrorResponse), (status = 403, description = "Admin access required", body = crate::error::ErrorResponse), (status = 200, body = AdminCardDetail), (status = 404, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "admin")]
+    description = "Return a card's complete authoring content for administrators, including all translations, sentence targets, alternatives, and the current content revision.", params(("card_id" = i64, Path)), responses((status = 400, description = "Invalid path or query parameters", body = crate::error::ErrorResponse), (status = 403, description = "Admin access required", body = crate::error::ErrorResponse), (status = 200, description = "The card's complete authoring content", body = AdminCardDetail), (status = 404, description = "Card not found", body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "admin")]
 pub async fn get_admin_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
@@ -121,7 +121,7 @@ pub struct AdminSearchResponse {
 }
 
 #[utoipa::path(get, path = "/api/admin/cards/search",
-    description = "Search cards for administrators by exact card ID or partial Korean word or target form. Returns up to 50 summaries ordered by word and ID; an empty query returns no cards.", params(SearchCardsQuery), responses((status = 400, description = "Invalid path or query parameters", body = crate::error::ErrorResponse), (status = 403, description = "Admin access required", body = crate::error::ErrorResponse), (status = 200, body = AdminSearchResponse)), security(("cookie_auth" = [])), tag = "admin")]
+    description = "Search cards for administrators by exact card ID or partial Korean word or target form. Returns up to 50 summaries ordered by word and ID; an empty query returns no cards.", params(SearchCardsQuery), responses((status = 400, description = "Invalid path or query parameters", body = crate::error::ErrorResponse), (status = 403, description = "Admin access required", body = crate::error::ErrorResponse), (status = 200, description = "Matching card summaries (at most 50)", body = AdminSearchResponse)), security(("cookie_auth" = [])), tag = "admin")]
 pub async fn search_card_summaries(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,

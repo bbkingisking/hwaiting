@@ -41,7 +41,7 @@ pub struct GrammarPatternsResponse {
 }
 
 #[utoipa::path(get, path = "/api/resources/grammar-patterns",
-    description = "List authored grammar patterns with English labels, explanations, and accepted endings for authenticated users and card editors.", responses((status = 200, body = GrammarPatternsResponse), (status = 401, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "resources")]
+    description = "List authored grammar patterns with English labels, explanations, and accepted endings for authenticated users and card editors.", responses((status = 200, description = "The grammar pattern catalog", body = GrammarPatternsResponse), (status = 401, description = "Missing or invalid authentication cookie", body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "resources")]
 pub async fn list_grammar_patterns(
     _auth: AuthUser,
     State(pool): State<SqlitePool>,
