@@ -5,6 +5,7 @@
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
+use std::collections::HashMap;
 use tracing::{debug, info};
 use utoipa::{IntoParams, ToSchema};
 
@@ -315,6 +316,20 @@ async fn select_cards(
         .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
         .map(|time| time.format("%Y-%m-%dT%H:%M:%SZ").to_string());
 
+    // Per-card extras are fetched in at most two batch queries for the whole
+    // response, rather than one or two queries per card.
+    let card_ids: Vec<i64> = rows.iter().map(|row| row.get("id")).collect();
+    let review_counts = review_counts(&mut tx, user_id, &card_ids).await?;
+    let any_hanja = rows.iter().any(|row| {
+        row.get::<Option<String>, _>("hanja")
+            .is_some_and(|h| !h.is_empty())
+    });
+    let studied_hanja = if show_hanja_hints && any_hanja {
+        super::studied_hanja(&mut tx, language_id, user_id).await?
+    } else {
+        Vec::new()
+    };
+
     let mut cards = Vec::with_capacity(rows.len());
     for row in rows {
         let card_id: i64 = row.get("id");
@@ -334,23 +349,7 @@ async fn select_cards(
 
         debug!("Selected card_id: {} ({})", card_id, word);
 
-        // Get correct/wrong stats for this card
-        let stats_row = sqlx::query(
-            r#"
-        SELECT
-            COUNT(*) as total,
-            SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) as correct
-        FROM review_history
-        WHERE user_id = ? AND card_id = ?
-        "#,
-        )
-        .bind(user_id)
-        .bind(card_id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        let guess_count: i64 = stats_row.get("total");
-        let correct_count: i64 = stats_row.get("correct");
+        let (guess_count, correct_count) = review_counts.get(&card_id).copied().unwrap_or((0, 0));
         let wrong_guess_count = guess_count - correct_count;
 
         // Get difficulty from FSRS (range 1-10)
@@ -367,8 +366,7 @@ async fn select_cards(
         // shipping them now.
         let hanja_hint_words = if show_hanja_hints {
             Some(
-                super::hanja_hints_on_connection(&mut tx, language_id, user_id, card_id, &hanja)
-                    .await?
+                super::hanja_hints_from(&studied_hanja, card_id, &hanja)
                     .into_iter()
                     .map(|h| h.hanja)
                     .collect(),
@@ -418,6 +416,39 @@ async fn select_cards(
         available_count,
         next_available_at,
     })
+}
+
+/// Review totals and correct (good/easy) counts per card, for the given cards
+/// only. Cards with no reviews are absent from the map.
+async fn review_counts(
+    connection: &mut sqlx::SqliteConnection,
+    user_id: i64,
+    card_ids: &[i64],
+) -> Result<HashMap<i64, (i64, i64)>, AppError> {
+    if card_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // One JSON array parameter instead of a variable-length IN list.
+    let card_ids =
+        serde_json::to_string(card_ids).map_err(|e| AppError::Internal(e.to_string()))?;
+    let rows = sqlx::query(
+        r#"
+        SELECT card_id,
+               COUNT(*) AS total,
+               SUM(CASE WHEN rating IN ('good', 'easy') THEN 1 ELSE 0 END) AS correct
+        FROM review_history
+        WHERE user_id = ? AND card_id IN (SELECT value FROM json_each(?))
+        GROUP BY card_id
+        "#,
+    )
+    .bind(user_id)
+    .bind(card_ids)
+    .fetch_all(connection)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|row| (row.get("card_id"), (row.get("total"), row.get("correct"))))
+        .collect())
 }
 
 #[cfg(test)]

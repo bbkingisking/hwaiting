@@ -163,70 +163,114 @@ where
 /// Extension A (U+3400 to U+4DBF) and the CJK Compatibility Ideographs block
 /// (U+F900 to U+FAFF) - a hanja drawn from either would never register as
 /// shared here even if it's the identical character KRDICT records
-/// elsewhere as canonically decomposing to one already in range. Extracted
-/// from `hanja_hints_on_connection` so the character-matching rule can be tested
-/// without a database.
+/// elsewhere as canonically decomposing to one already in range. The rule
+/// as a single call, so it can be tested without a database; `hanja_hints_from`
+/// applies it with each card's character set built only once.
+#[cfg(test)]
 fn shares_hanja_character(a: &str, b: &str) -> bool {
-    let a_chars: std::collections::HashSet<char> = a
-        .chars()
-        .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c))
-        .collect();
-    if a_chars.is_empty() {
-        return false;
-    }
-    b.chars()
-        .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c))
-        .any(|c| a_chars.contains(&c))
+    contains_any_of(&hanja_chars(a), b)
 }
 
-/// Hanja hints for `card_id`: hanja from other cards the user has already
-/// reviewed that share at least one character with `hanja`. Shared by
-/// `get_review_queue` (which only needs the characters - see
-/// `ReviewContext::hanja_hint_words`) and `check_answer` (which needs the full
-/// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
-async fn hanja_hints_on_connection(
-    connection: &mut sqlx::SqliteConnection,
-    eng_id: i64,
-    user_id: i64,
+/// The CJK Unified Ideographs in `s`.
+fn hanja_chars(s: &str) -> std::collections::HashSet<char> {
+    s.chars()
+        .filter(|c| ('\u{4E00}'..='\u{9FFF}').contains(c))
+        .collect()
+}
+
+/// Whether `s` contains any of `chars` (which hold only hanja, so no filtering
+/// of `s` is needed).
+fn contains_any_of(chars: &std::collections::HashSet<char>, s: &str) -> bool {
+    s.chars().any(|c| chars.contains(&c))
+}
+
+/// A hanja-bearing card the user has studied: a hint candidate for other cards.
+pub(super) struct StudiedHanja {
     card_id: i64,
-    hanja: &Option<String>,
-) -> Result<Vec<HanjaHint>, AppError> {
-    let Some(current_hanja) = hanja.as_ref().filter(|h| !h.is_empty()) else {
-        return Ok(vec![]);
-    };
-    let other_hanja_rows = sqlx::query(
+    hint: HanjaHint,
+}
+
+/// Every hanja-bearing card the user has studied, in one query. Match each
+/// card against it with [`hanja_hints_from`] instead of querying per card.
+pub(super) async fn studied_hanja(
+    connection: &mut sqlx::SqliteConnection,
+    language_id: i64,
+    user_id: i64,
+) -> Result<Vec<StudiedHanja>, AppError> {
+    let rows = sqlx::query(
         r#"
-        SELECT DISTINCT c.hanja, c.word, ct.trans_word
+        SELECT c.id, c.hanja, c.word, ct.trans_word
         FROM cards_states cs
         INNER JOIN cards c ON c.id = cs.card_id
         INNER JOIN cards_translations ct ON ct.card_id = c.id AND ct.language_id = ?
         WHERE cs.user_id = ?
-          AND cs.card_id != ?
           AND c.hanja IS NOT NULL
           AND c.hanja != ''
         "#,
     )
-    .bind(eng_id)
+    .bind(language_id)
     .bind(user_id)
-    .bind(card_id)
     .fetch_all(connection)
     .await?;
-
-    Ok(other_hanja_rows
+    Ok(rows
         .iter()
-        .filter_map(|row| {
-            let other_hanja: String = row.get("hanja");
-            if shares_hanja_character(current_hanja, &other_hanja) {
-                Some(HanjaHint {
-                    hanja: other_hanja,
-                    word: row.get("word"),
-                    trans_word: row.get("trans_word"),
-                })
-            } else {
-                None
-            }
+        .map(|row| StudiedHanja {
+            card_id: row.get("id"),
+            hint: HanjaHint {
+                hanja: row.get("hanja"),
+                word: row.get("word"),
+                trans_word: row.get("trans_word"),
+            },
         })
         .collect())
+}
+
+/// Hanja hints for `card_id`: other studied cards whose hanja shares at least
+/// one character with `hanja`, each distinct (hanja, word, translation) once.
+/// Shared by `get_review_queue` (which only needs the characters - see
+/// `ReviewContext::hanja_hint_words`) and `check_answer` (which needs the full
+/// reading/gloss once the card is graded - see `CardReveal::hanja_hints`).
+pub(super) fn hanja_hints_from(
+    studied: &[StudiedHanja],
+    card_id: i64,
+    hanja: &Option<String>,
+) -> Vec<HanjaHint> {
+    let Some(current_hanja) = hanja.as_ref().filter(|h| !h.is_empty()) else {
+        return vec![];
+    };
+    // Same rule as `shares_hanja_character`, with this card's set built once.
+    let current = hanja_chars(current_hanja);
+    if current.is_empty() {
+        return vec![];
+    }
+    let mut seen = std::collections::HashSet::new();
+    studied
+        .iter()
+        .filter(|other| other.card_id != card_id)
+        .filter(|other| contains_any_of(&current, &other.hint.hanja))
+        .filter(|other| seen.insert((&other.hint.hanja, &other.hint.word, &other.hint.trans_word)))
+        .map(|other| HanjaHint {
+            hanja: other.hint.hanja.clone(),
+            word: other.hint.word.clone(),
+            trans_word: other.hint.trans_word.clone(),
+        })
+        .collect()
+}
+
+/// Single-card form of [`studied_hanja`] + [`hanja_hints_from`]. Skips the
+/// query entirely when the card has no hanja.
+async fn hanja_hints_on_connection(
+    connection: &mut sqlx::SqliteConnection,
+    language_id: i64,
+    user_id: i64,
+    card_id: i64,
+    hanja: &Option<String>,
+) -> Result<Vec<HanjaHint>, AppError> {
+    if hanja.as_ref().is_none_or(|h| h.is_empty()) {
+        return Ok(vec![]);
+    }
+    let studied = studied_hanja(connection, language_id, user_id).await?;
+    Ok(hanja_hints_from(&studied, card_id, hanja))
 }
 
 #[cfg(test)]
