@@ -13,10 +13,9 @@ use crate::error::{AppError, AppQuery};
 use super::ReviewPrefs;
 use super::time::{logical_day_start, sqlite_datetime};
 
-/// Card content visible before answering, shared with the full admin card.
-/// Per-user state and assistance live separately in `ReviewContext`.
-/// Answer fields are withheld in `CardBack`, including the complete sentence
-/// and target; only the text surrounding the blank is exposed here.
+/// Card content that is safe to show before the user answers. The answer (the
+/// target word and the complete sentence) is withheld until grading returns
+/// `CardBack`. Per-user review state lives in `ReviewContext`.
 #[derive(Serialize, ToSchema)]
 pub struct CardFront {
     pub content_revision: i64,
@@ -35,12 +34,11 @@ pub struct CardFront {
     pub trans_word: String,
     #[schema(required)]
     pub trans_dfn: Option<String>,
-    /// `sentence`, sliced at `target`'s position: the text before the blank.
-    /// Derived once here rather than by every renderer re-searching
-    /// `sentence` for `target` - see `split_sentence`. The unsliced
-    /// `sentence` and `target` itself are withheld; see `CardBack`.
+    // Sliced server-side (see `split_sentence`) so clients never need the
+    // withheld sentence or target to render the blank.
+    /// The sentence text before the blank.
     pub sentence_before: String,
-    /// The text after the blank. See `sentence_before`.
+    /// The sentence text after the blank.
     pub sentence_after: String,
     pub sentence_translation: String,
     #[serde(flatten)]

@@ -111,7 +111,8 @@ export type Capabilities = {
 };
 
 /**
- * Answer content disclosed after grading, including the target's Korean text.
+ * The card's answer side, disclosed only after grading: the word, the complete
+ * sentence, the target form that filled the blank, and accepted alternatives.
  */
 export type CardBack = {
     alternatives: Array<string>;
@@ -122,10 +123,9 @@ export type CardBack = {
 };
 
 /**
- * Card content visible before answering, shared with the full admin card.
- * Per-user state and assistance live separately in `ReviewContext`.
- * Answer fields are withheld in `CardBack`, including the complete sentence
- * and target; only the text surrounding the blank is exposed here.
+ * Card content that is safe to show before the user answers. The answer (the
+ * target word and the complete sentence) is withheld until grading returns
+ * `CardBack`. Per-user review state lives in `ReviewContext`.
  */
 export type CardFront = InflectionHint & {
     card_id: number;
@@ -140,14 +140,11 @@ export type CardFront = InflectionHint & {
     origin_type: string | null;
     pos: string | null;
     /**
-     * The text after the blank. See `sentence_before`.
+     * The sentence text after the blank.
      */
     sentence_after: string;
     /**
-     * `sentence`, sliced at `target`'s position: the text before the blank.
-     * Derived once here rather than by every renderer re-searching
-     * `sentence` for `target` - see `split_sentence`. The unsliced
-     * `sentence` and `target` itself are withheld; see `CardBack`.
+     * The sentence text before the blank.
      */
     sentence_before: string;
     /**
@@ -176,23 +173,14 @@ export type CardInflectionsResponse = {
 };
 
 /**
- * Disclosed only once `POST /api/reviews/answer` has graded an attempt:
- * `CardBack` plus the fields that are genuinely review-flow-specific
- * rather than properties of the card itself - `hanja_hints` depends on the
- * requesting user's review history (see `hanja_hints_on_connection`), and
- * `grammar_pattern_endings` belongs to rows referencing this
- * card rather than the card itself - so none has a place on
- * `CardBack`/`Card`.
+ * Everything revealed after `POST /api/reviews/answer` grades an attempt: the
+ * card's answer side plus personalized hanja hints and grammar endings.
  */
 export type CardReveal = CardBack & {
     /**
-     * The grammar pattern's possible conjugation endings - a property of
-     * the referenced `grammar_patterns` row, not of this card, but exactly
-     * as spoiling as `target` for any card that uses the pattern, so it
-     * travels with the reveal rather than in the pattern's public
-     * name/explanation. The grammar resource catalog also includes endings
-     * for authoring. Empty if
-     * the card has no grammar pattern.
+     * Endings accepted by the card's grammar pattern. Revealed only after
+     * grading because they would give away the answer. Empty when the card
+     * has no grammar pattern.
      */
     grammar_pattern_endings: Array<string>;
     /**
@@ -570,15 +558,10 @@ export type SignupRequest = {
 export type StartResponse = {
     ceremony_id: string;
     /**
-     * The `PublicKeyCredentialCreationOptionsJSON`/`PublicKeyCredentialRequestOptionsJSON`
-     * `webauthn_rp` serializes its client-state types into - passed
-     * straight to `navigator.credentials.create()`/`.get()` by the
-     * frontend after base64url-decoding the binary fields. Untyped here
-     * (rather than generic like the old `webauthn-rs-core`-backed version
-     * was) because the client-state types borrow from ceremony-local data
-     * (the throwaway user handle) that doesn't outlive this function, so
-     * they're serialized to a `Value` before returning rather than
-     * threaded through the return type.
+     * WebAuthn options in the standard JSON form:
+     * `PublicKeyCredentialCreationOptionsJSON` for registration or
+     * `PublicKeyCredentialRequestOptionsJSON` for sign-in. Base64url-decode the
+     * binary fields, then pass to `navigator.credentials.create()` or `.get()`.
      */
     options: unknown;
 };

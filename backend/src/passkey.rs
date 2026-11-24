@@ -436,15 +436,12 @@ fn parse_origin(s: &str) -> Result<String, String> {
 pub struct StartResponse {
     #[schema(value_type = String, format = "uuid")]
     ceremony_id: Uuid,
-    /// The `PublicKeyCredentialCreationOptionsJSON`/`PublicKeyCredentialRequestOptionsJSON`
-    /// `webauthn_rp` serializes its client-state types into - passed
-    /// straight to `navigator.credentials.create()`/`.get()` by the
-    /// frontend after base64url-decoding the binary fields. Untyped here
-    /// (rather than generic like the old `webauthn-rs-core`-backed version
-    /// was) because the client-state types borrow from ceremony-local data
-    /// (the throwaway user handle) that doesn't outlive this function, so
-    /// they're serialized to a `Value` before returning rather than
-    /// threaded through the return type.
+    // Untyped because webauthn_rp's client-state types borrow ceremony-local
+    // data, so they are serialized to a Value before returning.
+    /// WebAuthn options in the standard JSON form:
+    /// `PublicKeyCredentialCreationOptionsJSON` for registration or
+    /// `PublicKeyCredentialRequestOptionsJSON` for sign-in. Base64url-decode the
+    /// binary fields, then pass to `navigator.credentials.create()` or `.get()`.
     options: serde_json::Value,
 }
 

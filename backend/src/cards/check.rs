@@ -24,7 +24,8 @@ pub struct CheckRequest {
     pub attempt_token: String,
 }
 
-/// Answer content disclosed after grading, including the target's Korean text.
+/// The card's answer side, disclosed only after grading: the word, the complete
+/// sentence, the target form that filled the blank, and accepted alternatives.
 #[derive(Serialize, ToSchema)]
 pub struct CardBack {
     pub word: String,
@@ -35,13 +36,11 @@ pub struct CardBack {
     pub alternatives: Vec<String>,
 }
 
-/// Disclosed only once `POST /api/reviews/answer` has graded an attempt:
-/// `CardBack` plus the fields that are genuinely review-flow-specific
-/// rather than properties of the card itself - `hanja_hints` depends on the
-/// requesting user's review history (see `hanja_hints_on_connection`), and
-/// `grammar_pattern_endings` belongs to rows referencing this
-/// card rather than the card itself - so none has a place on
-/// `CardBack`/`Card`.
+// Review-flow fields live here rather than on CardBack: hanja hints depend on
+// the user's history (see `hanja_hints_on_connection`) and endings belong to
+// the grammar pattern, not the card.
+/// Everything revealed after `POST /api/reviews/answer` grades an attempt: the
+/// card's answer side plus personalized hanja hints and grammar endings.
 #[derive(Serialize, ToSchema)]
 pub struct CardReveal {
     #[serde(flatten)]
@@ -49,13 +48,9 @@ pub struct CardReveal {
     /// Null when hanja hints are disabled; otherwise the available personalized hints.
     #[schema(required)]
     pub hanja_hints: Option<Vec<HanjaHint>>,
-    /// The grammar pattern's possible conjugation endings - a property of
-    /// the referenced `grammar_patterns` row, not of this card, but exactly
-    /// as spoiling as `target` for any card that uses the pattern, so it
-    /// travels with the reveal rather than in the pattern's public
-    /// name/explanation. The grammar resource catalog also includes endings
-    /// for authoring. Empty if
-    /// the card has no grammar pattern.
+    /// Endings accepted by the card's grammar pattern. Revealed only after
+    /// grading because they would give away the answer. Empty when the card
+    /// has no grammar pattern.
     pub grammar_pattern_endings: Vec<String>,
 }
 
