@@ -40,8 +40,7 @@ pub struct HanjaDrillResponse {
     responses(
         (status = 200, description = "A random hanja drawn from the user's mastered cards, or null if none exist yet", body = HanjaDrillResponse),
         (status = 400, description = "Translation language is not configured or is unknown", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "drills"
 )]

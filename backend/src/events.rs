@@ -140,8 +140,7 @@ impl Drop for Subscription {
 #[utoipa::path(get, path = "/api/events",
     description = "Subscribe to server-sent notifications for review, card, and user-state changes. Refresh and validate cached cards when resync-required is received; events are not replayed on reconnect. The stream closes when authentication expires.", responses(
     (status = 200, description = "Server-sent events, each described by `NotificationEvent` (the stream's itemSchema): the SSE event name equals the Notification `type`, and `data` is the Notification as JSON. card-mutated is sent for successful reviews and suppression (same user) and changed card edits (all users); state-changed for settings/FSRS and other background updates (same user); resync-required after imports (same user) and on initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. No replay or Last-Event-ID contract.", content_type = "text/event-stream", body = String),
-    (status = 401, description = "Missing or expired authentication", body = crate::error::ErrorResponse)
-), security(("cookie_auth" = [])), tag = "events")]
+    ), security(("cookie_auth" = [])), tag = "events")]
 pub async fn subscribe(
     State(state): State<AppState>,
     auth: AuthUser,

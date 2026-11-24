@@ -218,8 +218,7 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
     description = "Export the current user's settings, personal FSRS parameters, review history including recorded wrong answers, and suppressed cards as a versioned backup.",
     responses(
         (status = 200, description = "Full data export: settings, review history, suppressed cards", body = ExportData),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]
@@ -313,8 +312,7 @@ pub async fn export_data(
     responses(
         (status = 200, description = "Data imported (cards_states derived from imported review_history)", body = ImportDataResponse),
         (status = 400, description = "Invalid backup version, settings, FSRS model, review history, or malformed request", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]

@@ -131,8 +131,7 @@ pub struct HistoryBreakdownResponse {
     description = "Today's review totals, accuracy, and first-view count for the authenticated user. First exposures are views, not reviews. The study day follows the saved timezone and day-boundary hour; day_ends_at is its exclusive UTC end. No queue counts or scheduling information are included.",
     responses(
         (status = 200, description = "Current study-day activity", body = TodayStatsResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "stats"
 )]
@@ -415,8 +414,7 @@ async fn query_breakdown(
     description = "Return aggregated review history: daily counts, all-time totals and streaks, and accuracy by part of speech and word origin. Daily groupings use the user's study timezone and day-boundary hour; individual review records are available through data export.",
     responses(
         (status = 200, description = "Aggregated history: daily counts, all-time summary and streaks, and POS/origin accuracy; not individual review records", body = HistoryResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "stats"
 )]

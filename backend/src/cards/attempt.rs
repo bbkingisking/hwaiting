@@ -133,7 +133,6 @@ pub struct ValidateResponse {
     responses(
         (status = 200, description = "The token is still valid for review", body = ValidateResponse),
         (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 500, description = "Operational failure", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),

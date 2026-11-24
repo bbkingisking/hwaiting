@@ -57,7 +57,6 @@ pub struct ListUsersResponse {
     params(ListUsersQuery),
     responses(
         (status = 200, description = "All users, or the one matching ?username= exactly", body = ListUsersResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -177,7 +176,6 @@ pub struct CardInflectionsResponse {
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 200, description = "This card's resolved conjugation-matrix rows (empty if it hasn't been run through the conjugation generator)", body = CardInflectionsResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Valid JWT but not an admin", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),

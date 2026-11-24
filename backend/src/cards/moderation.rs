@@ -34,7 +34,6 @@ pub struct SuppressedCardsResponse {
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 204, description = "Card suppressed from review rotation"),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -83,8 +82,7 @@ pub async fn suppress_card(
     responses(
         (status = 200, description = "All suppressed cards for the user", body = SuppressedCardsResponse),
         (status = 400, description = "Translation language is not configured or is unknown", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "cards"
 )]
@@ -148,8 +146,7 @@ pub async fn list_suppressed_cards(
     responses(
         (status = 204, description = "Card unsuppressed"),
         (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "cards"
 )]

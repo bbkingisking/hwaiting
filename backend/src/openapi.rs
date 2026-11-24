@@ -119,11 +119,32 @@ impl Modify for SecurityAddon {
             .into_iter()
             .flatten()
             {
-                operation
-                    .responses
-                    .responses
-                    .entry("500".into())
-                    .or_insert_with(|| error_response("Internal server error"));
+                // Logout and health touch no fallible state, so they cannot fail with 500.
+                if !matches!(
+                    operation.operation_id.as_deref(),
+                    Some("logout" | "health_check")
+                ) {
+                    operation
+                        .responses
+                        .responses
+                        .entry("500".into())
+                        .or_insert_with(|| error_response("Internal server error"));
+                }
+                // Path parameters are parsed by AppPath, which rejects malformed values.
+                let has_path_parameter = operation.parameters.iter().flatten().any(|parameter| {
+                    matches!(
+                        parameter,
+                        utoipa::openapi::RefOr::T(parameter)
+                            if parameter.parameter_in == ParameterIn::Path
+                    )
+                });
+                if has_path_parameter {
+                    operation
+                        .responses
+                        .responses
+                        .entry("400".into())
+                        .or_insert_with(|| error_response("Malformed path parameter"));
+                }
                 if operation.security.as_ref().is_some_and(|requirements| {
                     requirements.iter().any(|requirement| {
                         *requirement
@@ -135,7 +156,9 @@ impl Modify for SecurityAddon {
                         .responses
                         .entry("401".into())
                         .or_insert_with(|| {
-                            error_response("Missing or invalid authentication cookie")
+                            error_response(
+                                "Missing, invalid, or expired authentication cookie (`unauthenticated`)",
+                            )
                         });
                 }
             }
@@ -186,7 +209,13 @@ impl Modify for SecurityAddon {
                         .parameter_in(ParameterIn::Header)
                         .required(Required::False)
                         .description(Some("Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key."))
-                        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
+                        .schema(Some(
+                            ObjectBuilder::new()
+                                .schema_type(Type::String)
+                                .format(Some(utoipa::openapi::schema::SchemaFormat::Custom(
+                                    "uuid".into(),
+                                ))),
+                        ))
                         .build()
                         .into(),
                 );
@@ -327,6 +356,13 @@ mod tests {
     fn document_is_openapi_3_2_with_typed_event_stream() {
         let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
         assert_eq!(spec["openapi"], "3.2.0");
+        let mutation_id = spec["paths"]["/api/reviews/answer"]["post"]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "X-Mutation-Id")
+            .unwrap();
+        assert_eq!(mutation_id["schema"]["format"], "uuid");
         let schemas = &spec["components"]["schemas"];
         for (schema, property) in [
             ("AdminSentence", "translations"),
@@ -383,9 +419,22 @@ mod tests {
         let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
         for item in spec["paths"].as_object().unwrap().values() {
             for (method, operation) in item.as_object().unwrap() {
-                assert!(operation["responses"].get("500").is_some());
+                let infallible = matches!(
+                    operation["operationId"].as_str(),
+                    Some("logout" | "health_check")
+                );
+                assert_eq!(operation["responses"].get("500").is_none(), infallible);
                 if operation.get("security").is_some() {
-                    assert!(operation["responses"].get("401").is_some());
+                    assert_eq!(
+                        operation["responses"]["401"]["description"],
+                        "Missing, invalid, or expired authentication cookie (`unauthenticated`)"
+                    );
+                }
+                let has_path_parameter = operation["parameters"]
+                    .as_array()
+                    .is_some_and(|parameters| parameters.iter().any(|p| p["in"] == "path"));
+                if has_path_parameter {
+                    assert!(operation["responses"].get("400").is_some());
                 }
                 if matches!(method.as_str(), "post" | "put" | "patch" | "delete") {
                     assert!(operation["responses"].get("403").is_some());

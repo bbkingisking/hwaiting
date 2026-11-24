@@ -122,8 +122,7 @@ pub struct ReviewQueueQuery {
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
         (status = 400, description = "Invalid queue limit, or preferred translation language missing or unknown", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse)
-    ),
+        ),
     security(("cookie_auth" = [])), tag = "reviews"
 )]
 pub async fn get_review_queue(

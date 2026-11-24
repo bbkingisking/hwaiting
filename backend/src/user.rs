@@ -195,8 +195,7 @@ pub struct UpdateSettingsRequest {
     description = "Return the signed-in user's username and admin status. The username is null for passkey-only accounts.",
     responses(
         (status = 200, description = "Current user's profile", body = UserProfile),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]
@@ -223,8 +222,7 @@ pub async fn get_profile(
     description = "Return the current user's study and display settings and whether personal FSRS parameters are stored. Creates default settings on first access if needed.",
     responses(
         (status = 200, description = "Current user settings (row lazily created on first access)", body = UserSettings),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]
@@ -273,8 +271,7 @@ async fn load_settings(pool: &SqlitePool, user_id: i64) -> Result<UserSettings, 
     responses(
         (status = 200, description = "Settings updated (only provided fields are written); returns the full saved settings", body = UserSettings),
         (status = 400, description = "Out-of-range value or malformed request", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]

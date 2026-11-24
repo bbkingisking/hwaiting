@@ -913,8 +913,7 @@ pub async fn login_finish(
     description = "List the current user's registered passkeys, including labels, creation times, and last-use times. Credential secrets are not returned.",
     responses(
         (status = 200, description = "The caller's registered passkeys", body = ListPasskeysResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]
@@ -958,7 +957,6 @@ pub struct UpdatePasskeyRequest {
     responses(
         (status = 200, description = "Passkey label updated", body = PasskeySummary),
         (status = 400, description = "Invalid label", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "No such passkey on the caller's account", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -1004,8 +1002,7 @@ pub async fn update_passkey(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 200, body = StartResponse, description = "WebAuthn creation options for adding a passkey to the \
             caller's existing account. Opaque to OpenAPI."),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
-    ),
+        ),
     security(("cookie_auth" = [])),
     tag = "user"
 )]
@@ -1034,7 +1031,6 @@ pub async fn add_passkey_start(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 201, description = "Passkey added to the caller's account", body = PasskeySummary),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Ceremony belongs to a different account", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
     ),
@@ -1071,7 +1067,6 @@ pub async fn add_passkey_finish(
     responses(
         (status = 204, description = "Passkey removed"),
         (status = 409, description = "That passkey is the caller's only sign-in method", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "No such passkey on the caller's account", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),

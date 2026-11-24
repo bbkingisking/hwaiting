@@ -61,7 +61,6 @@ pub struct ListFeedbackResponse {
     responses(
         (status = 201, description = "Feedback recorded", body = FeedbackResponse),
         (status = 400, description = "Invalid JSON body, or a body that is empty after trimming or longer than 2000 characters", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Sentence not found", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -118,7 +117,6 @@ pub async fn submit_feedback(
     responses(
         (status = 200, description = "Feedback for admin triage", body = ListFeedbackResponse),
         (status = 400, description = "Limit must be a positive integer", body = crate::error::ErrorResponse),
-        (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 403, description = "Admin access required", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),

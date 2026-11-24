@@ -845,7 +845,7 @@ export type SearchCardSummariesErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -884,7 +884,7 @@ export type GetAdminCardErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -937,7 +937,7 @@ export type SaveAdminCardErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -983,7 +983,11 @@ export type GetCardInflectionsData = {
 
 export type GetCardInflectionsErrors = {
     /**
-     * Missing/invalid JWT
+     * Malformed path parameter
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1025,7 +1029,7 @@ export type ListUsersData = {
 
 export type ListUsersErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1110,10 +1114,6 @@ export type LogoutErrors = {
      * Missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
 };
 
 export type LogoutError = LogoutErrors[keyof LogoutErrors];
@@ -1380,7 +1380,7 @@ export type AvailableTranslationLanguagesData = {
 
 export type AvailableTranslationLanguagesErrors = {
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1413,7 +1413,7 @@ export type ListSuppressedCardsErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1457,7 +1457,11 @@ export type UnsuppressCardData = {
 
 export type UnsuppressCardErrors = {
     /**
-     * Missing/invalid JWT
+     * Malformed path parameter
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1509,7 +1513,11 @@ export type SuppressCardData = {
 
 export type SuppressCardErrors = {
     /**
-     * Missing/invalid JWT
+     * Malformed path parameter
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1550,7 +1558,7 @@ export type GetHanjaDrillErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1579,7 +1587,7 @@ export type SubscribeData = {
 
 export type SubscribeErrors = {
     /**
-     * Missing or expired authentication
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1617,7 +1625,7 @@ export type ListFeedbackErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1660,7 +1668,7 @@ export type SubmitFeedbackErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1712,7 +1720,7 @@ export type DeleteFeedbackErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1747,15 +1755,6 @@ export type HealthCheckData = {
     url: '/api/health';
 };
 
-export type HealthCheckErrors = {
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
-};
-
-export type HealthCheckError = HealthCheckErrors[keyof HealthCheckErrors];
-
 export type HealthCheckResponses = {
     /**
      * Service is up
@@ -1774,7 +1773,7 @@ export type ListGrammarPatternsData = {
 
 export type ListGrammarPatternsErrors = {
     /**
-     * Missing or invalid authentication cookie
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1817,7 +1816,7 @@ export type CheckAnswerErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1868,7 +1867,7 @@ export type ValidateCardAttemptErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1911,7 +1910,7 @@ export type GetReviewQueueErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1950,7 +1949,7 @@ export type ResetFsrsParametersData = {
 
 export type ResetFsrsParametersErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -1997,7 +1996,7 @@ export type OptimizeFsrsErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2030,7 +2029,7 @@ export type GetHistoryData = {
 
 export type GetHistoryErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2059,7 +2058,7 @@ export type GetTodayStatsData = {
 
 export type GetTodayStatsErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2088,7 +2087,7 @@ export type ExportDataData = {
 
 export type ExportDataErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2131,7 +2130,7 @@ export type ImportDataErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2164,7 +2163,7 @@ export type GetProfileData = {
 
 export type GetProfileErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2193,7 +2192,7 @@ export type ListPasskeysData = {
 
 export type ListPasskeysErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2232,7 +2231,7 @@ export type AddPasskeyFinishErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2279,7 +2278,7 @@ export type AddPasskeyStartData = {
 
 export type AddPasskeyStartErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2327,7 +2326,11 @@ export type DeletePasskeyData = {
 
 export type DeletePasskeyErrors = {
     /**
-     * Missing/invalid JWT
+     * Malformed path parameter
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2383,7 +2386,7 @@ export type UpdatePasskeyErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2420,7 +2423,7 @@ export type GetSettingsData = {
 
 export type GetSettingsErrors = {
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
@@ -2463,7 +2466,7 @@ export type UpdateSettingsErrors = {
      */
     400: ErrorResponse;
     /**
-     * Missing/invalid JWT
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
      */
     401: ErrorResponse;
     /**
