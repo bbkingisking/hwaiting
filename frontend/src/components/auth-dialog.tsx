@@ -3,31 +3,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/components/auth-provider'
-
-// Login/Sign Up (what the user is trying to do) is the primary, tab-shaped
-// choice. Password/Passkey (how) is secondary and binary, so it's a Switch,
-// not a second row of tabs - nesting a full tablist inside a tab panel reads
-// oddly and is a shaky ARIA pattern for something that's really just an
-// on/off. The method is one piece of state shared across both tabs (not
-// reset when switching Login <-> Sign Up): it answers "how do I
-// authenticate", which doesn't change depending on what the user is doing
-// this moment.
-type Method = 'password' | 'passkey'
 
 export function AuthDialog() {
   const { isAuthenticated, login, signup, passkeyLogin, passkeyRegister, passkeysEnabled, signupsEnabled } = useAuth()
 
-  // Defaults to 'passkey' only when the server actually offers it - safe to
-  // read passkeysEnabled here (rather than force 'password' and flip it in
-  // an effect) because AuthProvider already withholds every descendant,
-  // this dialog included, until that capability check has resolved.
-  const [method, setMethod] = useState<Method>(passkeysEnabled ? 'passkey' : 'password')
-  // Belt-and-suspenders against the disabled case ever rendering passkey
-  // UI - not just the initial state above.
-  const showPasskey = passkeysEnabled && method === 'passkey'
+  const [activeTab, setActiveTab] = useState('login')
 
   // Password method state
   const [loginUsername, setLoginUsername] = useState('')
@@ -97,24 +79,6 @@ export function AuthDialog() {
     setPasskeyBusy(false)
   }
 
-  // Nothing to switch between when the server doesn't offer passkeys at
-  // all - the whole point of a toggle is a real second option.
-  const methodToggle = passkeysEnabled && (
-    <div className="flex items-center justify-center gap-3 pb-2">
-      <Label htmlFor="auth-method" className={method === 'password' ? '' : 'text-muted-foreground font-normal'}>
-        Password
-      </Label>
-      <Switch
-        id="auth-method"
-        checked={method === 'passkey'}
-        onCheckedChange={(checked) => setMethod(checked ? 'passkey' : 'password')}
-      />
-      <Label htmlFor="auth-method" className={method === 'passkey' ? '' : 'text-muted-foreground font-normal'}>
-        Passkey
-      </Label>
-    </div>
-  )
-
   return (
     <Dialog
       open={!isAuthenticated}
@@ -126,111 +90,131 @@ export function AuthDialog() {
     >
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Welcome</DialogTitle>
+          <DialogTitle lang="ko" className="text-center">어서 오세요</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue={signupsEnabled ? "signup" : "login"} className="w-full">
+        <Tabs
+          value={activeTab}
+          className="w-full"
+          onValueChange={(value) => {
+            if (value === null || passkeyBusy || isLoginLoading || isSignupLoading) return
+            setActiveTab(value as string)
+            setLoginError('')
+            setSignupError('')
+            setPasskeyError('')
+          }}
+        >
           {signupsEnabled && <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Login</TabsTrigger>
-            <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsTrigger value="login" disabled={passkeyBusy || isLoginLoading || isSignupLoading}>Log in</TabsTrigger>
+            <TabsTrigger value="signup" disabled={passkeyBusy || isLoginLoading || isSignupLoading}>Sign up</TabsTrigger>
           </TabsList>}
 
           <TabsContent value="login" className="space-y-4">
-            {methodToggle}
-            {!showPasskey ? (
-              <form onSubmit={handleLoginSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-username">Username</Label>
-                  <Input
-                    id="login-username"
-                    type="text"
-                    aria-invalid={loginError !== ''}
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    placeholder="username"
-                    autoComplete="username"
-                    disabled={isLoginLoading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    aria-invalid={loginError !== ''}
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="password"
-                    autoComplete="current-password"
-                    disabled={isLoginLoading}
-                  />
-                </div>
-                {loginError && (
-                  <p role="alert" className="text-sm text-destructive">{loginError}</p>
-                )}
-                <Button type="submit" className="w-full" disabled={isLoginLoading || !loginUsername || !loginPassword}>
-                  {isLoginLoading ? 'Authenticating...' : 'Enter'}
-                </Button>
-              </form>
-            ) : (
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-username">Username</Label>
+                <Input
+                  id="login-username"
+                  type="text"
+                  aria-invalid={loginError !== ''}
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="username"
+                  autoComplete="username"
+                  required
+                  disabled={isLoginLoading || passkeyBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-password">Password</Label>
+                <Input
+                  id="login-password"
+                  type="password"
+                  aria-invalid={loginError !== ''}
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="password"
+                  autoComplete="current-password"
+                  required
+                  disabled={isLoginLoading || passkeyBusy}
+                />
+              </div>
+              {loginError && (
+                <p role="alert" className="text-sm text-destructive">{loginError}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={isLoginLoading || passkeyBusy || !loginUsername.trim() || !loginPassword.trim()}>
+                {isLoginLoading ? 'Authenticating...' : 'Log in'}
+              </Button>
+            </form>
+            {passkeysEnabled && (
               <div className="space-y-4">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  <span>OR</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
                 {passkeyError && (
                   <p role="alert" className="text-sm text-destructive">{passkeyError}</p>
                 )}
-                <Button onClick={runPasskeyLogin} disabled={passkeyBusy} className="w-full">
-                  {passkeyBusy ? 'Waiting for passkey…' : 'Sign in'}
+                <Button onClick={runPasskeyLogin} disabled={passkeyBusy || isLoginLoading || isSignupLoading} variant="outline" className="w-full">
+                  {passkeyBusy ? 'Waiting for passkey…' : 'Continue with a passkey'}
                 </Button>
               </div>
             )}
           </TabsContent>
 
           {signupsEnabled && <TabsContent value="signup" className="space-y-4">
-            {methodToggle}
-            {!showPasskey ? (
-              <form onSubmit={handleSignupSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-username">Username</Label>
-                  <Input
-                    id="signup-username"
-                    type="text"
-                    aria-invalid={signupError !== ''}
-                    value={signupUsername}
-                    onChange={(e) => setSignupUsername(e.target.value)}
-                    placeholder="username"
-                    autoComplete="username"
-                    disabled={isSignupLoading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    aria-invalid={signupError !== ''}
-                    value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="password"
-                    autoComplete="new-password"
-                    disabled={isSignupLoading}
-                  />
-                </div>
-                {signupError && (
-                  <p role="alert" className="text-sm text-destructive">{signupError}</p>
-                )}
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isSignupLoading || !signupUsername || !signupPassword}
-                >
-                  {isSignupLoading ? 'Creating account...' : 'Sign Up'}
-                </Button>
-              </form>
-            ) : (
+            <form onSubmit={handleSignupSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="signup-username">Username</Label>
+                <Input
+                  id="signup-username"
+                  type="text"
+                  aria-invalid={signupError !== ''}
+                  value={signupUsername}
+                  onChange={(e) => setSignupUsername(e.target.value)}
+                  placeholder="username"
+                  autoComplete="username"
+                  required
+                  disabled={isSignupLoading || passkeyBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-password">Password</Label>
+                <Input
+                  id="signup-password"
+                  type="password"
+                  aria-invalid={signupError !== ''}
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                  placeholder="password"
+                  autoComplete="new-password"
+                  required
+                  disabled={isSignupLoading || passkeyBusy}
+                />
+              </div>
+              {signupError && (
+                <p role="alert" className="text-sm text-destructive">{signupError}</p>
+              )}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSignupLoading || passkeyBusy || !signupUsername.trim() || !signupPassword.trim()}
+              >
+                {isSignupLoading ? 'Creating account...' : 'Sign up'}
+              </Button>
+            </form>
+            {passkeysEnabled && (
               <div className="space-y-4">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  <span>OR</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
                 {passkeyError && (
                   <p role="alert" className="text-sm text-destructive">{passkeyError}</p>
                 )}
-                <Button onClick={runPasskeyRegister} disabled={passkeyBusy} className="w-full">
-                  {passkeyBusy ? 'Waiting for passkey…' : 'Create account'}
+                <Button onClick={runPasskeyRegister} disabled={passkeyBusy || isLoginLoading || isSignupLoading} variant="outline" className="w-full">
+                  {passkeyBusy ? 'Waiting for passkey…' : 'Create an account with a passkey'}
                 </Button>
               </div>
             )}
