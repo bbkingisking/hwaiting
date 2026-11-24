@@ -460,7 +460,7 @@ async fn export_then_import_round_trips_settings_history_and_suppressions() {
 }
 
 #[tokio::test]
-async fn old_backup_preserves_saved_study_timezone() {
+async fn null_backup_timezone_preserves_saved_study_timezone() {
     let pool = test_pool().await;
     let user_id = test_user(&pool).await;
     setup_source_user(&pool, user_id).await;
@@ -476,10 +476,7 @@ async fn old_backup_preserves_saved_study_timezone() {
             .0,
     )
     .unwrap();
-    old["settings"]
-        .as_object_mut()
-        .unwrap()
-        .remove("study_timezone");
+    old["settings"]["study_timezone"] = serde_json::Value::Null;
     for overwrite in [false, true] {
         let _ = import_data(
             State(pool.clone()),
@@ -751,7 +748,7 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
 }
 
 #[tokio::test]
-async fn translation_language_round_trips_and_old_backups_preserve_saved_choice() {
+async fn translation_language_round_trips_and_null_backups_preserve_saved_choice() {
     let pool = test_pool().await;
     let source = test_user(&pool).await;
     crate::user::ensure_settings_row(&pool, source)
@@ -771,10 +768,7 @@ async fn translation_language_round_trips_and_old_backups_preserve_saved_choice(
         Some("eng")
     );
     let mut old_backup = serde_json::to_value(&exported).unwrap();
-    old_backup["settings"]
-        .as_object_mut()
-        .unwrap()
-        .remove("translation_language");
+    old_backup["settings"]["translation_language"] = serde_json::Value::Null;
     let destination = test_user(&pool).await;
     let _ = import_data(
         State(pool.clone()),
@@ -809,4 +803,27 @@ async fn translation_language_round_trips_and_old_backups_preserve_saved_choice(
         .await
         .unwrap();
     assert_eq!(settings.core.translation_language.as_deref(), Some("kor"));
+}
+
+#[test]
+fn backup_settings_require_timezone_and_language_keys() {
+    let mut settings = serde_json::to_value(crate::user::UserSettingsCore {
+        show_hanja_hints: true,
+        red_threshold: 1,
+        yellow_threshold: 2,
+        day_boundary_hour: 4,
+        study_timezone: None,
+        translation_language: None,
+        auto_progress_on_correct: false,
+        auto_progress_delay: 0,
+        desired_retention: 0.9,
+        daily_new_card_limit: 10,
+        history_colorized_area: true,
+        history_colored_dots: true,
+        history_threshold_lines: true,
+    })
+    .unwrap();
+    assert!(serde_json::from_value::<crate::user::UserSettingsCore>(settings.clone()).is_ok());
+    settings.as_object_mut().unwrap().remove("study_timezone");
+    assert!(serde_json::from_value::<crate::user::UserSettingsCore>(settings).is_err());
 }

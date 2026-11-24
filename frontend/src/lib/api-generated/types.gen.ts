@@ -369,7 +369,7 @@ export type ImportDataRequest = {
     /**
      * Clear existing review history, derived scheduling, suppression flags, and fitted FSRS
      * parameters before import. Settings are applied from the backup in either mode;
-     * omitted legacy timezone/language values preserve existing saved choices.
+     * null timezone/language values preserve existing saved choices.
      */
     overwrite: boolean;
 };
@@ -778,13 +778,15 @@ export type UserSettingsCore = {
      */
     show_hanja_hints: boolean;
     /**
-     * Saved IANA study timezone; null until a new account initializes it.
+     * Saved IANA study timezone (e.g. `Asia/Seoul`); null until a new account
+     * initializes it. In a backup import, null keeps the saved timezone.
      */
-    study_timezone?: string | null;
+    study_timezone: string | null;
     /**
      * Preferred content language code; use an available code from /api/cards/languages.
+     * Null until chosen. In a backup import, null keeps the saved language.
      */
-    translation_language?: string | null;
+    translation_language: string | null;
     yellow_threshold: number;
 };
 

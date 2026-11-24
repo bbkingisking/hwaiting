@@ -50,12 +50,17 @@ pub struct UserSettingsCore {
     pub yellow_threshold: i64,
     #[schema(minimum = 0, maximum = 23)]
     pub day_boundary_hour: i64,
-    /// Saved IANA study timezone; null until a new account initializes it.
-    #[serde(default)]
+    /// Saved IANA study timezone (e.g. `Asia/Seoul`); null until a new account
+    /// initializes it. In a backup import, null keeps the saved timezone.
+    // `deserialize_with` disables serde's implicit None for a missing Option,
+    // so a backup must state the key (null is fine), matching the schema.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required)]
     pub study_timezone: Option<String>,
-    #[serde(default)]
-    #[schema(pattern = "^[a-z]{3}$")]
     /// Preferred content language code; use an available code from /api/cards/languages.
+    /// Null until chosen. In a backup import, null keeps the saved language.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required, pattern = "^[a-z]{3}$")]
     pub translation_language: Option<String>,
     pub auto_progress_on_correct: bool,
     #[schema(minimum = 0, maximum = 3000)]

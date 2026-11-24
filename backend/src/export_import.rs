@@ -99,7 +99,7 @@ pub struct ImportDataRequest {
     pub data: ExportData,
     /// Clear existing review history, derived scheduling, suppression flags, and fitted FSRS
     /// parameters before import. Settings are applied from the backup in either mode;
-    /// omitted legacy timezone/language values preserve existing saved choices.
+    /// null timezone/language values preserve existing saved choices.
     pub overwrite: bool,
 }
 
