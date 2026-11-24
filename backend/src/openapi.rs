@@ -484,6 +484,50 @@ mod tests {
     }
 
     #[test]
+    fn review_and_stream_examples_are_consistent() {
+        let spec = resolved_spec();
+        let queue = &spec["paths"]["/api/reviews/queue"]["get"]["responses"]["200"]["content"]["application/json"]
+            ["examples"]["available"]["value"];
+        let answer = &spec["paths"]["/api/reviews/answer"]["post"];
+        let request = &answer["requestBody"]["content"]["application/json"]["example"];
+        let response = &answer["responses"]["200"]["content"]["application/json"]["example"];
+        let card = &queue["cards"][0]["card"];
+        assert_eq!(
+            queue["cards"][0]["review"]["attempt_token"],
+            request["attempt_token"]
+        );
+        assert_eq!(request["answer"], response["target"]);
+        assert_eq!(
+            format!(
+                "{}{}{}",
+                card["sentence_before"].as_str().unwrap(),
+                response["target"].as_str().unwrap(),
+                card["sentence_after"].as_str().unwrap()
+            ),
+            response["sentence"].as_str().unwrap()
+        );
+        for withheld in ["word", "sentence", "target", "alternatives"] {
+            assert!(
+                card.get(withheld).is_none(),
+                "queue example reveals {withheld}"
+            );
+        }
+        let stream =
+            spec["paths"]["/api/events"]["get"]["responses"]["200"]["content"]["text/event-stream"]
+                ["example"]
+                .as_str()
+                .unwrap();
+        let mut count = 0;
+        for event in stream.split("\n\n").filter(|event| !event.is_empty()) {
+            let (name, data) = event.split_once("\ndata: ").unwrap();
+            let notification: serde_json::Value = serde_json::from_str(data).unwrap();
+            assert_eq!(name.strip_prefix("event: ").unwrap(), notification["type"]);
+            count += 1;
+        }
+        assert_eq!(count, 3);
+    }
+
+    #[test]
     fn shared_components_reuse_headers_and_common_errors() {
         let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
         let answer = &spec["paths"]["/api/reviews/answer"]["post"];

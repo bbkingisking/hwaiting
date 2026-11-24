@@ -120,7 +120,36 @@ pub struct ReviewQueueQuery {
     get, path = "/api/reviews/queue",
     description = "Return an ordered snapshot of eligible due and new review cards, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Includes the next future card availability time, even when cards are available now.", params(ReviewQueueQuery),
     responses(
-        (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
+        (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse,
+            examples(
+                ("available" = (
+                    summary = "One card; return its opaque attempt_token unchanged when answering",
+                    value = json!({
+                        "cards": [{
+                            "card": {
+                                "content_revision": 1, "card_id": 42, "sentence_id": 7,
+                                "krdict_id": null, "pos": null, "origin_type": null, "grade": null,
+                                "trans_word": "eat", "trans_dfn": null,
+                                "sentence_before": "저는 밥을 ", "sentence_after": ".",
+                                "sentence_translation": "I eat rice.",
+                                "speech_level": null, "tense": null,
+                                "is_honorific": false, "is_humble": false,
+                                "grammar_pattern": null, "hanja": null
+                            },
+                            "review": {
+                                "attempt_token": "opaque-attempt-token-from-queue",
+                                "difficulty": null, "guess_count": 0, "wrong_guess_count": 0,
+                                "hanja_hint_words": null
+                            }
+                        }],
+                        "available_count": 1, "next_available_at": null
+                    })
+                )),
+                ("waiting" = (value = json!({
+                    "cards": [], "available_count": 0,
+                    "next_available_at": "2026-11-25T04:00:00Z"
+                })))
+            )),
         (status = 400, description = "Invalid queue limit, or preferred translation language missing or unknown", body = crate::error::ErrorResponse),
         ),
     security(("cookie_auth" = [])), tag = "reviews"

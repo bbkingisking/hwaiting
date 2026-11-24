@@ -77,11 +77,22 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     post,
     path = "/api/reviews/answer",
     description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates card freshness within the same transaction; answers to stale cards record no review. A successful answer consumes the card's review state: resubmitting its attempt token returns 409 and records no additional review. X-Mutation-Id correlates notifications and does not deduplicate requests.",
-    request_body = CheckRequest,
+    request_body(content = CheckRequest,
+        description = "Use the attempt_token returned by the queue unchanged. The example token is illustrative and is not a valid signed token.",
+        example = json!({"answer": "먹어요", "attempt_token": "opaque-attempt-token-from-queue"})),
     responses(
-        (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
+        (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse,
+            example = json!({
+                "correct": true, "word": "먹다", "definition": null,
+                "sentence": "저는 밥을 먹어요.", "target": "먹어요",
+                "alternatives": [], "hanja_hints": null, "grammar_pattern_endings": []
+            })),
         (status = 400, description = "Invalid request or invalid, forged, or wrong-user attempt token", body = crate::error::ErrorResponse),
-        (status = 409, description = "Card was suppressed (`card_suppressed`), or its review state (`stale_review`), selected sentence (`stale_prompt`), or content (`stale_content`) changed since it was fetched", body = crate::error::ErrorResponse),
+        (status = 409, description = "Card was suppressed (`card_suppressed`), or its review state (`stale_review`), selected sentence (`stale_prompt`), or content (`stale_content`) changed since it was fetched", body = crate::error::ErrorResponse,
+            examples(
+                ("stale_review" = (value = json!({"code": "stale_review", "error": "Card review state has changed"}))),
+                ("stale_content" = (value = json!({"code": "stale_content", "error": "Card content has changed"})))
+            )),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
