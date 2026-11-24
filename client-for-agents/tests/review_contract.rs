@@ -6,13 +6,18 @@ use std::{
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 fn state_directory() -> PathBuf {
+    // The clock alone is not unique: macOS reports microseconds, and tests
+    // in this file run in parallel within one process.
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     std::env::temp_dir().join(format!(
-        "hwaiting_review_contract_{}_{}",
+        "hwaiting_review_contract_{}_{}_{}",
         std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -137,7 +142,11 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
                     );
                     json!({"correct":true,"hanja_hints":[]})
                 } else {
-                    write!(socket, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n").unwrap();
+                    write!(
+                        socket,
+                        "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
+                    )
+                    .unwrap();
                     continue;
                 }
             };
