@@ -33,27 +33,14 @@ pub(crate) fn parse_study_timezone(name: Option<&str>) -> Result<chrono_tz::Tz, 
 
 #[derive(Serialize, ToSchema)]
 pub struct UserProfile {
-    /// `None` for an account created via passkey, which has no username.
+    /// Null for a passkey-only account without a username.
+    #[schema(required)]
     pub username: Option<String>,
-    /// The frontend has no other way to learn this once the password
-    /// login form (and its localStorage-cached `is_admin`) is gone - it's
-    /// read from here on app load instead.
+    /// Whether this account can use administrator endpoints.
     pub is_admin: bool,
 }
 
-/// The `users_settings` row proper - every field shared verbatim between the
-/// live API response (`UserSettings`, below) and data export/import
-/// (`export_import::UserSettingsExport`). Split out so both flatten this
-/// struct instead of hand-declaring the same settings fields a second time: the
-/// export path used to be its own independently-declared struct that merely
-/// happened to agree with `UserSettings`, the same silent-drift risk
-/// `cards::Card` used to carry before it was unified from
-/// `CardFront`/`CardBack` (see its doc comment in cards/mod.rs) - a settings
-/// field added to the DB and to one of these two but not the other would
-/// silently vanish from export, or from the live API, with no compiler
-/// error either way. `sqlx::FromRow` lets both `get_settings` (below) and
-/// `export_import::get_user_settings` read a row straight into this shape
-/// too, rather than each hand-repeating the same `row.get(...)` calls.
+/// Study preferences shared by live settings and portable backups.
 #[derive(Serialize, Deserialize, sqlx::FromRow, ToSchema, Debug, PartialEq)]
 pub struct UserSettingsCore {
     /// Controls Hanja hint visibility on review cards.
@@ -126,11 +113,7 @@ pub(crate) fn validate_settings_values(
 pub struct UserSettings {
     #[serde(flatten)]
     pub core: UserSettingsCore,
-    /// Whether the user has FSRS parameters fitted from their own review
-    /// history, as opposed to library defaults - a presence flag, not the
-    /// parameters themselves. See `UserSettingsExport::fsrs_parameters` for
-    /// the portable form export/import actually needs; the two aren't the
-    /// same field under different names, so this doesn't join `core`.
+    /// True when personal FSRS parameters have been fitted; false uses library defaults.
     pub has_fsrs_parameters: bool,
 }
 

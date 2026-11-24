@@ -36,9 +36,11 @@ pub struct ListUsersQuery {
 #[derive(Serialize, ToSchema)]
 pub struct AdminUserSummary {
     pub id: i64,
-    /// `None` for an account created via passkey, which has no username.
+    /// Null for a passkey-only account without a username.
+    #[schema(required)]
     pub username: Option<String>,
     pub is_admin: bool,
+    /// Account creation time in UTC, in SQLite YYYY-MM-DD HH:MM:SS format.
     pub created_at: String,
 }
 
@@ -208,17 +210,10 @@ pub async fn get_card_inflections(
     Ok(Json(CardInflectionsResponse { inflections }))
 }
 
-/// Partial card edit. Any field left out of the JSON body is untouched;
-/// nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
-/// `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`,
-/// `is_honorific`, `is_humble`) can be explicitly set to `null` to clear
-/// the column — that's why they're typed `Option<Option<_>>` rather than
-/// `Option<_>`, so "omitted" and "explicit null" deserialize differently.
-/// Enum-backed fields are sent as slugs, resolved server-side to
-/// lookup-table row IDs. `is_honorific`/`is_humble` are declared here
-/// directly rather than flattened from a shared write-shape struct, because
-/// this struct's fields need to distinguish omitted from explicit-null
-/// throughout (see the double-option pattern above).
+/// Partial card edit. Omitted fields are unchanged. For text content, target,
+/// translations, and alternatives, explicit null also means unchanged.
+/// Nullable metadata fields can be cleared with null; honorific/humble flags
+/// reset to false with null. Classification and grammar values use slugs.
 #[derive(Deserialize, ToSchema, Default)]
 pub struct UpdateCardRequest {
     /// Internal revision check; the aggregate HTTP request supplies its revision once.
@@ -226,33 +221,50 @@ pub struct UpdateCardRequest {
     pub expected_content_revision: i64,
     /// The card’s sentence; it must belong to the card in the path.
     pub sentence_id: i64,
+    /// Omitted or null leaves the current value unchanged.
     pub word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub definition: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub pos: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub origin_type: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub hanja: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub grade: Option<Option<String>>,
+    /// Omitted or null leaves the current value unchanged.
     pub trans_word: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub trans_dfn: Option<Option<String>>,
+    /// Omitted or null leaves the current value unchanged.
     pub sentence: Option<String>,
+    /// Omitted or null leaves the current value unchanged.
     pub sentence_translation: Option<String>,
+    /// Omitted or null leaves the current value unchanged.
     pub target: Option<String>,
+    /// Omitted or null leaves the current value unchanged.
     pub alternatives: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub speech_level: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub tense: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null clears it.
     pub grammar_pattern: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null resets it to false.
     pub is_honorific: Option<Option<bool>>,
     #[serde(default, deserialize_with = "double_option")]
+    /// Omitted leaves the current value unchanged; null resets it to false.
     pub is_humble: Option<Option<bool>>,
 }
 

@@ -11,6 +11,7 @@ use utoipa::ToSchema;
 pub struct GrammarPattern {
     pub slug: String,
     pub name: String,
+    #[schema(required)]
     pub explanation: Option<String>,
 }
 

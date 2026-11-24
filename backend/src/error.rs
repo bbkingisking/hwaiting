@@ -13,6 +13,7 @@ use utoipa::ToSchema;
 pub struct ErrorResponse {
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub code: Option<TranslationLanguageErrorCode>,
 }
 

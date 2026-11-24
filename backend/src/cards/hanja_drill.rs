@@ -21,13 +21,15 @@ pub struct HanjaDrill {
     pub hanja: String,
     pub word: String,
     pub trans_word: String,
+    #[schema(required)]
     pub trans_dfn: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct HanjaDrillResponse {
-    /// `None` when the user has no mastered hanja cards yet - a normal empty
+    /// Null when the user has no mastered hanja cards yet - a normal empty
     /// state, not an error.
+    #[schema(required)]
     pub drill: Option<HanjaDrill>,
 }
 

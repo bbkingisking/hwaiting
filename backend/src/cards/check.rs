@@ -24,16 +24,11 @@ pub struct CheckRequest {
     pub attempt_token: String,
 }
 
-/// The card fields disclosed once an answer is graded, shared with the
-/// admin-editing shape - see `cards::Card`'s doc comment - and with
-/// `CardFront` (next.rs) for the withheld-until-graded relationship between
-/// the two. Split out from `CardReveal` (below) for the same reason
-/// `CardFront` was: so `Card` can flatten this struct instead of
-/// hand-declaring the same 6 fields a third time. Every field here would
-/// give the answer away if it shipped any earlier than `CardReveal` ships it.
+/// Answer content disclosed after grading, including the target's Korean text.
 #[derive(Serialize, ToSchema)]
 pub struct CardBack {
     pub word: String,
+    #[schema(required)]
     pub definition: Option<String>,
     pub sentence: String,
     pub target: String,
@@ -52,6 +47,7 @@ pub struct CardReveal {
     #[serde(flatten)]
     pub back: CardBack,
     /// Null when hanja hints are disabled; otherwise the available personalized hints.
+    #[schema(required)]
     pub hanja_hints: Option<Vec<HanjaHint>>,
     /// The grammar pattern's possible conjugation endings - a property of
     /// the referenced `grammar_patterns` row, not of this card, but exactly
@@ -85,7 +81,7 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
 #[utoipa::path(
     post,
     path = "/api/reviews/answer",
-    description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates prompt freshness within the same transaction; stale prompts record no review.",
+    description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates prompt freshness within the same transaction; stale prompts record no review. A successful answer consumes the prompt state: resubmitting its attempt token returns 409 and records no additional review. X-Mutation-Id correlates notifications and does not deduplicate requests.",
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),

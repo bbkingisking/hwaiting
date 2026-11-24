@@ -14,12 +14,12 @@ export type AdminCardChange = UpdateCardRequest & {
 export type AdminCardDetail = {
     card_id: number;
     content_revision: number;
-    definition?: string | null;
-    grade?: string | null;
-    hanja?: string | null;
-    krdict_id?: number | null;
-    origin_type?: string | null;
-    pos?: string | null;
+    definition: string | null;
+    grade: string | null;
+    hanja: string | null;
+    krdict_id: number | null;
+    origin_type: string | null;
+    pos: string | null;
     sentence: AdminSentence;
     translations: {
         [key: string]: AdminTranslation;
@@ -29,7 +29,7 @@ export type AdminCardDetail = {
 
 export type AdminCardSummary = {
     card_id: number;
-    pos?: string | null;
+    pos: string | null;
     word: string;
 };
 
@@ -37,6 +37,9 @@ export type AdminSearchResponse = {
     cards: Array<AdminCardSummary>;
 };
 
+/**
+ * The card's single Korean sentence and all of its translations.
+ */
 export type AdminSentence = {
     sentence_id: number;
     target: AdminTarget;
@@ -49,31 +52,33 @@ export type AdminSentence = {
 export type AdminTarget = InflectionHint & {
     alternatives: Array<string>;
     form: string;
-    grammar_pattern?: null | GrammarPattern;
+    grammar_pattern: null | GrammarPattern;
 };
 
 export type AdminTranslation = {
-    definition?: string | null;
+    definition: string | null;
     word: string;
 };
 
 export type AdminUserSummary = {
+    /**
+     * Account creation time in UTC, in SQLite YYYY-MM-DD HH:MM:SS format.
+     */
     created_at: string;
     id: number;
     is_admin: boolean;
     /**
-     * `None` for an account created via passkey, which has no username.
+     * Null for a passkey-only account without a username.
      */
-    username?: string | null;
+    username: string | null;
 };
 
 export type AuthResponse = {
     is_admin: boolean;
     /**
-     * `None` for an account created via passkey, which has no username -
-     * see [`crate::passkey`].
+     * Null for a passkey-only account without a username.
      */
-    username?: string | null;
+    username: string | null;
 };
 
 export type AvailableTranslationLanguage = {
@@ -102,17 +107,11 @@ export type Capabilities = {
 };
 
 /**
- * The card fields disclosed once an answer is graded, shared with the
- * admin-editing shape - see `cards::Card`'s doc comment - and with
- * `CardFront` (next.rs) for the withheld-until-graded relationship between
- * the two. Split out from `CardReveal` (below) for the same reason
- * `CardFront` was: so `Card` can flatten this struct instead of
- * hand-declaring the same 6 fields a third time. Every field here would
- * give the answer away if it shipped any earlier than `CardReveal` ships it.
+ * Answer content disclosed after grading, including the target's Korean text.
  */
 export type CardBack = {
     alternatives: Array<string>;
-    definition?: string | null;
+    definition: string | null;
     sentence: string;
     target: string;
     word: string;
@@ -127,15 +126,15 @@ export type CardBack = {
 export type CardFront = InflectionHint & {
     card_id: number;
     content_revision: number;
-    grade?: string | null;
-    grammar_pattern?: null | GrammarPattern;
-    hanja?: string | null;
+    grade: string | null;
+    grammar_pattern: null | GrammarPattern;
+    hanja: string | null;
     /**
      * KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
      */
-    krdict_id?: number | null;
-    origin_type?: string | null;
-    pos?: string | null;
+    krdict_id: number | null;
+    origin_type: string | null;
+    pos: string | null;
     /**
      * The text after the blank. See `sentence_before`.
      */
@@ -152,7 +151,7 @@ export type CardFront = InflectionHint & {
      */
     sentence_id: number;
     sentence_translation: string;
-    trans_dfn?: string | null;
+    trans_dfn: string | null;
     trans_word: string;
 };
 
@@ -164,8 +163,8 @@ export type CardInflection = {
     ending: string;
     form: string;
     form_slug: string;
-    speech_level?: string | null;
-    tense?: string | null;
+    speech_level: string | null;
+    tense: string | null;
 };
 
 export type CardInflectionsResponse = {
@@ -195,7 +194,7 @@ export type CardReveal = CardBack & {
     /**
      * Null when hanja hints are disabled; otherwise the available personalized hints.
      */
-    hanja_hints?: Array<HanjaHint> | null;
+    hanja_hints: Array<HanjaHint> | null;
 };
 
 export type CheckRequest = {
@@ -216,7 +215,7 @@ export type DayHistory = {
     /**
      * Unrounded accuracy percentage (0–100).
      */
-    percentage?: number | null;
+    percentage: number | null;
     total: number;
 };
 
@@ -224,11 +223,14 @@ export type DayHistory = {
  * Common error envelope; language selection failures include an actionable code.
  */
 export type ErrorResponse = {
-    code?: null | TranslationLanguageErrorCode;
+    code?: TranslationLanguageErrorCode;
     error: string;
 };
 
 export type ExportData = {
+    /**
+     * Export emits RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
+     */
     exported_at: string;
     review_history: Array<ReviewHistoryExport>;
     settings: UserSettingsExport;
@@ -264,7 +266,7 @@ export type FeedbackResponse = {
  * answer reveal or the resource catalog, never embedded in the pre-answer prompt.
  */
 export type GrammarPattern = {
-    explanation?: string | null;
+    explanation: string | null;
     name: string;
     slug: string;
 };
@@ -275,18 +277,18 @@ export type GrammarPatternOption = GrammarPattern & {
 
 export type HanjaDrill = {
     hanja: string;
-    trans_dfn?: string | null;
+    trans_dfn: string | null;
     trans_word: string;
     word: string;
 };
 
 export type HanjaDrillResponse = {
-    drill?: null | HanjaDrill;
+    drill: null | HanjaDrill;
 };
 
 export type HanjaHint = {
     hanja: string;
-    trans_word?: string | null;
+    trans_word: string | null;
     word: string;
 };
 
@@ -312,10 +314,10 @@ export type HistoryResponse = {
 
 export type HistorySummary = {
     current_streak: number;
-    first_review_date?: string | null;
+    first_review_date: string | null;
     longest_streak: number;
     reviews_per_active_day: number;
-    total_accuracy?: number | null;
+    total_accuracy: number | null;
     total_cards_reviewed: number;
     total_reviews: number;
 };
@@ -343,27 +345,20 @@ export type ImportStats = {
 };
 
 /**
- * Read shape: a tagged sentence's hints once resolved from their
- * lookup-table ids back to slugs. `#[serde(flatten)]`ed into every
- * response that carries a sentence's hints, so the wire shape (four flat
- * top-level fields) is unchanged from before `is_honorific`/`is_humble`
- * existed.
+ * Grammatical hints for the sentence target. Slugs identify its speech level
+ * and tense; subject and object honorification are independent flags.
  */
 export type InflectionHint = {
     /**
-     * Subject honorification (주체높임, -(으)시-). Independent of
-     * `is_humble` rather than sharing a lookup table with it (the way
-     * `speech_level`/`tense` share theirs) because a target isn't limited
-     * to at most one of the two -- see migration 20240101000025.
+     * Subject honorification (주체높임, -(으)시-).
      */
-    is_honorific?: boolean;
+    is_honorific: boolean;
     /**
-     * Object honorification (객체높임/겸양법 -- 드리다, 뵙다, 여쭙다,
-     * 모시다-type suppletive verbs). See migration 20240101000025.
+     * Object honorification (객체높임/겸양법: 드리다, 뵙다, 여쭙다, 모시다).
      */
-    is_humble?: boolean;
-    speech_level?: string | null;
-    tense?: string | null;
+    is_humble: boolean;
+    speech_level: string | null;
+    tense: string | null;
 };
 
 export type ListFeedbackResponse = {
@@ -385,13 +380,13 @@ export type LoginRequest = {
 
 export type Notification = {
     card_id: number;
-    mutation_id?: string | null;
+    mutation_id?: string;
     type: 'card-mutated';
 } | {
-    mutation_id?: string | null;
+    mutation_id?: string;
     type: 'state-changed';
 } | {
-    mutation_id?: string | null;
+    mutation_id?: string;
     type: 'resync-required';
 };
 
@@ -417,10 +412,16 @@ export type PasskeyFinishRequest = {
 };
 
 export type PasskeySummary = {
+    /**
+     * UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format.
+     */
     created_at: string;
     id: number;
-    label?: string | null;
-    last_used_at?: string | null;
+    label: string | null;
+    /**
+     * UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format, or null if never used.
+     */
+    last_used_at: string | null;
 };
 
 /**
@@ -428,16 +429,18 @@ export type PasskeySummary = {
  */
 export type ReviewContext = {
     /**
-     * Return unchanged when submitting an answer.
+     * Return unchanged when submitting an answer. No time-based expiry; valid until
+     * the prompt content, review state, or availability changes. A successful answer
+     * changes review state, so the same token cannot record a second review.
      */
     attempt_token: string;
-    difficulty?: number | null;
+    difficulty: number | null;
     guess_count: number;
     /**
      * Hanja characters from previously reviewed words, without their readings/glosses.
      * Null when hints are disabled; empty when enabled but no hints are available.
      */
-    hanja_hint_words?: Array<string> | null;
+    hanja_hint_words: Array<string> | null;
     wrong_guess_count: number;
 };
 
@@ -449,11 +452,14 @@ export type ReviewHistoryExport = {
     difficulty?: number | null;
     elapsed_days?: number | null;
     rating: ReviewRating;
+    /**
+     * UTC review time. Import accepts RFC 3339 or SQLite YYYY-MM-DD HH:MM:SS.
+     */
     reviewed_at: string;
     scheduled_days?: number | null;
     sentence_id?: number | null;
     /**
-     * Positive FSRS stability, supplied together with difficulty, or both null.
+     * Positive FSRS stability in days, supplied together with difficulty, or both null.
      */
     stability?: number | null;
     state?: null | ReviewState;
@@ -479,7 +485,7 @@ export type ReviewQueueResponse = {
      * reset that unlocks waiting new cards. Independent of response limit or
      * whether cards are available now; null when no future availability is known.
      */
-    next_available_at?: string | null;
+    next_available_at: string | null;
 };
 
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
@@ -490,6 +496,11 @@ export type ReviewResponse = {
 
 export type ReviewState = 'learning' | 'review' | 'relearning';
 
+/**
+ * Atomic edits to the card's single sentence, scoped by translation language.
+ * Each language may occur once. Shared fields may appear in several entries
+ * only with identical values; conflicting values or duplicate languages return 400.
+ */
 export type SaveAdminCardRequest = {
     changes: Array<AdminCardChange>;
     expected_content_revision: number;
@@ -533,8 +544,8 @@ export type StartResponse = {
 
 export type SuppressedCard = {
     card_id: number;
-    grade?: string | null;
-    pos?: string | null;
+    grade: string | null;
+    pos: string | null;
     sentence: string;
     sentence_translation: string;
     trans_word: string;
@@ -558,7 +569,7 @@ export type TodayStatsResponse = {
     /**
      * Unrounded accuracy percentage (0–100); null when there are no reviews today.
      */
-    percentage?: number | null;
+    percentage: number | null;
     /**
      * Answered reviews today, excluding first exposures.
      */
@@ -572,39 +583,83 @@ export type TodayStatsResponse = {
 export type TranslationLanguageErrorCode = 'translation_language_not_configured' | 'unknown_translation_language' | 'invalid_translation_language';
 
 /**
- * Partial card edit. Any field left out of the JSON body is untouched;
- * nullable fields (`definition`, `pos`, `origin_type`, `hanja`,
- * `grade`, `trans_dfn`, `speech_level`, `tense`, `grammar_pattern`,
- * `is_honorific`, `is_humble`) can be explicitly set to `null` to clear
- * the column — that's why they're typed `Option<Option<_>>` rather than
- * `Option<_>`, so "omitted" and "explicit null" deserialize differently.
- * Enum-backed fields are sent as slugs, resolved server-side to
- * lookup-table row IDs. `is_honorific`/`is_humble` are declared here
- * directly rather than flattened from a shared write-shape struct, because
- * this struct's fields need to distinguish omitted from explicit-null
- * throughout (see the double-option pattern above).
+ * Partial card edit. Omitted fields are unchanged. For text content, target,
+ * translations, and alternatives, explicit null also means unchanged.
+ * Nullable metadata fields can be cleared with null; honorific/humble flags
+ * reset to false with null. Classification and grammar values use slugs.
  */
 export type UpdateCardRequest = {
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     alternatives?: Array<string> | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     definition?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     grade?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     grammar_pattern?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     hanja?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null resets it to false.
+     */
     is_honorific?: boolean | null;
+    /**
+     * Omitted leaves the current value unchanged; null resets it to false.
+     */
     is_humble?: boolean | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     origin_type?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     pos?: string | null;
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     sentence?: string | null;
     /**
      * The card’s sentence; it must belong to the card in the path.
      */
     sentence_id: number;
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     sentence_translation?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     speech_level?: string | null;
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     target?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     tense?: string | null;
+    /**
+     * Omitted leaves the current value unchanged; null clears it.
+     */
     trans_dfn?: string | null;
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     trans_word?: string | null;
+    /**
+     * Omitted or null leaves the current value unchanged.
+     */
     word?: string | null;
 };
 
@@ -651,42 +706,24 @@ export type UpdateSettingsResponse = {
 
 export type UserProfile = {
     /**
-     * The frontend has no other way to learn this once the password
-     * login form (and its localStorage-cached `is_admin`) is gone - it's
-     * read from here on app load instead.
+     * Whether this account can use administrator endpoints.
      */
     is_admin: boolean;
     /**
-     * `None` for an account created via passkey, which has no username.
+     * Null for a passkey-only account without a username.
      */
-    username?: string | null;
+    username: string | null;
 };
 
 export type UserSettings = UserSettingsCore & {
     /**
-     * Whether the user has FSRS parameters fitted from their own review
-     * history, as opposed to library defaults - a presence flag, not the
-     * parameters themselves. See `UserSettingsExport::fsrs_parameters` for
-     * the portable form export/import actually needs; the two aren't the
-     * same field under different names, so this doesn't join `core`.
+     * True when personal FSRS parameters have been fitted; false uses library defaults.
      */
     has_fsrs_parameters: boolean;
 };
 
 /**
- * The `users_settings` row proper - every field shared verbatim between the
- * live API response (`UserSettings`, below) and data export/import
- * (`export_import::UserSettingsExport`). Split out so both flatten this
- * struct instead of hand-declaring the same settings fields a second time: the
- * export path used to be its own independently-declared struct that merely
- * happened to agree with `UserSettings`, the same silent-drift risk
- * `cards::Card` used to carry before it was unified from
- * `CardFront`/`CardBack` (see its doc comment in cards/mod.rs) - a settings
- * field added to the DB and to one of these two but not the other would
- * silently vanish from export, or from the live API, with no compiler
- * error either way. `sqlx::FromRow` lets both `get_settings` (below) and
- * `export_import::get_user_settings` read a row straight into this shape
- * too, rather than each hand-repeating the same `row.get(...)` calls.
+ * Study preferences shared by live settings and portable backups.
  */
 export type UserSettingsCore = {
     /**
@@ -718,7 +755,8 @@ export type UserSettingsCore = {
 
 export type UserSettingsExport = UserSettingsCore & {
     /**
-     * JSON-encoded array of fitted FSRS floating-point parameters; null uses library defaults.
+     * JSON-encoded array of fitted FSRS floating-point parameters. On import, null
+     * resets to defaults with overwrite=true and preserves existing parameters otherwise.
      */
     fsrs_parameters?: string | null;
 };
@@ -989,10 +1027,6 @@ export type LoginData = {
     body: LoginRequest;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1036,10 +1070,6 @@ export type LogoutData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1074,10 +1104,6 @@ export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 export type LoginFinishData = {
     body: PasskeyFinishRequest;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1130,10 +1156,6 @@ export type LoginStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1172,10 +1194,6 @@ export type LoginStartResponse = LoginStartResponses[keyof LoginStartResponses];
 export type RegisterFinishData = {
     body: PasskeyFinishRequest;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1224,10 +1242,6 @@ export type RegisterStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1266,10 +1280,6 @@ export type RegisterStartResponse = RegisterStartResponses[keyof RegisterStartRe
 export type SignupData = {
     body: SignupRequest;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1369,6 +1379,10 @@ export type ListSuppressedCardsData = {
 };
 
 export type ListSuppressedCardsErrors = {
+    /**
+     * Translation language is not configured or is unknown
+     */
+    400: ErrorResponse;
     /**
      * Missing/invalid JWT
      */
@@ -1530,7 +1544,7 @@ export type SubscribeErrors = {
     /**
      * Missing or expired authentication
      */
-    401: unknown;
+    401: ErrorResponse;
     /**
      * Internal server error
      */
@@ -1551,10 +1565,6 @@ export type SubscribeResponse = SubscribeResponses[keyof SubscribeResponses];
 export type SubmitFeedbackData = {
     body: FeedbackRequest;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -1711,10 +1721,6 @@ export type ValidateCardAttemptData = {
     body: ValidateRequest;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -1769,7 +1775,7 @@ export type GetReviewQueueData = {
 
 export type GetReviewQueueErrors = {
     /**
-     * Invalid batch size or preferred translation language not configured
+     * Invalid queue limit, or preferred translation language missing or unknown
      */
     400: ErrorResponse;
     /**
@@ -2079,10 +2085,6 @@ export type AddPasskeyFinishData = {
     body: PasskeyFinishRequest;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -2134,10 +2136,6 @@ export type AddPasskeyStartData = {
     body?: never;
     headers: {
         /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
         'X-Requested-With': 'hwaiting';
@@ -2180,10 +2178,6 @@ export type AddPasskeyStartResponse = AddPasskeyStartResponses[keyof AddPasskeyS
 export type DeletePasskeyData = {
     body?: never;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */
@@ -2236,10 +2230,6 @@ export type DeletePasskeyResponse = DeletePasskeyResponses[keyof DeletePasskeyRe
 export type UpdatePasskeyData = {
     body: UpdatePasskeyRequest;
     headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
         /**
          * CSRF protection: cross-origin browser writes require an allowed CORS origin.
          */

@@ -468,8 +468,12 @@ pub struct PasskeyFinishRequest {
 #[derive(Serialize, ToSchema)]
 pub struct PasskeySummary {
     pub id: i64,
+    #[schema(required)]
     pub label: Option<String>,
+    /// UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format.
     pub created_at: String,
+    #[schema(required)]
+    /// UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format, or null if never used.
     pub last_used_at: Option<String>,
 }
 

@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Serialize, ToSchema)]
 pub struct AdminTranslation {
     pub word: String,
+    #[schema(required)]
     pub definition: Option<String>,
 }
 
@@ -14,10 +15,12 @@ pub struct AdminTarget {
     pub alternatives: Vec<String>,
     #[serde(flatten)]
     pub hint: crate::inflection_hints::InflectionHint,
+    #[schema(required)]
     pub grammar_pattern: Option<crate::cards::GrammarPattern>,
 }
 
 #[derive(Serialize, ToSchema)]
+/// The card's single Korean sentence and all of its translations.
 pub struct AdminSentence {
     pub sentence_id: i64,
     pub text: String,
@@ -31,11 +34,17 @@ pub struct AdminCardDetail {
     pub card_id: i64,
     pub content_revision: i64,
     pub word: String,
+    #[schema(required)]
     pub definition: Option<String>,
+    #[schema(required)]
     pub krdict_id: Option<i64>,
+    #[schema(required)]
     pub hanja: Option<String>,
+    #[schema(required)]
     pub pos: Option<String>,
+    #[schema(required)]
     pub origin_type: Option<String>,
+    #[schema(required)]
     pub grade: Option<String>,
     pub translations: BTreeMap<String, AdminTranslation>,
     pub sentence: AdminSentence,
@@ -103,6 +112,7 @@ pub async fn get_admin_card(
 pub struct AdminCardSummary {
     pub card_id: i64,
     pub word: String,
+    #[schema(required)]
     pub pos: Option<String>,
 }
 #[derive(Serialize, ToSchema)]
@@ -148,6 +158,9 @@ pub struct AdminCardChange {
     pub fields: UpdateCardRequest,
 }
 #[derive(Deserialize, ToSchema)]
+/// Atomic edits to the card's single sentence, scoped by translation language.
+/// Each language may occur once. Shared fields may appear in several entries
+/// only with identical values; conflicting values or duplicate languages return 400.
 pub struct SaveAdminCardRequest {
     pub expected_content_revision: i64,
     pub changes: Vec<AdminCardChange>,

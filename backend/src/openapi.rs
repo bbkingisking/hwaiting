@@ -27,6 +27,16 @@ struct SecurityAddon;
 
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        // No repository license is declared. Avoid an empty license placeholder.
+        if openapi
+            .info
+            .license
+            .as_ref()
+            .is_some_and(|license| license.name.is_empty())
+        {
+            openapi.info.license = None;
+        }
+        openapi.servers = Some(vec![utoipa::openapi::Server::new("/")]);
         if let Some(components) = openapi.components.as_mut() {
             components.add_security_scheme(
                 "cookie_auth",
@@ -95,7 +105,21 @@ impl Modify for SecurityAddon {
                     .or_insert_with(|| {
                         error_response("Missing or invalid X-Requested-With header")
                     });
-                operation.parameters.get_or_insert_with(Vec::new).push(
+                // These routes publish SSE notifications through the mutation adapters.
+                if matches!(
+                    operation.operation_id.as_deref(),
+                    Some(
+                        "check_answer"
+                            | "suppress_card"
+                            | "unsuppress_card"
+                            | "update_settings"
+                            | "import_data"
+                            | "save_admin_card"
+                            | "optimize_fsrs"
+                            | "reset_fsrs_parameters"
+                    )
+                ) {
+                    operation.parameters.get_or_insert_with(Vec::new).push(
                     ParameterBuilder::new()
                         .name("X-Mutation-Id")
                         .parameter_in(ParameterIn::Header)
@@ -104,6 +128,7 @@ impl Modify for SecurityAddon {
                         .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
                         .build(),
                 );
+                }
                 operation.parameters.get_or_insert_with(Vec::new).push(
                     ParameterBuilder::new()
                         .name("X-Requested-With")
@@ -260,6 +285,49 @@ mod tests {
                 .get("404")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn nullable_response_fields_match_serialized_presence() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        for (name, body) in [
+            (
+                "AuthResponse",
+                serde_json::to_value(crate::auth::AuthResponse {
+                    username: None,
+                    is_admin: false,
+                })
+                .unwrap(),
+            ),
+            (
+                "HanjaDrillResponse",
+                serde_json::to_value(crate::cards::HanjaDrillResponse { drill: None }).unwrap(),
+            ),
+            (
+                "InflectionHint",
+                serde_json::to_value(crate::inflection_hints::InflectionHint::default()).unwrap(),
+            ),
+        ] {
+            let required = spec["components"]["schemas"][name]["required"]
+                .as_array()
+                .unwrap();
+            for key in body.as_object().unwrap().keys() {
+                assert!(
+                    required.contains(&serde_json::json!(key)),
+                    "{name}.{key} is always serialized"
+                );
+            }
+        }
+        let mutation_header = |path: &str, method: &str| {
+            spec["paths"][path][method]["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|parameter| parameter["name"] == "X-Mutation-Id")
+        };
+        assert!(mutation_header("/api/user/settings", "patch"));
+        assert!(!mutation_header("/api/reviews/check-freshness", "post"));
+        assert!(!mutation_header("/api/auth/login", "post"));
     }
 
     #[test]

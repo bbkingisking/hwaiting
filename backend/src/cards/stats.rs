@@ -61,13 +61,16 @@ fn compute_streaks(dates: &[chrono::NaiveDate], today: chrono::NaiveDate) -> (i6
 #[derive(Serialize, ToSchema)]
 pub struct TodayStatsResponse {
     /// Date of the current study day in the user's saved timezone.
+    #[schema(format = Date)]
     study_day: String,
     /// Exclusive end of this study day, as a UTC timestamp.
+    #[schema(format = DateTime)]
     day_ends_at: String,
     /// Answered reviews today, excluding first exposures.
     reviews_today: i64,
     correct_today: i64,
     /// Unrounded accuracy percentage (0–100); null when there are no reviews today.
+    #[schema(required)]
     percentage: Option<f64>,
     /// Distinct cards first introduced today; first exposures are views, not reviews.
     new_today_count: i64,
@@ -75,10 +78,12 @@ pub struct TodayStatsResponse {
 
 #[derive(Serialize, ToSchema)]
 pub struct DayHistory {
+    #[schema(format = Date)]
     pub date: String,
     pub total: i64,
     pub correct: i64,
     /// Unrounded accuracy percentage (0–100).
+    #[schema(required)]
     pub percentage: Option<f64>,
 }
 
@@ -96,8 +101,11 @@ pub struct HistoryResponse {
 pub struct HistorySummary {
     pub total_reviews: i64,
     pub total_cards_reviewed: i64,
+    #[schema(required)]
     pub total_accuracy: Option<f64>,
     pub reviews_per_active_day: f64,
+    #[schema(required)]
+    #[schema(format = Date)]
     pub first_review_date: Option<String>,
     pub current_streak: i64,
     pub longest_streak: i64,

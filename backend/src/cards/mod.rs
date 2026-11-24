@@ -83,6 +83,7 @@ pub(crate) async fn review_prefs(pool: &SqlitePool, user_id: i64) -> Result<Revi
 pub struct HanjaHint {
     pub hanja: String,
     pub word: String,
+    #[schema(required)]
     pub trans_word: Option<String>,
 }
 
@@ -104,7 +105,9 @@ pub struct CardInflection {
     pub form_slug: String,
     pub form: String,
     pub ending: String,
+    #[schema(required)]
     pub tense: Option<String>,
+    #[schema(required)]
     pub speech_level: Option<String>,
 }
 

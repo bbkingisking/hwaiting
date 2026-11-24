@@ -38,14 +38,17 @@ pub enum Notification {
     CardMutated {
         card_id: i64,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false, format = "uuid")]
         mutation_id: Option<String>,
     },
     StateChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false, format = "uuid")]
         mutation_id: Option<String>,
     },
     ResyncRequired {
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false, format = "uuid")]
         mutation_id: Option<String>,
     },
 }
@@ -137,7 +140,7 @@ impl Drop for Subscription {
 #[utoipa::path(get, path = "/api/events",
     description = "Subscribe to server-sent notifications for review, card, and user-state changes. Refresh and validate cached prompts when resync-required is received; events are not replayed on reconnect. The stream closes when authentication expires.", responses(
     (status = 200, description = "Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS and generic background updates (same user); resync-required {type, mutation_id?: UUID string} requests broad refresh and prompt validation after imports (same user) or initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.", content_type = "text/event-stream", body = String),
-    (status = 401, description = "Missing or expired authentication")
+    (status = 401, description = "Missing or expired authentication", body = crate::error::ErrorResponse)
 ), security(("cookie_auth" = [])), tag = "events")]
 pub async fn subscribe(
     State(state): State<AppState>,

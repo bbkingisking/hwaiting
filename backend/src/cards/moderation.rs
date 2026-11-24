@@ -21,7 +21,9 @@ pub struct SuppressedCard {
     trans_word: String,
     sentence: String,
     sentence_translation: String,
+    #[schema(required)]
     pos: Option<String>,
+    #[schema(required)]
     grade: Option<String>,
 }
 
@@ -85,6 +87,7 @@ pub async fn suppress_card(
     description = "List the current user's suppressed cards with sentence content and translations in their configured translation language, ordered by Korean word.",
     responses(
         (status = 200, description = "All suppressed cards for the user", body = SuppressedCardsResponse),
+        (status = 400, description = "Translation language is not configured or is unknown", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -145,7 +148,7 @@ pub async fn list_suppressed_cards(
 #[utoipa::path(
     put,
     path = "/api/cards/{card_id}/unsuppress",
-    description = "Clear the current user's suppression flag so the card can return to the review rotation when eligible. Succeeds even if no suppression flag exists.",
+    description = "Clear the current user's suppression flag so the card can return to the review rotation when eligible. Succeeds even if no suppression flag or card exists.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
         (status = 200, description = "Card unsuppressed", body = ReviewResponse),

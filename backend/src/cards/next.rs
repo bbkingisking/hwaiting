@@ -24,11 +24,16 @@ pub struct CardFront {
     /// The particular prompt selected for this review of the card.
     pub sentence_id: i64,
     /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
+    #[schema(required)]
     pub krdict_id: Option<i64>,
+    #[schema(required)]
     pub pos: Option<String>,
+    #[schema(required)]
     pub origin_type: Option<String>,
+    #[schema(required)]
     pub grade: Option<String>,
     pub trans_word: String,
+    #[schema(required)]
     pub trans_dfn: Option<String>,
     /// `sentence`, sliced at `target`'s position: the text before the blank.
     /// Derived once here rather than by every renderer re-searching
@@ -40,7 +45,9 @@ pub struct CardFront {
     pub sentence_translation: String,
     #[serde(flatten)]
     pub inflection_hint: crate::inflection_hints::InflectionHint,
+    #[schema(required)]
     pub grammar_pattern: Option<crate::cards::GrammarPattern>,
+    #[schema(required)]
     pub hanja: Option<String>,
 }
 
@@ -67,13 +74,17 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
 /// Per-user state and assistance for this review attempt, separate from card content.
 #[derive(Serialize, ToSchema)]
 pub struct ReviewContext {
-    /// Return unchanged when submitting an answer.
+    /// Return unchanged when submitting an answer. No time-based expiry; valid until
+    /// the prompt content, review state, or availability changes. A successful answer
+    /// changes review state, so the same token cannot record a second review.
     attempt_token: String,
+    #[schema(required)]
     difficulty: Option<f64>,
     guess_count: i64,
     wrong_guess_count: i64,
     /// Hanja characters from previously reviewed words, without their readings/glosses.
     /// Null when hints are disabled; empty when enabled but no hints are available.
+    #[schema(required)]
     hanja_hint_words: Option<Vec<String>>,
 }
 
@@ -92,6 +103,8 @@ pub struct ReviewQueueResponse {
     /// Earliest future eligibility change: a scheduled review or an allowance
     /// reset that unlocks waiting new cards. Independent of response limit or
     /// whether cards are available now; null when no future availability is known.
+    #[schema(required)]
+    #[schema(format = DateTime)]
     pub next_available_at: Option<String>,
 }
 
@@ -109,7 +122,7 @@ pub struct ReviewQueueQuery {
     description = "Return an ordered snapshot of eligible due and new review prompts, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Includes the next future card availability time, even when cards are available now.", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
-        (status = 400, description = "Invalid batch size or preferred translation language not configured", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid queue limit, or preferred translation language missing or unknown", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse)
     ),
     security(("cookie_auth" = [])), tag = "reviews"

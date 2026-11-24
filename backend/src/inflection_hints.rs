@@ -14,24 +14,21 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Read shape: a tagged sentence's hints once resolved from their
-/// lookup-table ids back to slugs. `#[serde(flatten)]`ed into every
-/// response that carries a sentence's hints, so the wire shape (four flat
-/// top-level fields) is unchanged from before `is_honorific`/`is_humble`
-/// existed.
+/// Grammatical hints for the sentence target. Slugs identify its speech level
+/// and tense; subject and object honorification are independent flags.
 #[derive(Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct InflectionHint {
+    #[schema(required)]
     pub speech_level: Option<String>,
+    #[schema(required)]
     pub tense: Option<String>,
-    /// Subject honorification (주체높임, -(으)시-). Independent of
-    /// `is_humble` rather than sharing a lookup table with it (the way
-    /// `speech_level`/`tense` share theirs) because a target isn't limited
-    /// to at most one of the two -- see migration 20240101000025.
+    /// Subject honorification (주체높임, -(으)시-).
     #[serde(default)]
+    #[schema(required)]
     pub is_honorific: bool,
-    /// Object honorification (객체높임/겸양법 -- 드리다, 뵙다, 여쭙다,
-    /// 모시다-type suppletive verbs). See migration 20240101000025.
+    /// Object honorification (객체높임/겸양법: 드리다, 뵙다, 여쭙다, 모시다).
     #[serde(default)]
+    #[schema(required)]
     pub is_humble: bool,
 }
 

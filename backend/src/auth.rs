@@ -31,8 +31,8 @@ pub struct SignupRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
-    /// `None` for an account created via passkey, which has no username -
-    /// see [`crate::passkey`].
+    /// Null for a passkey-only account without a username.
+    #[schema(required)]
     pub username: Option<String>,
     pub is_admin: bool,
 }

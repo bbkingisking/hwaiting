@@ -41,6 +41,7 @@ enum ReviewState {
 pub struct ExportData {
     #[schema(value_type = BackupVersion)]
     pub version: String,
+    /// Export emits RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
     pub exported_at: String,
     pub settings: UserSettingsExport,
     pub review_history: Vec<ReviewHistoryExport>,
@@ -57,7 +58,8 @@ pub struct ExportData {
 pub struct UserSettingsExport {
     #[serde(flatten)]
     pub core: crate::user::UserSettingsCore,
-    /// JSON-encoded array of fitted FSRS floating-point parameters; null uses library defaults.
+    /// JSON-encoded array of fitted FSRS floating-point parameters. On import, null
+    /// resets to defaults with overwrite=true and preserves existing parameters otherwise.
     pub fsrs_parameters: Option<String>,
 }
 
@@ -72,9 +74,10 @@ pub struct ReviewHistoryExport {
     pub scheduled_days: Option<f64>,
     #[schema(minimum = 0)]
     pub elapsed_days: Option<f64>,
+    /// UTC review time. Import accepts RFC 3339 or SQLite YYYY-MM-DD HH:MM:SS.
     pub reviewed_at: String,
-    #[schema(exclusive_minimum = 0)]
-    /// Positive FSRS stability, supplied together with difficulty, or both null.
+    #[schema(exclusive_minimum = 0, maximum = 3.4028234663852886e38)]
+    /// Positive FSRS stability in days, supplied together with difficulty, or both null.
     pub stability: Option<f64>,
     #[schema(minimum = 1, maximum = 10)]
     /// Required together with stability; state must also be supplied when both are present.
