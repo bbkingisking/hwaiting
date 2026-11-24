@@ -828,6 +828,16 @@ export type WrongAnswerExport = {
     target_sentence_id: number;
 };
 
+/**
+ * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+ */
+export type MutationId = string;
+
+/**
+ * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+ */
+export type RequestedWith = 'hwaiting';
+
 export type SearchCardSummariesData = {
     body?: never;
     path?: never;

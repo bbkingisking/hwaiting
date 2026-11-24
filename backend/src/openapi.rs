@@ -255,6 +255,84 @@ impl Modify for SecurityAddon {
                 );
             }
         }
+        extract_shared_components(openapi);
+    }
+}
+
+/// Share only identical response objects: status codes alone do not identify
+/// errors, and endpoint-specific descriptions must retain their meaning.
+fn extract_shared_components(openapi: &mut utoipa::openapi::OpenApi) {
+    let components = openapi.components.get_or_insert_with(Default::default);
+    for (name, description) in [
+        ("InternalServerError", "Internal server error"),
+        (
+            "Unauthenticated",
+            "Missing, invalid, or expired authentication cookie (`unauthenticated`)",
+        ),
+        (
+            "CsrfHeaderRequired",
+            "Missing or invalid X-Requested-With header",
+        ),
+        ("MalformedPathParameter", "Malformed path parameter"),
+        (
+            "PasskeysUnavailable",
+            "Passkeys are not configured on this deployment",
+        ),
+        (
+            "PasskeyVerificationFailed",
+            "Ceremony verification failed, or unknown ceremony id",
+        ),
+        ("PasskeyCeremonyExpired", "Ceremony expired"),
+    ] {
+        components
+            .responses
+            .insert(name.into(), error_response(description));
+    }
+    for path in openapi.paths.paths.values_mut() {
+        for operation in [
+            &mut path.get,
+            &mut path.post,
+            &mut path.put,
+            &mut path.patch,
+            &mut path.delete,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for parameter in operation.parameters.iter_mut().flatten() {
+                let utoipa::openapi::RefOr::T(value) = parameter else {
+                    continue;
+                };
+                if value.parameter_in != ParameterIn::Header {
+                    continue;
+                }
+                let name = match value.name.as_str() {
+                    "X-Requested-With" => "RequestedWith",
+                    "X-Mutation-Id" => "MutationId",
+                    _ => continue,
+                };
+                let reference = Ref::new(format!("#/components/parameters/{name}"));
+                let definition =
+                    std::mem::replace(parameter, utoipa::openapi::RefOr::Ref(reference));
+                if let Some(existing) = components.parameters.get(name) {
+                    assert!(
+                        existing == &definition,
+                        "shared header definitions must agree"
+                    );
+                } else {
+                    components.parameters.insert(name.into(), definition);
+                }
+            }
+            for response in operation.responses.responses.values_mut() {
+                if let Some((name, _)) = components
+                    .responses
+                    .iter()
+                    .find(|(_, shared)| *shared == response)
+                {
+                    *response = Ref::new(format!("#/components/responses/{name}")).into();
+                }
+            }
+        }
     }
 }
 
@@ -372,9 +450,76 @@ pub struct ApiDoc;
 mod tests {
     use super::*;
 
+    fn resolved_spec() -> serde_json::Value {
+        let mut spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let definitions = spec.clone();
+        fn resolve(value: &mut serde_json::Value, definitions: &serde_json::Value) {
+            match value {
+                serde_json::Value::Object(object) => {
+                    if let Some(reference) = object.get("$ref").and_then(|v| v.as_str())
+                        && (reference.starts_with("#/components/parameters/")
+                            || reference.starts_with("#/components/responses/"))
+                    {
+                        *value = definitions
+                            .pointer(&reference[1..])
+                            .expect("valid component reference")
+                            .clone();
+                        return;
+                    }
+                    for child in object.values_mut() {
+                        resolve(child, definitions);
+                    }
+                }
+                serde_json::Value::Array(array) => {
+                    for child in array {
+                        resolve(child, definitions);
+                    }
+                }
+                _ => {}
+            }
+        }
+        resolve(&mut spec, &definitions);
+        spec
+    }
+
+    #[test]
+    fn shared_components_reuse_headers_and_common_errors() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let answer = &spec["paths"]["/api/reviews/answer"]["post"];
+        for name in ["RequestedWith", "MutationId"] {
+            assert!(
+                answer["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p["$ref"] == format!("#/components/parameters/{name}"))
+            );
+        }
+        assert_eq!(
+            answer["responses"]["500"]["$ref"],
+            "#/components/responses/InternalServerError"
+        );
+        assert_eq!(
+            answer["responses"]["401"]["$ref"],
+            "#/components/responses/Unauthenticated"
+        );
+        assert_eq!(
+            spec["paths"]["/api/auth/login"]["post"]["responses"]["401"]["description"],
+            "Invalid credentials"
+        );
+        let parameters = &spec["components"]["parameters"];
+        assert_eq!(parameters["RequestedWith"]["required"], true);
+        assert_eq!(
+            parameters["RequestedWith"]["schema"]["enum"],
+            serde_json::json!(["hwaiting"])
+        );
+        assert_eq!(parameters["MutationId"]["required"], false);
+        assert_eq!(parameters["MutationId"]["schema"]["format"], "uuid");
+    }
+
     #[test]
     fn document_is_openapi_3_2_with_typed_event_stream() {
-        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let spec = resolved_spec();
         assert_eq!(spec["openapi"], "3.2.0");
         let mutation_id = spec["paths"]["/api/reviews/answer"]["post"]["parameters"]
             .as_array()
@@ -445,7 +590,7 @@ mod tests {
 
     #[test]
     fn shared_failures_match_authentication_and_write_middleware() {
-        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let spec = resolved_spec();
         for item in spec["paths"].as_object().unwrap().values() {
             for (method, operation) in item.as_object().unwrap() {
                 let infallible = matches!(
@@ -489,7 +634,7 @@ mod tests {
 
     #[test]
     fn nullable_response_fields_match_serialized_presence() {
-        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let spec = resolved_spec();
         for (name, body) in [
             (
                 "UserProfile",
@@ -532,7 +677,7 @@ mod tests {
 
     #[test]
     fn passkey_ceremonies_describe_their_wire_envelopes() {
-        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let spec = resolved_spec();
         for prefix in [
             "/api/auth/passkey/register",
             "/api/auth/passkey/login",
