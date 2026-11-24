@@ -6,7 +6,7 @@ use utoipa::{
         content::ContentBuilder,
         path::{ParameterBuilder, ParameterIn},
         response::ResponseBuilder,
-        schema::{AllOfBuilder, ObjectBuilder, OneOfBuilder, Type},
+        schema::{AllOfBuilder, ObjectBuilder, OneOfBuilder, Schema, Type},
     },
 };
 
@@ -40,9 +40,30 @@ impl Modify for SecurityAddon {
         if let Some(components) = openapi.components.as_mut() {
             // One SSE event on /api/events: the event name, and the
             // Notification serialized as JSON in `data`.
+            // Reuse each generated variant's tag schema so adding or renaming a
+            // Notification variant also updates the SSE envelope automatically.
+            let Some(utoipa::openapi::RefOr::T(Schema::OneOf(notification))) =
+                components.schemas.get("Notification")
+            else {
+                panic!("Notification must be generated as oneOf");
+            };
+            let notification_tags: Vec<_> = notification
+                .items
+                .iter()
+                .map(|variant| {
+                    let utoipa::openapi::RefOr::T(Schema::Object(variant)) = variant else {
+                        panic!("Notification variants must be inline objects");
+                    };
+                    variant
+                        .properties
+                        .get("type")
+                        .expect("Notification variants must have a type tag")
+                        .clone()
+                })
+                .collect();
             components.schemas.insert(
                 "NotificationEvent".into(),
-                ["card-mutated", "state-changed", "resync-required"]
+                notification_tags
                     .into_iter()
                     .fold(
                         OneOfBuilder::new().description(Some(
@@ -51,12 +72,7 @@ impl Modify for SecurityAddon {
                         |events, kind| {
                             events.item(
                                 ObjectBuilder::new()
-                                    .property(
-                                        "event",
-                                        ObjectBuilder::new()
-                                            .schema_type(Type::String)
-                                            .enum_values(Some([kind])),
-                                    )
+                                    .property("event", kind.clone())
                                     .property(
                                         "data",
                                         ObjectBuilder::new()
@@ -67,12 +83,7 @@ impl Modify for SecurityAddon {
                                                     .item(Ref::from_schema_name("Notification"))
                                                     .item(
                                                         ObjectBuilder::new()
-                                                            .property(
-                                                                "type",
-                                                                ObjectBuilder::new()
-                                                                    .schema_type(Type::String)
-                                                                    .enum_values(Some([kind])),
-                                                            )
+                                                            .property("type", kind)
                                                             .required("type"),
                                                     ),
                                             )),
