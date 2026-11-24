@@ -79,3 +79,6 @@ coverage/
 /hwaiting.sqlite3
 /hwaiting.sqlite3-wal
 /hwaiting.sqlite3-shm
+
+# Host-specific instructions
+/AGENTS.md
