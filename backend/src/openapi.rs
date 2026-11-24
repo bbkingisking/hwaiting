@@ -285,6 +285,11 @@ mod tests {
                 .get("404")
                 .is_some()
         );
+        assert!(
+            spec["paths"]["/api/drills/hanja"]["get"]["responses"]
+                .get("400")
+                .is_some()
+        );
     }
 
     #[test]

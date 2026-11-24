@@ -39,6 +39,7 @@ pub struct HanjaDrillResponse {
     description = "Return a random unsuppressed mastered card with Hanja, its Korean reading, and a translation for ungraded practice. Returns a null drill when none are available; does not record a review or change scheduling.",
     responses(
         (status = 200, description = "A random hanja drawn from the user's mastered cards, or null if none exist yet", body = HanjaDrillResponse),
+        (status = 400, description = "Translation language is not configured or is unknown", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -82,3 +83,7 @@ pub async fn get_hanja_drill(
 
     Ok(Json(HanjaDrillResponse { drill }))
 }
+
+#[cfg(test)]
+#[path = "../tests/cards/hanja_drill.rs"]
+mod tests;
