@@ -470,10 +470,11 @@ pub struct PasskeySummary {
     pub id: i64,
     #[schema(required)]
     pub label: Option<String>,
-    /// UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format.
+    /// When the passkey was added (RFC 3339, UTC).
+    #[schema(format = DateTime)]
     pub created_at: String,
-    #[schema(required)]
-    /// UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format, or null if never used.
+    /// Last successful sign-in with this passkey (RFC 3339, UTC), or null if never used.
+    #[schema(required, format = DateTime)]
     pub last_used_at: Option<String>,
 }
 
@@ -636,7 +637,7 @@ async fn finish_registration(
     // instead of ever storing this one.
     let row = sqlx::query(
         "INSERT INTO passkeys (user_id, public_key) VALUES (?, ?) \
-         RETURNING id, label, created_at, last_used_at",
+         RETURNING id, label, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at, strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at",
     )
     .bind(user_id)
     .bind(public_key_blob)
@@ -925,7 +926,7 @@ pub async fn list_passkeys(
     auth: AuthUser,
 ) -> Result<Json<ListPasskeysResponse>, AppError> {
     let rows = sqlx::query(
-        "SELECT id, label, created_at, last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC",
+        "SELECT id, label, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at, strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at FROM passkeys WHERE user_id = ? ORDER BY id ASC",
     )
     .bind(auth.0)
     .fetch_all(&state.pool)
@@ -982,7 +983,7 @@ pub async fn update_passkey(
     let label = (!label.is_empty()).then_some(label);
     let row = sqlx::query(
         "UPDATE passkeys SET label = ? WHERE id = ? AND user_id = ? \
-         RETURNING id, label, created_at, last_used_at",
+         RETURNING id, label, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at, strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at",
     )
     .bind(label)
     .bind(passkey_id)

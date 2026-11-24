@@ -34,7 +34,8 @@ pub struct FeedbackEntry {
     pub sentence_id: i64,
     pub user_id: i64,
     pub body: String,
-    /// Submission time in UTC (SQLite YYYY-MM-DD HH:MM:SS format).
+    /// Submission time (RFC 3339, UTC).
+    #[schema(format = DateTime)]
     pub created_at: String,
 }
 
@@ -115,7 +116,7 @@ pub async fn list_feedback(
         return Err(AppError::BadRequest("limit must be positive".into()));
     }
     let feedback = sqlx::query_as::<_, FeedbackEntry>(
-        "SELECT f.id, s.card_id, f.sentence_id, f.user_id, f.body, f.created_at
+        "SELECT f.id, s.card_id, f.sentence_id, f.user_id, f.body, strftime('%Y-%m-%dT%H:%M:%SZ', f.created_at) AS created_at
          FROM feedback f JOIN sentences s ON s.id = f.sentence_id
          ORDER BY f.created_at ASC, f.id ASC LIMIT ?",
     )

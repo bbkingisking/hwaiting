@@ -806,3 +806,51 @@ fn backup_settings_require_timezone_and_language_keys() {
     settings.as_object_mut().unwrap().remove("study_timezone");
     assert!(serde_json::from_value::<crate::user::UserSettingsCore>(settings).is_err());
 }
+
+#[tokio::test]
+async fn backup_timestamps_are_rfc3339_and_imports_store_sqlite_format() {
+    let pool = test_pool().await;
+    let source = test_user(&pool).await;
+    setup_source_user(&pool, source).await;
+    let mut exported = serde_json::to_value(
+        export_data(State(pool.clone()), AuthUser(source))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    let rfc3339 = |value: &serde_json::Value| {
+        chrono::DateTime::parse_from_rfc3339(value.as_str().unwrap()).is_ok()
+            && value.as_str().unwrap().ends_with('Z')
+    };
+    assert!(rfc3339(&exported["exported_at"]));
+    assert!(rfc3339(&exported["review_history"][0]["reviewed_at"]));
+
+    // A non-UTC offset in a backup is converted, not stored verbatim.
+    exported["review_history"][0]["reviewed_at"] = "2026-01-01T09:00:00+09:00".into();
+    let destination = test_user(&pool).await;
+    let _ = import_data(
+        State(pool.clone()),
+        AuthUser(destination),
+        AppJson(ImportDataRequest {
+            data: serde_json::from_value(exported).unwrap(),
+            overwrite: true,
+        }),
+    )
+    .await
+    .unwrap();
+    let stored: Vec<String> =
+        sqlx::query_scalar("SELECT reviewed_at FROM review_history WHERE user_id = ? ORDER BY id")
+            .bind(destination)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(
+        stored.contains(&"2026-01-01 00:00:00".to_string()),
+        "{stored:?}"
+    );
+    assert!(
+        stored.iter().all(|value| !value.contains('T')),
+        "{stored:?}"
+    );
+}

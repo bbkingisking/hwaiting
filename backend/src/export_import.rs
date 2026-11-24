@@ -41,7 +41,8 @@ enum ReviewState {
 pub struct ExportData {
     #[schema(value_type = BackupVersion)]
     pub version: String,
-    /// Export emits RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
+    /// RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
+    #[schema(format = DateTime)]
     pub exported_at: String,
     pub settings: UserSettingsExport,
     pub review_history: Vec<ReviewHistoryExport>,
@@ -76,7 +77,8 @@ pub struct ReviewHistoryExport {
     pub scheduled_days: Option<f64>,
     #[schema(minimum = 0)]
     pub elapsed_days: Option<f64>,
-    /// UTC review time. Import accepts RFC 3339 or SQLite YYYY-MM-DD HH:MM:SS.
+    /// Review time, RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
+    #[schema(format = DateTime)]
     pub reviewed_at: String,
     #[schema(exclusive_minimum = 0, maximum = 3.4028234663852886e38)]
     /// Positive FSRS stability in days, supplied together with difficulty, or both null.
@@ -249,24 +251,29 @@ pub async fn export_data(
 
     let review_history: Vec<ReviewHistoryExport> = review_history_rows
         .iter()
-        .map(|row| ReviewHistoryExport {
-            card_id: row.get("card_id"),
-            sentence_id: row.get("sentence_id"),
-            rating: row.get("rating"),
-            scheduled_days: row.get("scheduled_days"),
-            elapsed_days: row.get("elapsed_days"),
-            reviewed_at: row.get("reviewed_at"),
-            stability: row.get("stability"),
-            difficulty: row.get("difficulty"),
-            state: row.get("state"),
-            wrong_answer: row.get::<Option<i64>, _>("target_sentence_id").map(
-                |target_sentence_id| WrongAnswerExport {
-                    target_sentence_id,
-                    answer: row.get("answer"),
-                },
-            ),
+        .map(|row| -> Result<ReviewHistoryExport, AppError> {
+            let reviewed_at: String = row.get("reviewed_at");
+            let reviewed_at = crate::cards::parse_flexible_datetime(&reviewed_at)
+                .map_err(|e| AppError::Internal(format!("Stored reviewed_at is invalid: {e}")))?;
+            Ok(ReviewHistoryExport {
+                card_id: row.get("card_id"),
+                sentence_id: row.get("sentence_id"),
+                rating: row.get("rating"),
+                scheduled_days: row.get("scheduled_days"),
+                elapsed_days: row.get("elapsed_days"),
+                reviewed_at: crate::cards::rfc3339(reviewed_at),
+                stability: row.get("stability"),
+                difficulty: row.get("difficulty"),
+                state: row.get("state"),
+                wrong_answer: row.get::<Option<i64>, _>("target_sentence_id").map(
+                    |target_sentence_id| WrongAnswerExport {
+                        target_sentence_id,
+                        answer: row.get("answer"),
+                    },
+                ),
+            })
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Get suppressed cards
     let suppressed_cards: Vec<i64> = sqlx::query_scalar(
@@ -282,7 +289,7 @@ pub async fn export_data(
 
     let export_data = ExportData {
         version: "1.0".to_string(),
-        exported_at: chrono::Utc::now().to_rfc3339(),
+        exported_at: crate::cards::rfc3339(chrono::Utc::now()),
         settings,
         review_history,
         suppressed_cards,
@@ -458,7 +465,10 @@ pub async fn import_data(
         .bind(review.rating)
         .bind(review.scheduled_days)
         .bind(review.elapsed_days)
-        .bind(review.reviewed_at)
+        .bind(crate::cards::sqlite_datetime(
+            crate::cards::parse_flexible_datetime(&review.reviewed_at)
+                .map_err(|e| AppError::BadRequest(format!("invalid reviewed_at: {e}")))?,
+        ))
         .bind(review.stability)
         .bind(review.difficulty)
         .bind(review.state)

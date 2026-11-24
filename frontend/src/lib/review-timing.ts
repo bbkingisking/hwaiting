@@ -1,9 +1,6 @@
-// SQLite's zone-less datetime strings represent UTC.
+// API timestamps are RFC 3339; NaN for anything unparseable.
 export function parseDueAt(timestamp: string): number {
-  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(timestamp)
-    ? timestamp.replace(' ', 'T') + 'Z'
-    : timestamp
-  return Date.parse(normalized)
+  return Date.parse(timestamp)
 }
 
 // Refresh successfully once per deadline, retrying only failed requests.

@@ -124,7 +124,7 @@ async fn admin_list_returns_all_users_feedback_oldest_first_with_optional_limit(
         .unwrap();
     assert_eq!(all.feedback[0].card_id, card_id);
     assert_eq!(all.feedback[0].body, "Check tense");
-    assert_eq!(all.feedback[0].created_at, "2026-11-23 12:00:00");
+    assert_eq!(all.feedback[0].created_at, "2026-11-23T12:00:00Z");
     let limited = list_feedback(
         State(pool.clone()),
         AdminUser(admin_id),

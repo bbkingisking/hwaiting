@@ -62,7 +62,7 @@ export type AdminTranslation = {
 
 export type AdminUserSummary = {
     /**
-     * Account creation time in UTC, in SQLite YYYY-MM-DD HH:MM:SS format.
+     * Account creation time (RFC 3339, UTC).
      */
     created_at: string;
     id: number;
@@ -267,7 +267,7 @@ export type ErrorResponse = {
 
 export type ExportData = {
     /**
-     * Export emits RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
+     * RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
      */
     exported_at: string;
     review_history: Array<ReviewHistoryExport>;
@@ -283,7 +283,7 @@ export type FeedbackEntry = {
      */
     card_id: number;
     /**
-     * Submission time in UTC (SQLite YYYY-MM-DD HH:MM:SS format).
+     * Submission time (RFC 3339, UTC).
      */
     created_at: string;
     id: number;
@@ -459,13 +459,13 @@ export type PasskeyFinishRequest = {
 
 export type PasskeySummary = {
     /**
-     * UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format.
+     * When the passkey was added (RFC 3339, UTC).
      */
     created_at: string;
     id: number;
     label: string | null;
     /**
-     * UTC timestamp in SQLite YYYY-MM-DD HH:MM:SS format, or null if never used.
+     * Last successful sign-in with this passkey (RFC 3339, UTC), or null if never used.
      */
     last_used_at: string | null;
 };
@@ -499,7 +499,7 @@ export type ReviewHistoryExport = {
     elapsed_days?: number | null;
     rating: ReviewRating;
     /**
-     * UTC review time. Import accepts RFC 3339 or SQLite YYYY-MM-DD HH:MM:SS.
+     * Review time, RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
      */
     reviewed_at: string;
     scheduled_days?: number | null;

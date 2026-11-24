@@ -40,8 +40,8 @@ async function settleRefresh() {
   await Promise.resolve()
 }
 
-test('SQLite timestamps and ISO timestamps refer to the same UTC instant', () => {
-  assert.equal(parseDueAt('2026-10-25 12:15:00'), start + 15 * 60000)
+test('RFC 3339 timestamps with any offset refer to the same UTC instant', () => {
+  assert.equal(parseDueAt('2026-10-25T12:15:00Z'), start + 15 * 60000)
   assert.equal(parseDueAt('2026-10-25T13:15:00+01:00'), start + 15 * 60000)
   assert.ok(Number.isNaN(parseDueAt('invalid')))
 })

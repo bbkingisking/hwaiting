@@ -78,8 +78,13 @@ pub(super) fn logical_today_date(now_local: NaiveDateTime, day_boundary_hour: i6
     logical_day_start_naive(now_local, day_boundary_hour).date()
 }
 
+/// Format a UTC datetime for API responses: RFC 3339, whole seconds, `Z` suffix.
+pub(crate) fn rfc3339(dt: chrono::DateTime<Utc>) -> String {
+    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
 /// Format a UTC datetime for comparison against SQLite datetime() values.
-pub(super) fn sqlite_datetime(dt: chrono::DateTime<Utc>) -> String {
+pub(crate) fn sqlite_datetime(dt: chrono::DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 

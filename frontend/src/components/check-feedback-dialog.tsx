@@ -63,7 +63,7 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
                         <span className="sr-only">Edit card #{entry.card_id}: </span>
                         <span className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span>Sentence #{entry.sentence_id} · User #{entry.user_id}</span>
-                          <time dateTime={`${entry.created_at.replace(' ', 'T')}Z`}>{new Date(`${entry.created_at.replace(' ', 'T')}Z`).toLocaleString()}</time>
+                          <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleString()}</time>
                         </span>
                         <span className="block whitespace-pre-wrap wrap-anywhere leading-relaxed">{entry.body}</span>
                       </button>

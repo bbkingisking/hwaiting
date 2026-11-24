@@ -40,7 +40,8 @@ pub struct AdminUserSummary {
     #[schema(required)]
     pub username: Option<String>,
     pub is_admin: bool,
-    /// Account creation time in UTC, in SQLite YYYY-MM-DD HH:MM:SS format.
+    /// Account creation time (RFC 3339, UTC).
+    #[schema(format = DateTime)]
     pub created_at: String,
 }
 
@@ -74,13 +75,13 @@ pub async fn list_users(
     // actually happening.
     let rows = match &params.username {
         Some(username) => {
-            sqlx::query("SELECT id, username, is_admin, created_at FROM users WHERE username = ?")
+            sqlx::query("SELECT id, username, is_admin, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM users WHERE username = ?")
                 .bind(username)
                 .fetch_all(&pool)
                 .await?
         }
         None => {
-            sqlx::query("SELECT id, username, is_admin, created_at FROM users ORDER BY id ASC")
+            sqlx::query("SELECT id, username, is_admin, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM users ORDER BY id ASC")
                 .fetch_all(&pool)
                 .await?
         }
