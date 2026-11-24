@@ -138,7 +138,7 @@ pub async fn protect_api(request: Request, next: Next) -> Result<Response, AppEr
     post,
     path = "/api/auth/logout",
     description = "Clear the authentication cookie to sign out. Also clears expired or invalid cookies; no valid session is required.",
-    responses((status = 204, description = "Authentication cookie cleared")),
+    responses((status = 204, description = "Authentication cookie cleared", headers(("Set-Cookie" = String, description = "Clears the hwaiting-auth cookie with an empty value, Path=/, HttpOnly and Max-Age=0. SameSite, Secure and Partitioned depend on deployment configuration.")))),
     tag = "auth"
 )]
 pub async fn logout() -> Response {

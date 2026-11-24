@@ -687,7 +687,7 @@ pub async fn register_start(
     responses(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
-        (status = 201, description = "Account created from the verified passkey", body = crate::user::UserProfile),
+        (status = 201, description = "Account created from the verified passkey", body = crate::user::UserProfile, headers(("Set-Cookie" = String, description = "Sets the hwaiting-auth authentication cookie with Path=/, HttpOnly and Max-Age. SameSite, Secure and Partitioned depend on deployment configuration."))),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
     ),
@@ -758,7 +758,7 @@ pub async fn login_start(State(state): State<AppState>) -> Result<Json<StartResp
     request_body = PasskeyFinishRequest,
     responses(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
-        (status = 200, description = "Signed in", body = crate::user::UserProfile),
+        (status = 200, description = "Signed in", body = crate::user::UserProfile, headers(("Set-Cookie" = String, description = "Sets the hwaiting-auth authentication cookie with Path=/, HttpOnly and Max-Age. SameSite, Secure and Partitioned depend on deployment configuration."))),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 401, description = "No account matches that passkey", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),

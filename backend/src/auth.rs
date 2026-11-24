@@ -85,7 +85,7 @@ fn validate_signup(raw_username: &str, raw_password: &str) -> Result<(), AppErro
     description = "Sign in with a username and password and set the HttpOnly authentication cookie. Passkey-only accounts cannot use password login.",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Login successful", body = crate::user::UserProfile),
+        (status = 200, description = "Login successful", body = crate::user::UserProfile, headers(("Set-Cookie" = String, description = "Sets the hwaiting-auth authentication cookie with Path=/, HttpOnly and Max-Age. SameSite, Secure and Partitioned depend on deployment configuration."))),
         (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
         (status = 401, description = "Invalid credentials", body = crate::error::ErrorResponse),
     ),
@@ -150,7 +150,7 @@ pub async fn login(
     description = "Create a username/password account and sign in by setting the HttpOnly authentication cookie. Available only when this deployment allows sign-ups. Username and password are trimmed of leading and trailing whitespace; neither may be empty after trimming.",
     request_body = SignupRequest,
     responses(
-        (status = 201, description = "Account created", body = crate::user::UserProfile),
+        (status = 201, description = "Account created", body = crate::user::UserProfile, headers(("Set-Cookie" = String, description = "Sets the hwaiting-auth authentication cookie with Path=/, HttpOnly and Max-Age. SameSite, Secure and Partitioned depend on deployment configuration."))),
         (status = 400, description = "Malformed request body, username or password empty after trimming, username longer than 64 characters, or password longer than 1024 characters", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 409, description = "Username already exists", body = crate::error::ErrorResponse),
