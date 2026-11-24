@@ -41,11 +41,11 @@ pub struct AdminCardDetail {
     #[schema(required)]
     pub hanja: Option<String>,
     #[schema(required)]
-    pub pos: Option<String>,
+    pub pos: Option<crate::classifications::PartOfSpeech>,
     #[schema(required)]
-    pub origin_type: Option<String>,
+    pub origin_type: Option<crate::classifications::OriginType>,
     #[schema(required)]
-    pub grade: Option<String>,
+    pub grade: Option<crate::classifications::Grade>,
     pub translations: BTreeMap<String, AdminTranslation>,
     pub sentence: AdminSentence,
 }
@@ -113,7 +113,7 @@ pub struct AdminCardSummary {
     pub card_id: i64,
     pub word: String,
     #[schema(required)]
-    pub pos: Option<String>,
+    pub pos: Option<crate::classifications::PartOfSpeech>,
 }
 #[derive(Serialize, ToSchema)]
 pub struct AdminSearchResponse {

@@ -240,7 +240,7 @@ type TodayStatsResponse = Schemas.TodayStatsResponse
 
 export type DayHistory = Schemas.DayHistory
 export type HistorySummary = Schemas.HistorySummary
-export type BreakdownRow = Schemas.BreakdownRow
+export type BreakdownRow = Schemas.BreakdownRowPartOfSpeech | Schemas.BreakdownRowOriginType
 type HistoryResponse = Schemas.HistoryResponse
 
 // Was three separate round-trips (getReviewHistory/getHistorySummary/

@@ -362,6 +362,7 @@ fn extract_shared_components(openapi: &mut utoipa::openapi::OpenApi) {
         crate::cards::get_review_queue,
         crate::translation_language::available_translation_languages,
         crate::cards::list_grammar_patterns,
+        crate::classifications::list_classifications,
         crate::cards::check_answer,
         crate::cards::validate_card_attempt,
         crate::feedback::submit_feedback,

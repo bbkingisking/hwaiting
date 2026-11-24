@@ -19,9 +19,9 @@ use utoipa::ToSchema;
 #[derive(Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct InflectionHint {
     #[schema(required)]
-    pub speech_level: Option<String>,
+    pub speech_level: Option<crate::classifications::SpeechLevel>,
     #[schema(required)]
-    pub tense: Option<String>,
+    pub tense: Option<crate::classifications::Tense>,
     /// Subject honorification (주체높임, -(으)시-).
     #[serde(default)]
     #[schema(required)]

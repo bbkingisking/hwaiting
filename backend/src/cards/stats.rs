@@ -112,8 +112,8 @@ pub struct HistorySummary {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct BreakdownRow {
-    slug: String,
+pub struct BreakdownRow<T> {
+    slug: T,
     reviews: i64,
     correct: i64,
     accuracy: f64,
@@ -121,8 +121,8 @@ pub struct BreakdownRow {
 
 #[derive(Serialize, ToSchema)]
 pub struct HistoryBreakdownResponse {
-    by_pos: Vec<BreakdownRow>,
-    by_origin: Vec<BreakdownRow>,
+    by_pos: Vec<BreakdownRow<crate::classifications::PartOfSpeech>>,
+    by_origin: Vec<BreakdownRow<crate::classifications::OriginType>>,
 }
 
 #[utoipa::path(
@@ -347,7 +347,7 @@ async fn query_breakdown(
     .fetch_all(pool)
     .await?;
 
-    let by_pos: Vec<BreakdownRow> = pos_rows
+    let by_pos: Vec<BreakdownRow<crate::classifications::PartOfSpeech>> = pos_rows
         .iter()
         .map(|row| {
             let reviews: i64 = row.get("reviews");
@@ -386,7 +386,7 @@ async fn query_breakdown(
     .fetch_all(pool)
     .await?;
 
-    let by_origin: Vec<BreakdownRow> = origin_rows
+    let by_origin: Vec<BreakdownRow<crate::classifications::OriginType>> = origin_rows
         .iter()
         .map(|row| {
             let reviews: i64 = row.get("reviews");

@@ -15,11 +15,11 @@ export type AdminCardDetail = {
     card_id: number;
     content_revision: number;
     definition: string | null;
-    grade: string | null;
+    grade: Grade | null;
     hanja: string | null;
     krdict_id: number | null;
-    origin_type: string | null;
-    pos: string | null;
+    origin_type: OriginType | null;
+    pos: PartOfSpeech | null;
     sentence: AdminSentence;
     translations: {
         [key: string]: AdminTranslation;
@@ -29,7 +29,7 @@ export type AdminCardDetail = {
 
 export type AdminCardSummary = {
     card_id: number;
-    pos: string | null;
+    pos: PartOfSpeech | null;
     word: string;
 };
 
@@ -87,11 +87,18 @@ export type AvailableTranslationLanguagesResponse = {
 
 export type BackupVersion = '1.0';
 
-export type BreakdownRow = {
+export type BreakdownRowOriginType = {
     accuracy: number;
     correct: number;
     reviews: number;
-    slug: string;
+    slug: 'native-korean' | 'sino-korean' | 'loanword' | 'hybrid';
+};
+
+export type BreakdownRowPartOfSpeech = {
+    accuracy: number;
+    correct: number;
+    reviews: number;
+    slug: 'verb' | 'noun' | 'adjective' | 'adverb' | 'bound-noun' | 'pronoun' | 'numeral' | 'interjection' | 'determiner' | 'auxiliary-adjective' | 'auxiliary-verb' | 'particle' | 'no-pos';
 };
 
 /**
@@ -122,15 +129,15 @@ export type CardBack = {
 export type CardFront = InflectionHint & {
     card_id: number;
     content_revision: number;
-    grade: string | null;
+    grade: Grade | null;
     grammar_pattern: GrammarPattern | null;
     hanja: string | null;
     /**
      * KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
      */
     krdict_id: number | null;
-    origin_type: string | null;
-    pos: string | null;
+    origin_type: OriginType | null;
+    pos: PartOfSpeech | null;
     /**
      * The sentence text after the blank.
      */
@@ -156,8 +163,8 @@ export type CardInflection = {
     ending: string;
     form: string;
     form_slug: string;
-    speech_level: string | null;
-    tense: string | null;
+    speech_level: SpeechLevel | null;
+    tense: Tense | null;
 };
 
 export type CardInflectionsResponse = {
@@ -191,6 +198,14 @@ export type CheckRequest = {
 
 export type CheckResponse = CardReveal & {
     correct: boolean;
+};
+
+export type ClassificationsResponse = {
+    grades: Array<Grade>;
+    origin_types: Array<OriginType>;
+    parts_of_speech: Array<PartOfSpeech>;
+    speech_levels: Array<SpeechLevel>;
+    tenses: Array<Tense>;
 };
 
 export type DayHistory = {
@@ -287,6 +302,8 @@ export type FeedbackResponse = {
     id: number;
 };
 
+export type Grade = 'beginner' | 'intermediate' | 'advanced';
+
 /**
  * The selected pattern's authored content. Literal endings belong to the
  * answer reveal or the resource catalog, never embedded in the pre-answer card.
@@ -327,8 +344,8 @@ export type HanjaHint = {
 };
 
 export type HistoryBreakdownResponse = {
-    by_origin: Array<BreakdownRow>;
-    by_pos: Array<BreakdownRow>;
+    by_origin: Array<BreakdownRowOriginType>;
+    by_pos: Array<BreakdownRowPartOfSpeech>;
 };
 
 export type HistoryResponse = {
@@ -389,8 +406,8 @@ export type InflectionHint = {
      * Object honorification (객체높임/겸양법: 드리다, 뵙다, 여쭙다, 모시다).
      */
     is_humble: boolean;
-    speech_level: string | null;
-    tense: string | null;
+    speech_level: SpeechLevel | null;
+    tense: Tense | null;
 };
 
 export type ListFeedbackResponse = {
@@ -450,6 +467,10 @@ export type OptimizeFsrsResponse = {
      */
     review_count: number;
 };
+
+export type OriginType = 'native-korean' | 'sino-korean' | 'loanword' | 'hybrid';
+
+export type PartOfSpeech = 'verb' | 'noun' | 'adjective' | 'adverb' | 'bound-noun' | 'pronoun' | 'numeral' | 'interjection' | 'determiner' | 'auxiliary-adjective' | 'auxiliary-verb' | 'particle' | 'no-pos';
 
 /**
  * Schema for the common finish envelope. The credential is the browser's
@@ -573,6 +594,8 @@ export type SignupRequest = {
     username: string;
 };
 
+export type SpeechLevel = 'hae-che' | 'haeyo-che' | 'hasipsio-che' | 'haera-che' | 'hao-che' | 'hage-che';
+
 export type StartResponse = {
     ceremony_id: string;
     /**
@@ -586,8 +609,8 @@ export type StartResponse = {
 
 export type SuppressedCard = {
     card_id: number;
-    grade: string | null;
-    pos: string | null;
+    grade: Grade | null;
+    pos: PartOfSpeech | null;
     sentence: string;
     sentence_translation: string;
     trans_word: string;
@@ -597,6 +620,8 @@ export type SuppressedCard = {
 export type SuppressedCardsResponse = {
     cards: Array<SuppressedCard>;
 };
+
+export type Tense = 'present' | 'past' | 'future';
 
 export type TodayStatsResponse = {
     correct_today: number;
@@ -637,10 +662,7 @@ export type UpdateCardRequest = {
      * Omitted leaves the current value unchanged; null clears it.
      */
     definition?: string | null;
-    /**
-     * Omitted leaves the current value unchanged; null clears it.
-     */
-    grade?: string | null;
+    grade?: Grade | null;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
@@ -657,14 +679,8 @@ export type UpdateCardRequest = {
      * Omitted leaves the current value unchanged; use false to reset. Null is rejected.
      */
     is_humble?: boolean;
-    /**
-     * Omitted leaves the current value unchanged; null clears it.
-     */
-    origin_type?: string | null;
-    /**
-     * Omitted leaves the current value unchanged; null clears it.
-     */
-    pos?: string | null;
+    origin_type?: OriginType | null;
+    pos?: PartOfSpeech | null;
     /**
      * Omitted leaves the current value unchanged; null is rejected.
      */
@@ -673,18 +689,12 @@ export type UpdateCardRequest = {
      * Omitted leaves the current value unchanged; null is rejected.
      */
     sentence_translation?: string;
-    /**
-     * Omitted leaves the current value unchanged; null clears it.
-     */
-    speech_level?: string | null;
+    speech_level?: SpeechLevel | null;
     /**
      * Omitted leaves the current value unchanged; null is rejected.
      */
     target?: string;
-    /**
-     * Omitted leaves the current value unchanged; null clears it.
-     */
-    tense?: string | null;
+    tense?: Tense | null;
     /**
      * Omitted leaves the current value unchanged; null clears it.
      */
@@ -1771,6 +1781,35 @@ export type HealthCheckResponses = {
 };
 
 export type HealthCheckResponse = HealthCheckResponses[keyof HealthCheckResponses];
+
+export type ListClassificationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/resources/classifications';
+};
+
+export type ListClassificationsErrors = {
+    /**
+     * Missing, invalid, or expired authentication cookie (`unauthenticated`)
+     */
+    401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListClassificationsError = ListClassificationsErrors[keyof ListClassificationsErrors];
+
+export type ListClassificationsResponses = {
+    /**
+     * Classification catalogs
+     */
+    200: ClassificationsResponse;
+};
+
+export type ListClassificationsResponse = ListClassificationsResponses[keyof ListClassificationsResponses];
 
 export type ListGrammarPatternsData = {
     body?: never;

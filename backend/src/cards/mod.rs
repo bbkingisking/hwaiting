@@ -106,9 +106,9 @@ pub struct CardInflection {
     pub form: String,
     pub ending: String,
     #[schema(required)]
-    pub tense: Option<String>,
+    pub tense: Option<crate::classifications::Tense>,
     #[schema(required)]
-    pub speech_level: Option<String>,
+    pub speech_level: Option<crate::classifications::SpeechLevel>,
 }
 
 /// This card's resolved `conjugation_matrix_cards` rows, joined out to the

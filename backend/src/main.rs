@@ -19,6 +19,7 @@ mod admin;
 mod auth;
 mod auth_cookie;
 mod cards;
+mod classifications;
 mod credentials;
 mod db;
 mod enum_lookup;
@@ -113,6 +114,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/reviews/check-freshness",
             post(cards::validate_card_attempt),
+        )
+        .route(
+            "/resources/classifications",
+            get(classifications::list_classifications),
         )
         .route(
             "/resources/grammar-patterns",

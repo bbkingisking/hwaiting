@@ -17,9 +17,9 @@ pub struct SuppressedCard {
     sentence: String,
     sentence_translation: String,
     #[schema(required)]
-    pos: Option<String>,
+    pos: Option<crate::classifications::PartOfSpeech>,
     #[schema(required)]
-    grade: Option<String>,
+    grade: Option<crate::classifications::Grade>,
 }
 
 #[derive(Serialize, ToSchema)]

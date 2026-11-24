@@ -239,16 +239,16 @@ pub struct UpdateCardRequest {
     pub definition: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
-    pub pos: Option<Option<String>>,
+    pub pos: Option<Option<crate::classifications::PartOfSpeech>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
-    pub origin_type: Option<Option<String>>,
+    pub origin_type: Option<Option<crate::classifications::OriginType>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
     pub hanja: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
-    pub grade: Option<Option<String>>,
+    pub grade: Option<Option<crate::classifications::Grade>>,
     /// Omitted leaves the current value unchanged; null is rejected.
     #[serde(default, deserialize_with = "non_null_option")]
     #[schema(nullable = false)]
@@ -274,10 +274,10 @@ pub struct UpdateCardRequest {
     pub alternatives: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
-    pub speech_level: Option<Option<String>>,
+    pub speech_level: Option<Option<crate::classifications::SpeechLevel>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
-    pub tense: Option<Option<String>>,
+    pub tense: Option<Option<crate::classifications::Tense>>,
     #[serde(default, deserialize_with = "double_option")]
     /// Omitted leaves the current value unchanged; null clears it.
     pub grammar_pattern: Option<Option<String>>,

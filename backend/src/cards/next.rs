@@ -27,11 +27,11 @@ pub struct CardFront {
     #[schema(required)]
     pub krdict_id: Option<i64>,
     #[schema(required)]
-    pub pos: Option<String>,
+    pub pos: Option<crate::classifications::PartOfSpeech>,
     #[schema(required)]
-    pub origin_type: Option<String>,
+    pub origin_type: Option<crate::classifications::OriginType>,
     #[schema(required)]
-    pub grade: Option<String>,
+    pub grade: Option<crate::classifications::Grade>,
     pub trans_word: String,
     #[schema(required)]
     pub trans_dfn: Option<String>,
@@ -334,10 +334,10 @@ async fn select_cards(
         let card_id: i64 = row.get("id");
         let krdict_id: Option<i64> = row.get("krdict_id");
         let word: String = row.get("word");
-        let pos: Option<String> = row.get("pos");
-        let origin_type: Option<String> = row.get("origin_type");
+        let pos: Option<crate::classifications::PartOfSpeech> = row.get("pos");
+        let origin_type: Option<crate::classifications::OriginType> = row.get("origin_type");
         let hanja: Option<String> = row.get("hanja");
-        let grade: Option<String> = row.get("grade");
+        let grade: Option<crate::classifications::Grade> = row.get("grade");
         let trans_word: String = row.get("trans_word");
         let trans_dfn: Option<String> = row.get("trans_dfn");
         let sentence: String = row.get("sentence");
