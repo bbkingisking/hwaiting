@@ -244,7 +244,7 @@ impl Modify for SecurityAddon {
         (name = "feedback", description = "Sentence content feedback for admin triage"),
         (name = "drills", description = "Practice activities outside scheduled reviews"),
         (name = "resources", description = "Shared reference resources for authenticated users"),
-        (name = "misc", description = "Health check"),
+        (name = "misc", description = "Health check and deployment capabilities"),
     )
 )]
 // Convention for every list-shaped response registered above (ListUsersResponse,

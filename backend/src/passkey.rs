@@ -494,11 +494,11 @@ pub struct Capabilities {
 #[utoipa::path(
     get,
     path = "/api/capabilities",
-    description = "Report whether sign-ups and passkey authentication are enabled on this deployment. Available without authentication.",
+    description = "Report which optional features this deployment has turned on (currently sign-ups and passkey authentication). Available without authentication.",
     responses(
         (status = 200, description = "Which optional features this deployment has turned on", body = Capabilities),
     ),
-    tag = "auth"
+    tag = "misc"
 )]
 pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
     Json(Capabilities {
