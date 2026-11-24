@@ -84,6 +84,8 @@ export type AvailableTranslationLanguage = {
     code: string;
 };
 
+export type BackupVersion = '1.0';
+
 export type BreakdownRow = {
     accuracy: number;
     correct: number;
@@ -231,7 +233,7 @@ export type ExportData = {
     review_history: Array<ReviewHistoryExport>;
     settings: UserSettingsExport;
     suppressed_cards: Array<number>;
-    version: string;
+    version: BackupVersion;
 };
 
 export type FeedbackEntry = {
@@ -320,6 +322,11 @@ export type HistorySummary = {
 
 export type ImportDataRequest = {
     data: ExportData;
+    /**
+     * Clear existing review history, derived scheduling, suppression flags, and fitted FSRS
+     * parameters before import. Settings are applied from the backup in either mode;
+     * omitted legacy timezone/language values preserve existing saved choices.
+     */
     overwrite: boolean;
 };
 
@@ -436,14 +443,20 @@ export type ReviewContext = {
 
 export type ReviewHistoryExport = {
     card_id: number;
+    /**
+     * Required together with stability; state must also be supplied when both are present.
+     */
     difficulty?: number | null;
     elapsed_days?: number | null;
-    rating: string;
+    rating: ReviewRating;
     reviewed_at: string;
     scheduled_days?: number | null;
     sentence_id?: number | null;
+    /**
+     * Positive FSRS stability, supplied together with difficulty, or both null.
+     */
     stability?: number | null;
-    state?: string | null;
+    state?: null | ReviewState;
     wrong_answer?: null | WrongAnswerExport;
 };
 
@@ -469,9 +482,13 @@ export type ReviewQueueResponse = {
     next_available_at?: string | null;
 };
 
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
+
 export type ReviewResponse = {
     success: boolean;
 };
+
+export type ReviewState = 'learning' | 'review' | 'relearning';
 
 export type SaveAdminCardRequest = {
     changes: Array<AdminCardChange>;
@@ -598,7 +615,14 @@ export type UpdatePasskeyRequest = {
     label: string;
 };
 
+/**
+ * Partial settings update. Omitted fields and explicit null leave the saved value unchanged;
+ * null does not clear the saved timezone or translation language.
+ */
 export type UpdateSettingsRequest = {
+    /**
+     * Delay before advancing after a correct answer, in milliseconds.
+     */
     auto_progress_delay?: number | null;
     auto_progress_on_correct?: boolean | null;
     daily_new_card_limit?: number | null;
@@ -614,6 +638,9 @@ export type UpdateSettingsRequest = {
     red_threshold?: number | null;
     show_hanja_hints?: boolean | null;
     study_timezone?: string | null;
+    /**
+     * Preferred content language code; use an available code from /api/cards/languages.
+     */
     translation_language?: string | null;
     yellow_threshold?: number | null;
 };
@@ -662,6 +689,9 @@ export type UserSettings = UserSettingsCore & {
  * too, rather than each hand-repeating the same `row.get(...)` calls.
  */
 export type UserSettingsCore = {
+    /**
+     * Delay before advancing after a correct answer, in milliseconds.
+     */
     auto_progress_delay: number;
     auto_progress_on_correct: boolean;
     daily_new_card_limit: number;
@@ -679,11 +709,17 @@ export type UserSettingsCore = {
      * Saved IANA study timezone; null until a new account initializes it.
      */
     study_timezone?: string | null;
+    /**
+     * Preferred content language code; use an available code from /api/cards/languages.
+     */
     translation_language?: string | null;
     yellow_threshold: number;
 };
 
 export type UserSettingsExport = UserSettingsCore & {
+    /**
+     * JSON-encoded array of fitted FSRS floating-point parameters; null uses library defaults.
+     */
     fsrs_parameters?: string | null;
 };
 

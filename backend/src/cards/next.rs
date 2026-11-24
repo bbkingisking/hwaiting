@@ -100,6 +100,7 @@ pub struct ReviewQueueResponse {
 pub struct ReviewQueueQuery {
     /// Maximum number of cards. Omit to return the full currently eligible queue.
     /// The daily new-card allowance applies independently of this response limit.
+    #[param(minimum = 1)]
     pub limit: Option<i64>,
 }
 

@@ -22,6 +22,7 @@ pub struct OptimizeFsrsResponse {
     success: bool,
     parameters: Vec<f32>,
     /// Delayed review outcomes supplied to the optimizer, excluding repeated history prefixes.
+    #[schema(value_type = u64)]
     review_count: usize,
 }
 

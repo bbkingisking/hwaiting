@@ -61,15 +61,22 @@ pub struct UserSettingsCore {
     pub show_hanja_hints: bool,
     pub red_threshold: i64,
     pub yellow_threshold: i64,
+    #[schema(minimum = 0, maximum = 23)]
     pub day_boundary_hour: i64,
     /// Saved IANA study timezone; null until a new account initializes it.
     #[serde(default)]
     pub study_timezone: Option<String>,
     #[serde(default)]
+    #[schema(pattern = "^[a-z]{3}$")]
+    /// Preferred content language code; use an available code from /api/cards/languages.
     pub translation_language: Option<String>,
     pub auto_progress_on_correct: bool,
+    #[schema(minimum = 0, maximum = 3000)]
+    /// Delay before advancing after a correct answer, in milliseconds.
     pub auto_progress_delay: i64,
+    #[schema(minimum = 0.5, maximum = 0.99)]
     pub desired_retention: f64,
+    #[schema(minimum = 0)]
     pub daily_new_card_limit: i64,
     pub history_colorized_area: bool,
     pub history_colored_dots: bool,
@@ -127,20 +134,29 @@ pub struct UserSettings {
     pub has_fsrs_parameters: bool,
 }
 
+/// Partial settings update. Omitted fields and explicit null leave the saved value unchanged;
+/// null does not clear the saved timezone or translation language.
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
     pub show_hanja_hints: Option<bool>,
     pub red_threshold: Option<i64>,
     pub yellow_threshold: Option<i64>,
+    #[schema(minimum = 0, maximum = 23)]
     pub day_boundary_hour: Option<i64>,
     pub study_timezone: Option<String>,
     #[serde(default)]
+    #[schema(pattern = "^[a-z]{3}$")]
+    /// Preferred content language code; use an available code from /api/cards/languages.
     pub translation_language: Option<String>,
     /// Browser default, applied only if no timezone has been saved yet.
     pub initial_study_timezone: Option<String>,
     pub auto_progress_on_correct: Option<bool>,
+    #[schema(minimum = 0, maximum = 3000)]
+    /// Delay before advancing after a correct answer, in milliseconds.
     pub auto_progress_delay: Option<i64>,
+    #[schema(minimum = 0.5, maximum = 0.99)]
     pub desired_retention: Option<f64>,
+    #[schema(minimum = 0)]
     pub daily_new_card_limit: Option<i64>,
     pub history_colorized_area: Option<bool>,
     pub history_colored_dots: Option<bool>,

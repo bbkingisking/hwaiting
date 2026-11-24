@@ -8,10 +8,38 @@ use utoipa::ToSchema;
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppJson};
 
+// Schema vocabularies for the strings retained in historical backup records.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+enum BackupVersion {
+    #[serde(rename = "1.0")]
+    V1,
+}
+
+#[derive(ToSchema)]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+enum ReviewRating {
+    Again,
+    Hard,
+    Good,
+    Easy,
+}
+
+#[derive(ToSchema)]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+enum ReviewState {
+    Learning,
+    Review,
+    Relearning,
+}
+
 // Export/Import data structures
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ExportData {
+    #[schema(value_type = BackupVersion)]
     pub version: String,
     pub exported_at: String,
     pub settings: UserSettingsExport,
@@ -29,6 +57,7 @@ pub struct ExportData {
 pub struct UserSettingsExport {
     #[serde(flatten)]
     pub core: crate::user::UserSettingsCore,
+    /// JSON-encoded array of fitted FSRS floating-point parameters; null uses library defaults.
     pub fsrs_parameters: Option<String>,
 }
 
@@ -37,12 +66,20 @@ pub struct ReviewHistoryExport {
     pub card_id: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sentence_id: Option<i64>,
+    #[schema(value_type = ReviewRating)]
     pub rating: String,
+    #[schema(minimum = 0)]
     pub scheduled_days: Option<f64>,
+    #[schema(minimum = 0)]
     pub elapsed_days: Option<f64>,
     pub reviewed_at: String,
+    #[schema(exclusive_minimum = 0)]
+    /// Positive FSRS stability, supplied together with difficulty, or both null.
     pub stability: Option<f64>,
+    #[schema(minimum = 1, maximum = 10)]
+    /// Required together with stability; state must also be supplied when both are present.
     pub difficulty: Option<f64>,
+    #[schema(value_type = Option<ReviewState>)]
     pub state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrong_answer: Option<WrongAnswerExport>,
@@ -57,6 +94,9 @@ pub struct WrongAnswerExport {
 #[derive(Deserialize, ToSchema)]
 pub struct ImportDataRequest {
     pub data: ExportData,
+    /// Clear existing review history, derived scheduling, suppression flags, and fitted FSRS
+    /// parameters before import. Settings are applied from the backup in either mode;
+    /// omitted legacy timezone/language values preserve existing saved choices.
     pub overwrite: bool,
 }
 
@@ -69,8 +109,11 @@ pub struct ImportDataResponse {
 
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ImportStats {
+    #[schema(value_type = u64)]
     pub card_states_derived: usize,
+    #[schema(value_type = u64)]
     pub reviews_imported: usize,
+    #[schema(value_type = u64)]
     pub suppressed_cards_imported: usize,
 }
 
