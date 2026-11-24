@@ -20,8 +20,9 @@ pub(crate) struct AttemptClaims {
     pub content_revision: i64,
 }
 
-fn signing_secret() -> String {
-    format!("hwaiting:attempt:v1:{}", crate::credentials::jwt_secret())
+fn signing_secret() -> &'static str {
+    static SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SECRET.get_or_init(|| format!("hwaiting:attempt:v1:{}", crate::credentials::jwt_secret()))
 }
 
 pub(crate) fn issue_attempt_token(

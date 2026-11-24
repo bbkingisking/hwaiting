@@ -147,7 +147,7 @@ pub async fn subscribe(
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
     let token = crate::auth_cookie::token(&headers)?;
-    let claims = crate::auth::decode_token(&token, &crate::credentials::jwt_secret())?;
+    let claims = crate::auth::decode_token(&token, crate::credentials::jwt_secret())?;
     // Register before emitting the initial resync, closing the read/subscribe gap.
     let subscription = state.events.subscribe(auth.0);
     let expires = claims.exp.map(|exp| {

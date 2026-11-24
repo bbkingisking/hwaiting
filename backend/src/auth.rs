@@ -295,7 +295,7 @@ pub(crate) fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError
 pub(crate) fn generate_token(user_id: i64) -> Result<String, AppError> {
     encode_token(
         user_id,
-        &crate::credentials::jwt_secret(),
+        crate::credentials::jwt_secret(),
         jwt_ttl_seconds(),
     )
 }
@@ -339,7 +339,7 @@ where
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let token = crate::auth_cookie::token(&parts.headers)?;
 
-        let claims = decode_token(&token, &crate::credentials::jwt_secret())?;
+        let claims = decode_token(&token, crate::credentials::jwt_secret())?;
         Ok(AuthUser(claims.sub))
     }
 }

@@ -57,8 +57,11 @@ fn config_or(env_name: &str, default: &str) -> String {
     read_config(env_name).unwrap_or_else(|| default.to_string())
 }
 
-pub fn jwt_secret() -> String {
-    require_config("HWAITING_JWT_SECRET")
+/// Read once: it signs and verifies every session and attempt token, and
+/// with systemd credentials each uncached read would be a file read.
+pub fn jwt_secret() -> &'static str {
+    static SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SECRET.get_or_init(|| require_config("HWAITING_JWT_SECRET"))
 }
 
 pub fn admin_password() -> String {
