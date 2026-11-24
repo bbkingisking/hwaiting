@@ -64,7 +64,10 @@ fn feedback_contract_shares_one_path_with_admin_only_listing() {
     assert!(spec["paths"].get("/api/feedback/submit").is_none());
     assert!(spec["paths"].get("/api/admin/feedback").is_none());
     let listing = &spec["paths"]["/api/feedback"]["get"];
-    assert_eq!(listing["tags"], serde_json::json!(["admin"]));
+    assert_eq!(listing["tags"], serde_json::json!(["feedback"]));
+    let deletion = &spec["paths"]["/api/feedback/{feedback_id}"]["delete"];
+    assert_eq!(deletion["tags"], serde_json::json!(["feedback"]));
+    assert!(deletion["responses"].get("204").is_some());
     assert!(
         listing["parameters"]
             .as_array()
@@ -253,4 +256,73 @@ async fn feedback_list_rejects_non_admin_and_invalid_limits_over_http() {
         app.oneshot(post).await.unwrap().status(),
         StatusCode::CREATED
     );
+}
+
+#[tokio::test]
+async fn admins_delete_feedback_once_and_others_are_forbidden() {
+    use crate::test_support::test_admin_user;
+    use axum::{
+        Router,
+        http::{Request, StatusCode},
+        routing::delete,
+    };
+    use tower::ServiceExt;
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let admin_id = test_admin_user(&pool).await;
+    let sentence_id: i64 = sqlx::query_scalar("SELECT id FROM sentences LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (_, axum::Json(created)) = submit_feedback(
+        State(pool.clone()),
+        AuthUser(user_id),
+        AppJson(FeedbackRequest {
+            sentence_id,
+            body: "Typo".into(),
+        }),
+    )
+    .await
+    .unwrap();
+    let app = Router::new()
+        .route("/api/feedback/{feedback_id}", delete(delete_feedback))
+        .with_state(pool.clone());
+    let request = |user: i64| {
+        let token = crate::auth::generate_token(user).unwrap();
+        Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/feedback/{}", created.id))
+            .header(
+                "cookie",
+                format!("{}={token}", crate::auth_cookie::COOKIE_NAME),
+            )
+            .body(axum::body::Body::empty())
+            .unwrap()
+    };
+    // Even the author cannot delete; triage is an admin action.
+    assert_eq!(
+        app.clone()
+            .oneshot(request(user_id))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request(admin_id))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        app.oneshot(request(admin_id)).await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM feedback")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
 }

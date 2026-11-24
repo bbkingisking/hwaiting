@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ApiError, listFeedback, type FeedbackEntry } from '@/lib/api'
+import { ApiError, deleteFeedback, listFeedback, type FeedbackEntry } from '@/lib/api'
 import { EditCardDialog } from '@/components/edit-card-dialog'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Trash2 } from 'lucide-react'
 
 interface CheckFeedbackDialogProps {
   open: boolean
@@ -17,12 +17,33 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const handleDelete = async (feedbackId: number) => {
+    setDeletingId(feedbackId)
+    setDeleteError(null)
+    try {
+      await deleteFeedback(feedbackId)
+      setFeedback(entries => entries.filter(entry => entry.id !== feedbackId))
+    } catch (err) {
+      // Another admin may have deleted it already; either way it is gone.
+      if (err instanceof ApiError && err.code === 'not_found') {
+        setFeedback(entries => entries.filter(entry => entry.id !== feedbackId))
+      } else {
+        setDeleteError(err instanceof ApiError ? err.message : 'Could not delete feedback. Please try again.')
+      }
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
     const controller = new AbortController()
     setLoading(true)
     setError(null)
+    setDeleteError(null)
     listFeedback(controller.signal).then(result => {
       if (!controller.signal.aborted) setFeedback(result.feedback)
     }).catch(err => {
@@ -53,13 +74,14 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
           ) : (
             <>
               <p role="status" className="text-sm text-muted-foreground">{feedback.length} {feedback.length === 1 ? 'submission' : 'submissions'}</p>
+              {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
               {feedback.length === 0 ? <p className="py-8 text-center text-muted-foreground">No feedback yet.</p> : (
                 <ol className="space-y-3">
                   {feedback.map(entry => (
-                    <li key={entry.id}>
+                    <li key={entry.id} className="group relative">
                       <button type="button" data-card-id={entry.card_id}
                         onClick={() => { setSelectedCardId(entry.card_id); setEditOpen(true) }}
-                        className="w-full space-y-3 rounded-lg border p-4 text-left hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        className="w-full space-y-3 rounded-lg border p-4 pr-12 text-left hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <span className="sr-only">Edit card #{entry.card_id}: </span>
                         <span className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span>Sentence #{entry.sentence_id} · User #{entry.user_id}</span>
@@ -67,6 +89,18 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
                         </span>
                         <span className="block whitespace-pre-wrap wrap-anywhere leading-relaxed">{entry.body}</span>
                       </button>
+                      {/* Hidden until hover or focus on mouse devices; always shown on touch screens. */}
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={`Delete feedback #${entry.id}`}
+                        disabled={deletingId === entry.id}
+                        onClick={() => handleDelete(entry.id)}
+                        className="absolute right-2 top-2 text-destructive hover:text-destructive transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
+                      >
+                        {deletingId === entry.id ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden className="h-4 w-4" />}
+                      </Button>
                     </li>
                   ))}
                 </ol>

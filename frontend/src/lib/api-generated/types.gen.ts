@@ -1650,6 +1650,58 @@ export type SubmitFeedbackResponses = {
 
 export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
 
+export type DeleteFeedbackData = {
+    body?: never;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path: {
+        /**
+         * Feedback ID
+         */
+        feedback_id: number;
+    };
+    query?: never;
+    url: '/api/feedback/{feedback_id}';
+};
+
+export type DeleteFeedbackErrors = {
+    /**
+     * Non-numeric feedback_id
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid authentication cookie
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required; also returned for a missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * No feedback with that ID
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type DeleteFeedbackError = DeleteFeedbackErrors[keyof DeleteFeedbackErrors];
+
+export type DeleteFeedbackResponses = {
+    /**
+     * Feedback deleted
+     */
+    204: void;
+};
+
+export type DeleteFeedbackResponse = DeleteFeedbackResponses[keyof DeleteFeedbackResponses];
+
 export type HealthCheckData = {
     body?: never;
     path?: never;

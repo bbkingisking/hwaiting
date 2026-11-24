@@ -370,3 +370,7 @@ export async function submitFeedback(sentenceId: number, text: string): Promise<
 export async function listFeedback(signal?: AbortSignal): Promise<Schemas.ListFeedbackResponse> {
   return fetchWithAuth(`${apiBase()}/api/feedback`, { signal })
 }
+
+export async function deleteFeedback(feedbackId: number): Promise<void> {
+  await fetchWithAuth(`${apiBase()}/api/feedback/${feedbackId}`, { method: 'DELETE' })
+}

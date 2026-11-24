@@ -174,6 +174,7 @@ impl Modify for SecurityAddon {
         crate::cards::validate_card_attempt,
         crate::feedback::submit_feedback,
         crate::feedback::list_feedback,
+        crate::feedback::delete_feedback,
         crate::cards::suppress_card,
         crate::cards::unsuppress_card,
         crate::cards::list_suppressed_cards,

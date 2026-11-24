@@ -124,6 +124,7 @@ async fn main() -> anyhow::Result<()> {
             "/feedback",
             get(feedback::list_feedback).post(feedback::submit_feedback),
         )
+        .route("/feedback/{feedback_id}", delete(feedback::delete_feedback))
         .route(
             "/cards/{card_id}/suppression",
             put(events::mutations::suppress_card).delete(events::mutations::unsuppress_card),

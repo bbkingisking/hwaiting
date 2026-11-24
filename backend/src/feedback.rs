@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use tracing::info;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::error::{AppError, AppJson, AppQuery};
+use crate::error::{AppError, AppJson, AppPath, AppQuery};
 
 #[derive(Deserialize, ToSchema)]
 pub struct FeedbackRequest {
@@ -106,7 +106,7 @@ pub async fn submit_feedback(
         (status = 403, description = "Admin access required", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
-    tag = "admin"
+    tag = "feedback"
 )]
 pub async fn list_feedback(
     State(pool): State<SqlitePool>,
@@ -125,6 +125,37 @@ pub async fn list_feedback(
     .fetch_all(&pool)
     .await?;
     Ok(Json(ListFeedbackResponse { feedback }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/feedback/{feedback_id}",
+    description = "Delete one feedback entry, typically once it has been triaged. Requires an admin account.",
+    params(("feedback_id" = i64, Path, description = "Feedback ID")),
+    responses(
+        (status = 204, description = "Feedback deleted"),
+        (status = 400, description = "Non-numeric feedback_id", body = crate::error::ErrorResponse),
+        (status = 403, description = "Admin access required", body = crate::error::ErrorResponse),
+        (status = 404, description = "No feedback with that ID", body = crate::error::ErrorResponse),
+    ),
+    security(("cookie_auth" = [])),
+    tag = "feedback"
+)]
+pub async fn delete_feedback(
+    State(pool): State<SqlitePool>,
+    _admin: crate::auth::AdminUser,
+    AppPath(feedback_id): AppPath<i64>,
+) -> Result<StatusCode, AppError> {
+    let deleted = sqlx::query("DELETE FROM feedback WHERE id = ?")
+        .bind(feedback_id)
+        .execute(&pool)
+        .await?
+        .rows_affected();
+    if deleted == 0 {
+        return Err(AppError::NotFound);
+    }
+    info!("Feedback {} deleted", feedback_id);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
