@@ -168,3 +168,40 @@ impl Modify for SecurityAddon {
 // generic `items`/`data` key. Keep new list endpoints consistent with that
 // rather than introducing another wrapper name.
 pub struct ApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passkey_ceremonies_describe_their_wire_envelopes() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        for prefix in [
+            "/api/auth/passkey/register",
+            "/api/auth/passkey/login",
+            "/api/user/passkeys/register",
+        ] {
+            let start = &spec["paths"][format!("{prefix}/start")]["post"];
+            assert_eq!(
+                start["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/StartResponse"
+            );
+            let finish = &spec["paths"][format!("{prefix}/finish")]["post"];
+            assert_eq!(finish["requestBody"]["required"], true);
+            assert_eq!(
+                finish["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/PasskeyFinishRequest"
+            );
+        }
+        for (schema, payload) in [
+            ("StartResponse", "options"),
+            ("PasskeyFinishRequest", "credential"),
+        ] {
+            let required = spec["components"]["schemas"][schema]["required"]
+                .as_array()
+                .unwrap();
+            assert!(required.contains(&serde_json::json!("ceremony_id")));
+            assert!(required.contains(&serde_json::json!(payload)));
+        }
+    }
+}

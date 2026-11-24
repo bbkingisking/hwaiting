@@ -432,8 +432,9 @@ fn parse_origin(s: &str) -> Result<String, String> {
 
 // ---------------------------------------------------------------- wire types
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct StartResponse {
+    #[schema(value_type = String, format = "uuid")]
     ceremony_id: Uuid,
     /// The `PublicKeyCredentialCreationOptionsJSON`/`PublicKeyCredentialRequestOptionsJSON`
     /// `webauthn_rp` serializes its client-state types into - passed
@@ -451,6 +452,17 @@ pub struct StartResponse {
 pub struct FinishRequest<T> {
     ceremony_id: Uuid,
     credential: T,
+}
+
+/// Schema for the common finish envelope. The credential is the browser's
+/// WebAuthn JSON object, decoded by the ceremony-specific library type at runtime.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct PasskeyFinishRequest {
+    #[schema(format = "uuid")]
+    ceremony_id: String,
+    /// Registration or authentication credential JSON, with binary fields base64url encoded.
+    credential: serde_json::Value,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -646,7 +658,7 @@ async fn finish_registration(
     description = "Begin creating a new passkey-only account and return a ceremony ID and WebAuthn creation options. Complete the browser ceremony and submit its credential to the registration finish endpoint; sign-ups and passkeys must be enabled.",
     responses(
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
-        (status = 200, description = "WebAuthn creation options for a new passkey account. \
+        (status = 200, body = StartResponse, description = "WebAuthn creation options for a new passkey account. \
             Opaque to OpenAPI - pass straight to navigator.credentials.create() after \
             base64url-decoding challenge/user.id."),
     ),
@@ -668,6 +680,7 @@ pub async fn register_start(
     post,
     path = "/api/auth/passkey/register/finish",
     description = "Verify the credential from a new-account registration ceremony, create a passkey-only account, and set the HttpOnly authentication cookie. The ceremony must be unexpired and sign-ups must still be enabled.",
+    request_body = PasskeyFinishRequest,
     responses(
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 201, description = "Account created from the verified passkey", body = AuthResponse),
@@ -705,7 +718,7 @@ pub async fn register_finish(
     path = "/api/auth/passkey/login/start",
     description = "Begin passkey sign-in and return a ceremony ID and WebAuthn request options. The browser lets the user choose a discoverable credential; submit the result to the login finish endpoint.",
     responses(
-        (status = 200, description = "WebAuthn request options for a discoverable-credential \
+        (status = 200, body = StartResponse, description = "WebAuthn request options for a discoverable-credential \
             sign-in (empty allowCredentials - the browser's own picker lists every passkey \
             registered for this site). Opaque to OpenAPI."),
     ),
@@ -737,6 +750,7 @@ pub async fn login_start(State(state): State<AppState>) -> Result<Json<StartResp
     post,
     path = "/api/auth/passkey/login/finish",
     description = "Verify the credential from a passkey sign-in ceremony and set the HttpOnly authentication cookie for its account. Unknown or expired ceremonies and credentials that match no account are rejected.",
+    request_body = PasskeyFinishRequest,
     responses(
         (status = 200, description = "Signed in", body = AuthResponse),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
@@ -981,7 +995,7 @@ pub async fn update_passkey(
     path = "/api/user/passkeys/register/start",
     description = "Begin adding a passkey to the current user's existing account and return a ceremony ID and WebAuthn creation options. Submit the browser credential to the authenticated registration finish endpoint.",
     responses(
-        (status = 200, description = "WebAuthn creation options for adding a passkey to the \
+        (status = 200, body = StartResponse, description = "WebAuthn creation options for adding a passkey to the \
             caller's existing account. Opaque to OpenAPI."),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
@@ -1008,6 +1022,7 @@ pub async fn add_passkey_start(
     post,
     path = "/api/user/passkeys/register/finish",
     description = "Verify a passkey registration ceremony and attach the credential to the current user's account. The ceremony must be unexpired and belong to the same account.",
+    request_body = PasskeyFinishRequest,
     responses(
         (status = 201, description = "Passkey added to the caller's account", body = PasskeySummary),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),

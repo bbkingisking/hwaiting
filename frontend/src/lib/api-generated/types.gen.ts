@@ -400,6 +400,18 @@ export type OptimizeFsrsResponse = {
     success: boolean;
 };
 
+/**
+ * Schema for the common finish envelope. The credential is the browser's
+ * WebAuthn JSON object, decoded by the ceremony-specific library type at runtime.
+ */
+export type PasskeyFinishRequest = {
+    ceremony_id: string;
+    /**
+     * Registration or authentication credential JSON, with binary fields base64url encoded.
+     */
+    credential: unknown;
+};
+
 export type PasskeySummary = {
     created_at: string;
     id: number;
@@ -485,6 +497,22 @@ export type SignupRequest = {
 export type StaleAnswerResponse = {
     code: string;
     error: string;
+};
+
+export type StartResponse = {
+    ceremony_id: string;
+    /**
+     * The `PublicKeyCredentialCreationOptionsJSON`/`PublicKeyCredentialRequestOptionsJSON`
+     * `webauthn_rp` serializes its client-state types into - passed
+     * straight to `navigator.credentials.create()`/`.get()` by the
+     * frontend after base64url-decoding the binary fields. Untyped here
+     * (rather than generic like the old `webauthn-rs-core`-backed version
+     * was) because the client-state types borrow from ceremony-local data
+     * (the throwaway user handle) that doesn't outlive this function, so
+     * they're serialized to a `Value` before returning rather than
+     * threaded through the return type.
+     */
+    options: unknown;
 };
 
 export type SuppressedCard = {
@@ -921,7 +949,7 @@ export type LogoutResponses = {
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
 export type LoginFinishData = {
-    body?: never;
+    body: PasskeyFinishRequest;
     headers: {
         /**
          * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
@@ -984,11 +1012,13 @@ export type LoginStartResponses = {
     /**
      * WebAuthn request options for a discoverable-credential sign-in (empty allowCredentials - the browser's own picker lists every passkey registered for this site). Opaque to OpenAPI.
      */
-    200: unknown;
+    200: StartResponse;
 };
 
+export type LoginStartResponse = LoginStartResponses[keyof LoginStartResponses];
+
 export type RegisterFinishData = {
-    body?: never;
+    body: PasskeyFinishRequest;
     headers: {
         /**
          * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
@@ -1060,8 +1090,10 @@ export type RegisterStartResponses = {
     /**
      * WebAuthn creation options for a new passkey account. Opaque to OpenAPI - pass straight to navigator.credentials.create() after base64url-decoding challenge/user.id.
      */
-    200: unknown;
+    200: StartResponse;
 };
+
+export type RegisterStartResponse = RegisterStartResponses[keyof RegisterStartResponses];
 
 export type SignupData = {
     body: SignupRequest;
@@ -1743,7 +1775,7 @@ export type ListPasskeysResponses = {
 export type ListPasskeysResponse2 = ListPasskeysResponses[keyof ListPasskeysResponses];
 
 export type AddPasskeyFinishData = {
-    body?: never;
+    body: PasskeyFinishRequest;
     headers: {
         /**
          * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
@@ -1819,8 +1851,10 @@ export type AddPasskeyStartResponses = {
     /**
      * WebAuthn creation options for adding a passkey to the caller's existing account. Opaque to OpenAPI.
      */
-    200: unknown;
+    200: StartResponse;
 };
+
+export type AddPasskeyStartResponse = AddPasskeyStartResponses[keyof AddPasskeyStartResponses];
 
 export type DeletePasskeyData = {
     body?: never;
