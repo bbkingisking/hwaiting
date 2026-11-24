@@ -25,10 +25,10 @@ pub struct HanjaDrill {
     pub trans_dfn: Option<String>,
 }
 
+/// `drill` is null when the user has no mastered hanja cards yet: a normal
+/// empty state, not an error.
 #[derive(Serialize, ToSchema)]
 pub struct HanjaDrillResponse {
-    /// Null when the user has no mastered hanja cards yet - a normal empty
-    /// state, not an error.
     #[schema(required)]
     pub drill: Option<HanjaDrill>,
 }

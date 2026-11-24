@@ -80,7 +80,7 @@ pub struct ReviewHistoryExport {
     /// Review time, RFC 3339 UTC. Import also accepts SQLite YYYY-MM-DD HH:MM:SS.
     #[schema(format = DateTime)]
     pub reviewed_at: String,
-    #[schema(exclusive_minimum = 0, maximum = 3.4028234663852886e38)]
+    #[schema(exclusive_minimum = 0)]
     /// Positive FSRS stability in days, supplied together with difficulty, or both null.
     pub stability: Option<f64>,
     #[schema(minimum = 1, maximum = 10)]

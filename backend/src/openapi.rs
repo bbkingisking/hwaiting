@@ -293,7 +293,6 @@ impl Modify for SecurityAddon {
         crate::error::ErrorResponse,
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
-        crate::auth::AuthResponse,
         crate::passkey::PasskeySummary,
         crate::passkey::UpdatePasskeyRequest,
         crate::passkey::ListPasskeysResponse,
@@ -463,8 +462,8 @@ mod tests {
         let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
         for (name, body) in [
             (
-                "AuthResponse",
-                serde_json::to_value(crate::auth::AuthResponse {
+                "UserProfile",
+                serde_json::to_value(crate::user::UserProfile {
                     username: None,
                     is_admin: false,
                 })

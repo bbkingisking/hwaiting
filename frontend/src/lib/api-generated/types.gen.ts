@@ -73,14 +73,6 @@ export type AdminUserSummary = {
     username: string | null;
 };
 
-export type AuthResponse = {
-    is_admin: boolean;
-    /**
-     * Null for a passkey-only account without a username.
-     */
-    username: string | null;
-};
-
 export type AvailableTranslationLanguage = {
     /**
      * Distinct cards with at least one complete sentence in this language.
@@ -320,6 +312,10 @@ export type HanjaDrill = {
     word: string;
 };
 
+/**
+ * `drill` is null when the user has no mastered hanja cards yet: a normal
+ * empty state, not an error.
+ */
 export type HanjaDrillResponse = {
     drill: HanjaDrill | null;
 };
@@ -1091,7 +1087,7 @@ export type LoginResponses = {
     /**
      * Login successful
      */
-    200: AuthResponse;
+    200: UserProfile;
 };
 
 export type LoginResponse = LoginResponses[keyof LoginResponses];
@@ -1173,7 +1169,7 @@ export type LoginFinishResponses = {
     /**
      * Signed in
      */
-    200: AuthResponse;
+    200: UserProfile;
 };
 
 export type LoginFinishResponse = LoginFinishResponses[keyof LoginFinishResponses];
@@ -1259,7 +1255,7 @@ export type RegisterFinishResponses = {
     /**
      * Account created from the verified passkey
      */
-    201: AuthResponse;
+    201: UserProfile;
 };
 
 export type RegisterFinishResponse = RegisterFinishResponses[keyof RegisterFinishResponses];
@@ -1341,7 +1337,7 @@ export type SignupResponses = {
     /**
      * Account created
      */
-    201: AuthResponse;
+    201: UserProfile;
 };
 
 export type SignupResponse = SignupResponses[keyof SignupResponses];

@@ -101,7 +101,7 @@ use webauthn_rp::{
     },
 };
 
-use crate::auth::{AuthResponse, AuthUser, authenticated_response};
+use crate::auth::{AuthUser, authenticated_response};
 use crate::error::{AppError, AppJson, AppPath};
 
 /// How long a `start` ceremony's state is kept before `finish` must have
@@ -687,7 +687,7 @@ pub async fn register_start(
     responses(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
-        (status = 201, description = "Account created from the verified passkey", body = AuthResponse),
+        (status = 201, description = "Account created from the verified passkey", body = crate::user::UserProfile),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),
     ),
@@ -758,7 +758,7 @@ pub async fn login_start(State(state): State<AppState>) -> Result<Json<StartResp
     request_body = PasskeyFinishRequest,
     responses(
         (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
-        (status = 200, description = "Signed in", body = AuthResponse),
+        (status = 200, description = "Signed in", body = crate::user::UserProfile),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 401, description = "No account matches that passkey", body = crate::error::ErrorResponse),
         (status = 410, description = "Ceremony expired", body = crate::error::ErrorResponse),

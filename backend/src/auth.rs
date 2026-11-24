@@ -79,21 +79,13 @@ fn validate_signup(raw_username: &str, raw_password: &str) -> Result<(), AppErro
     Ok(())
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct AuthResponse {
-    /// Null for a passkey-only account without a username.
-    #[schema(required)]
-    pub username: Option<String>,
-    pub is_admin: bool,
-}
-
 #[utoipa::path(
     post,
     path = "/api/auth/login",
     description = "Sign in with a username and password and set the HttpOnly authentication cookie. Passkey-only accounts cannot use password login.",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 200, description = "Login successful", body = crate::user::UserProfile),
         (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
         (status = 401, description = "Invalid credentials", body = crate::error::ErrorResponse),
     ),
@@ -158,7 +150,7 @@ pub async fn login(
     description = "Create a username/password account and sign in by setting the HttpOnly authentication cookie. Available only when this deployment allows sign-ups. Username and password are trimmed of leading and trailing whitespace; neither may be empty after trimming.",
     request_body = SignupRequest,
     responses(
-        (status = 201, description = "Account created", body = AuthResponse),
+        (status = 201, description = "Account created", body = crate::user::UserProfile),
         (status = 400, description = "Malformed request body, username or password empty after trimming, username longer than 64 characters, or password longer than 1024 characters", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 409, description = "Username already exists", body = crate::error::ErrorResponse),
@@ -322,7 +314,7 @@ pub(crate) fn authenticated_response(
             (header::SET_COOKIE, cookie.to_string()),
             (header::CACHE_CONTROL, "no-store".to_string()),
         ],
-        Json(AuthResponse { username, is_admin }),
+        Json(crate::user::UserProfile { username, is_admin }),
     )
         .into_response())
 }
