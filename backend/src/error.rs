@@ -29,7 +29,7 @@ pub struct ErrorResponse {
 /// - 401 `unauthenticated`: missing, invalid, or expired authentication cookie
 /// - 401 `invalid_credentials`: wrong username or password
 /// - 401 `unknown_passkey`: no account owns the presented passkey
-/// - 403 `csrf_header_missing`: a write request lacks `X-Requested-With: XMLHttpRequest`
+/// - 403 `csrf_header_missing`: a write request lacks `X-Requested-With: hwaiting`
 /// - 403 `admin_required`: authenticated, but not an administrator
 /// - 403 `signups_disabled`: this deployment does not allow new accounts
 /// - 403 `passkey_ceremony_account_mismatch`: the ceremony was started by a different account
