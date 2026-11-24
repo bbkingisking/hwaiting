@@ -67,7 +67,7 @@ fn expired_token_is_rejected() {
 
     assert!(matches!(
         decode_token(&token, "s"),
-        Err(AppError::InvalidCredentials)
+        Err(AppError::Unauthenticated)
     ));
 }
 
@@ -76,7 +76,7 @@ fn wrong_secret_is_rejected() {
     let token = encode_token(1, "right-secret", None).unwrap();
     assert!(matches!(
         decode_token(&token, "wrong-secret"),
-        Err(AppError::InvalidCredentials)
+        Err(AppError::Unauthenticated)
     ));
 }
 

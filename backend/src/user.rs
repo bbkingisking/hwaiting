@@ -265,9 +265,7 @@ pub async fn update_settings(
 
     if let Some(code) = &translation_language {
         if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
-            return Err(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::InvalidTranslationLanguage,
-            ));
+            return Err(AppError::InvalidTranslationLanguage);
         }
         crate::translation_language::TranslationLanguage(code.clone())
             .id(&pool)

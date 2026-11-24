@@ -35,7 +35,7 @@ export function subscribeReviewQueueChanges(listener: (change: ReviewQueueChange
 }
 
 class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  constructor(public status: number, message: string, public code?: Schemas.ErrorCode) {
     super(message)
     this.name = 'ApiError'
   }

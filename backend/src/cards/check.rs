@@ -86,10 +86,9 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),
         (status = 400, description = "Invalid request or invalid, forged, or wrong-user attempt token", body = crate::error::ErrorResponse),
-        (status = 409, description = "Review state, selected sentence, or card content changed since the card was fetched", body = crate::error::StaleAnswerResponse),
+        (status = 409, description = "Card was suppressed (`card_suppressed`), or its review state (`stale_review`), selected sentence (`stale_prompt`), or content (`stale_content`) changed since it was fetched", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card doesn't exist", body = crate::error::ErrorResponse),
-        (status = 403, description = "Card is suppressed", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
     tag = "reviews"

@@ -217,7 +217,7 @@ async fn registration_ceremonies_are_bound_to_their_endpoint_and_account() {
             add.ceremony_id,
             RegistrationPurpose::AddToAccount(other)
         ),
-        Err(AppError::Forbidden)
+        Err(AppError::CeremonyAccountMismatch)
     ));
     assert!(matches!(
         take_registration_for(
@@ -249,7 +249,7 @@ async fn registration_ceremonies_are_bound_to_their_endpoint_and_account() {
             public.ceremony_id,
             RegistrationPurpose::AddToAccount(owner)
         ),
-        Err(AppError::Forbidden)
+        Err(AppError::CeremonyAccountMismatch)
     ));
 
     let add = add_passkey_start(State(state.clone()), AuthUser(owner))
@@ -318,7 +318,7 @@ async fn concurrent_deletions_preserve_a_passwordless_sign_in_method() {
     assert_eq!(
         results
             .iter()
-            .filter(|r| matches!(r, Err(AppError::BadRequest(_))))
+            .filter(|r| matches!(r, Err(AppError::LastSignInMethod)))
             .count(),
         1
     );

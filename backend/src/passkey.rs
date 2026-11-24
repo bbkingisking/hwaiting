@@ -583,7 +583,7 @@ fn take_registration_for(
     };
     if purpose != expected {
         return Err(match expected {
-            RegistrationPurpose::AddToAccount(_) => AppError::Forbidden,
+            RegistrationPurpose::AddToAccount(_) => AppError::CeremonyAccountMismatch,
             RegistrationPurpose::NewAccount => AppError::CeremonyNotFound,
         });
     }
@@ -1072,7 +1072,7 @@ pub async fn add_passkey_finish(
     params(("passkey_id" = i64, Path, description = "Passkey ID")),
     responses(
         (status = 204, description = "Passkey removed"),
-        (status = 400, description = "That passkey is the caller's only sign-in method", body = crate::error::ErrorResponse),
+        (status = 409, description = "That passkey is the caller's only sign-in method", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "No such passkey on the caller's account", body = crate::error::ErrorResponse),
     ),
@@ -1101,9 +1101,7 @@ pub async fn delete_passkey(
                 .fetch_one(&mut *tx)
                 .await?;
         if passkey_count <= 1 {
-            return Err(AppError::BadRequest(
-                "Cannot delete your only sign-in method".to_string(),
-            ));
+            return Err(AppError::LastSignInMethod);
         }
     }
 

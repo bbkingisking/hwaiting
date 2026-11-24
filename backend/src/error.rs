@@ -8,50 +8,86 @@ use serde::{Serialize, de::DeserializeOwned};
 use tracing::error;
 use utoipa::ToSchema;
 
-/// Common error envelope; language selection failures include an actionable code.
+/// Envelope for every JSON error response. Branch on `code`; `error` is
+/// human-readable text whose wording may change.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
+    /// Human-readable message, suitable for display.
     pub error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub code: Option<TranslationLanguageErrorCode>,
+    pub code: ErrorCode,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, ToSchema)]
+/// Stable machine-readable error code. Each code always comes with the same
+/// HTTP status:
+///
+/// - 400 `invalid_request`: malformed body, path, or query, or a failed validation rule
+/// - 400 `translation_language_not_configured`: choose a translation language in settings first
+/// - 400 `unknown_translation_language`: the code is well-formed but not an available language
+/// - 400 `invalid_translation_language`: not a lowercase three-letter code
+/// - 400 `passkey_ceremony_failed`: the authenticator response failed verification
+/// - 400 `passkey_ceremony_not_found`: unknown or already-used ceremony id; start over
+/// - 401 `unauthenticated`: missing, invalid, or expired authentication cookie
+/// - 401 `invalid_credentials`: wrong username or password
+/// - 401 `unknown_passkey`: no account owns the presented passkey
+/// - 403 `csrf_header_missing`: a write request lacks `X-Requested-With: XMLHttpRequest`
+/// - 403 `admin_required`: authenticated, but not an administrator
+/// - 403 `signups_disabled`: this deployment does not allow new accounts
+/// - 403 `passkey_ceremony_account_mismatch`: the ceremony was started by a different account
+/// - 404 `not_found`: the resource does not exist or is not visible to the caller
+/// - 409 `username_exists`: that username is taken
+/// - 409 `card_suppressed`: the card was suppressed after it was fetched
+/// - 409 `stale_review`: the card's review state changed since it was fetched
+/// - 409 `stale_content`: the card's content changed since it was fetched
+/// - 409 `stale_prompt`: the selected sentence changed since it was fetched
+/// - 409 `last_sign_in_method`: removing this passkey would leave the account with no way to sign in
+/// - 410 `passkey_ceremony_expired`: the ceremony timed out; start over
+/// - 500 `internal_error`: unexpected server failure
+/// - 501 `passkeys_disabled`: passkey sign-in is not configured on this server
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TranslationLanguageErrorCode {
+pub enum ErrorCode {
+    InvalidRequest,
     TranslationLanguageNotConfigured,
     UnknownTranslationLanguage,
     InvalidTranslationLanguage,
-}
-
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum StaleAnswerCode {
+    PasskeyCeremonyFailed,
+    PasskeyCeremonyNotFound,
+    Unauthenticated,
+    InvalidCredentials,
+    UnknownPasskey,
+    CsrfHeaderMissing,
+    AdminRequired,
+    SignupsDisabled,
+    PasskeyCeremonyAccountMismatch,
+    NotFound,
+    UsernameExists,
+    CardSuppressed,
     StaleReview,
     StaleContent,
     StalePrompt,
-}
-
-/// Machine-readable response for a rejected stale answer.
-#[derive(Serialize, ToSchema)]
-pub struct StaleAnswerResponse {
-    pub error: String,
-    pub code: StaleAnswerCode,
+    LastSignInMethod,
+    PasskeyCeremonyExpired,
+    InternalError,
+    PasskeysDisabled,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Invalid translation-language selection: {0:?}")]
-    TranslationLanguage(TranslationLanguageErrorCode),
+    #[error("No translation language configured")]
+    TranslationLanguageNotConfigured,
+    #[error("Unknown translation-language code")]
+    UnknownTranslationLanguage,
+    #[error("Invalid translation-language code")]
+    InvalidTranslationLanguage,
+
     #[error("Card review state has changed")]
     StaleReview,
-
     #[error("Card content has changed")]
     StaleContent,
-
     #[error("The selected sentence has changed")]
     StalePrompt,
+    #[error("Card is suppressed")]
+    CardSuppressed,
 
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
@@ -59,16 +95,19 @@ pub enum AppError {
     #[error("Password hashing error")]
     PasswordHash,
 
+    /// Missing, malformed, or expired authentication cookie.
+    #[error("Not authenticated")]
+    Unauthenticated,
+
+    /// Wrong username or password at login.
     #[error("Invalid credentials")]
     InvalidCredentials,
 
     /// A `navigator.credentials.create()`/`.get()` ceremony failed
     /// server-side verification (bad signature, origin/RP ID mismatch,
     /// counter regression, and so on). `webauthn_rp` has several disjoint
-    /// error enums (`RegCeremonyErr`, `AuthCeremonyErr`, ...) rather than
-    /// one unified type, so this carries a formatted message instead of
-    /// `#[from]`-wrapping one of them; it ends up in the server log, the
-    /// client only ever sees the generic 400 below.
+    /// error enums rather than one unified type, so this carries a formatted
+    /// message for the server log; the client only sees a generic 400.
     #[error("Passkey ceremony failed: {0}")]
     Webauthn(String),
 
@@ -77,26 +116,26 @@ pub enum AppError {
     #[error("Unknown or already-used passkey ceremony")]
     CeremonyNotFound,
 
-    /// The ceremony id was found but its two-minute TTL had already
-    /// elapsed; distinct from `CeremonyNotFound` so the client can tell
-    /// "start over" from "that response was rejected".
+    /// The ceremony id was found but its TTL had already elapsed.
     #[error("Passkey ceremony expired")]
     CeremonyExpired,
 
+    /// A registration ceremony started by one account was finished by another.
+    #[error("Passkey ceremony belongs to a different account")]
+    CeremonyAccountMismatch,
+
     /// A `/login/finish` assertion carried a credential id with no
-    /// matching account - the passkey equivalent of a bad username, kept
-    /// separate from `InvalidCredentials` (which is about a wrong
-    /// *password*) so server logs distinguish the two auth methods.
+    /// matching account.
     #[error("No account for that passkey")]
     UnknownPasskey,
 
-    /// Passkey sign-in is a genuinely optional feature (see
-    /// `passkey::build_webauthn`) - this deployment has no `HWAITING_RP_ID`/
-    /// `HWAITING_RP_ORIGINS` configured, so every passkey endpoint that would need
-    /// the WebAuthn machinery returns this instead of panicking or
-    /// pretending to work.
+    /// This deployment has no `HWAITING_RP_ID`/`HWAITING_RP_ORIGINS`
+    /// configured, so passkey endpoints that need WebAuthn return this.
     #[error("Passkey sign-in is not configured on this server")]
     PasskeysDisabled,
+
+    #[error("Cannot remove the account's only sign-in method")]
+    LastSignInMethod,
 
     #[error("Sign-ups are disabled on this server")]
     SignupsDisabled,
@@ -104,8 +143,11 @@ pub enum AppError {
     #[error("Username already exists")]
     UsernameExists,
 
-    #[error("Forbidden")]
-    Forbidden,
+    #[error("Missing or invalid X-Requested-With header")]
+    CsrfHeaderMissing,
+
+    #[error("Admin access required")]
+    AdminRequired,
 
     #[error("Not found")]
     NotFound,
@@ -123,128 +165,133 @@ impl From<argon2::password_hash::Error> for AppError {
     }
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        if let AppError::TranslationLanguage(code) = &self {
-            let message = match code {
-                TranslationLanguageErrorCode::TranslationLanguageNotConfigured => {
-                    "Choose a preferred translation language in your settings"
-                }
-                TranslationLanguageErrorCode::UnknownTranslationLanguage => {
-                    "Unknown translation-language code"
-                }
-                TranslationLanguageErrorCode::InvalidTranslationLanguage => {
-                    "Expected a lowercase three-letter translation language code"
-                }
-            };
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: message.into(),
-                    code: Some(*code),
-                }),
-            )
-                .into_response();
-        }
-        let (status, message) = match self {
-            AppError::TranslationLanguage(_) => unreachable!(),
+impl AppError {
+    /// Status, code, and client-facing message. Logs server-side details for
+    /// failures whose message is deliberately generic.
+    fn parts(self) -> (StatusCode, ErrorCode, String) {
+        use ErrorCode as C;
+        use StatusCode as S;
+        let fixed = |status, code, message: &str| (status, code, message.to_string());
+        match self {
+            AppError::TranslationLanguageNotConfigured => fixed(
+                S::BAD_REQUEST,
+                C::TranslationLanguageNotConfigured,
+                "Choose a preferred translation language in your settings",
+            ),
+            AppError::UnknownTranslationLanguage => fixed(
+                S::BAD_REQUEST,
+                C::UnknownTranslationLanguage,
+                "Unknown translation-language code",
+            ),
+            AppError::InvalidTranslationLanguage => fixed(
+                S::BAD_REQUEST,
+                C::InvalidTranslationLanguage,
+                "Expected a lowercase three-letter translation language code",
+            ),
             AppError::StaleReview => {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(StaleAnswerResponse {
-                        error: "Card review state has changed".to_string(),
-                        code: StaleAnswerCode::StaleReview,
-                    }),
-                )
-                    .into_response();
+                fixed(S::CONFLICT, C::StaleReview, "Card review state has changed")
             }
             AppError::StaleContent => {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(StaleAnswerResponse {
-                        error: "Card content has changed".to_string(),
-                        code: StaleAnswerCode::StaleContent,
-                    }),
-                )
-                    .into_response();
+                fixed(S::CONFLICT, C::StaleContent, "Card content has changed")
             }
-            AppError::StalePrompt => {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(StaleAnswerResponse {
-                        error: "The selected sentence has changed".to_string(),
-                        code: StaleAnswerCode::StalePrompt,
-                    }),
-                )
-                    .into_response();
-            }
-            AppError::Database(ref e) => {
+            AppError::StalePrompt => fixed(
+                S::CONFLICT,
+                C::StalePrompt,
+                "The selected sentence has changed",
+            ),
+            AppError::CardSuppressed => fixed(S::CONFLICT, C::CardSuppressed, "Card is suppressed"),
+            AppError::Database(e) => {
                 error!("Database error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error".to_string(),
-                )
+                fixed(S::INTERNAL_SERVER_ERROR, C::InternalError, "Database error")
             }
             AppError::PasswordHash => {
                 error!("Password hash error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Authentication error".to_string(),
+                fixed(
+                    S::INTERNAL_SERVER_ERROR,
+                    C::InternalError,
+                    "Authentication error",
                 )
             }
-            AppError::InvalidCredentials => {
-                (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+            AppError::Unauthenticated => {
+                fixed(S::UNAUTHORIZED, C::Unauthenticated, "Not authenticated")
             }
-            AppError::Webauthn(ref e) => {
+            AppError::InvalidCredentials => fixed(
+                S::UNAUTHORIZED,
+                C::InvalidCredentials,
+                "Invalid credentials",
+            ),
+            AppError::Webauthn(e) => {
                 error!("Passkey ceremony failed: {:?}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Passkey ceremony failed".to_string(),
+                fixed(
+                    S::BAD_REQUEST,
+                    C::PasskeyCeremonyFailed,
+                    "Passkey ceremony failed",
                 )
             }
-            AppError::CeremonyNotFound => (
-                StatusCode::BAD_REQUEST,
-                "Unknown or already-used passkey ceremony".to_string(),
+            AppError::CeremonyNotFound => fixed(
+                S::BAD_REQUEST,
+                C::PasskeyCeremonyNotFound,
+                "Unknown or already-used passkey ceremony",
             ),
-            AppError::CeremonyExpired => (
-                StatusCode::GONE,
-                "Passkey ceremony expired, please try again".to_string(),
+            AppError::CeremonyExpired => fixed(
+                S::GONE,
+                C::PasskeyCeremonyExpired,
+                "Passkey ceremony expired, please try again",
             ),
-            AppError::UnknownPasskey => (
-                StatusCode::UNAUTHORIZED,
-                "No account for that passkey".to_string(),
+            AppError::CeremonyAccountMismatch => fixed(
+                S::FORBIDDEN,
+                C::PasskeyCeremonyAccountMismatch,
+                "Passkey ceremony belongs to a different account",
             ),
-            AppError::PasskeysDisabled => (
-                StatusCode::NOT_IMPLEMENTED,
-                "Passkey sign-in is not configured on this server".to_string(),
+            AppError::UnknownPasskey => fixed(
+                S::UNAUTHORIZED,
+                C::UnknownPasskey,
+                "No account for that passkey",
+            ),
+            AppError::PasskeysDisabled => fixed(
+                S::NOT_IMPLEMENTED,
+                C::PasskeysDisabled,
+                "Passkey sign-in is not configured on this server",
+            ),
+            AppError::LastSignInMethod => fixed(
+                S::CONFLICT,
+                C::LastSignInMethod,
+                "Cannot remove the account's only sign-in method",
             ),
             AppError::UsernameExists => {
-                (StatusCode::CONFLICT, "Username already exists".to_string())
+                fixed(S::CONFLICT, C::UsernameExists, "Username already exists")
             }
-            AppError::SignupsDisabled => (
-                StatusCode::FORBIDDEN,
-                "Sign-ups are disabled on this server".to_string(),
+            AppError::SignupsDisabled => fixed(
+                S::FORBIDDEN,
+                C::SignupsDisabled,
+                "Sign-ups are disabled on this server",
             ),
-            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
-            AppError::NotFound => (StatusCode::NOT_FOUND, "Not found".to_string()),
-            AppError::BadRequest(ref msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            AppError::Internal(ref msg) => {
+            AppError::CsrfHeaderMissing => fixed(
+                S::FORBIDDEN,
+                C::CsrfHeaderMissing,
+                "Missing or invalid X-Requested-With header",
+            ),
+            AppError::AdminRequired => {
+                fixed(S::FORBIDDEN, C::AdminRequired, "Admin access required")
+            }
+            AppError::NotFound => fixed(S::NOT_FOUND, C::NotFound, "Not found"),
+            AppError::BadRequest(msg) => (S::BAD_REQUEST, C::InvalidRequest, msg),
+            AppError::Internal(msg) => {
                 error!("Internal error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
+                fixed(
+                    S::INTERNAL_SERVER_ERROR,
+                    C::InternalError,
+                    "Internal server error",
                 )
             }
-        };
+        }
+    }
+}
 
-        (
-            status,
-            Json(ErrorResponse {
-                error: message,
-                code: None,
-            }),
-        )
-            .into_response()
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, code, error) = self.parts();
+        (status, Json(ErrorResponse { error, code })).into_response()
     }
 }
 
@@ -330,5 +377,59 @@ where
             Ok(Query(value)) => Ok(AppQuery(value)),
             Err(rejection) => Err(AppError::BadRequest(rejection.body_text())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn rendered(error: AppError) -> (StatusCode, serde_json::Value) {
+        let response = error.into_response();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn every_error_carries_a_code_and_formerly_ambiguous_403s_are_distinct() {
+        let cases = [
+            (AppError::CsrfHeaderMissing, 403, "csrf_header_missing"),
+            (AppError::AdminRequired, 403, "admin_required"),
+            (AppError::SignupsDisabled, 403, "signups_disabled"),
+            (
+                AppError::CeremonyAccountMismatch,
+                403,
+                "passkey_ceremony_account_mismatch",
+            ),
+            (AppError::CardSuppressed, 409, "card_suppressed"),
+            (AppError::StaleReview, 409, "stale_review"),
+            (AppError::LastSignInMethod, 409, "last_sign_in_method"),
+            (AppError::Unauthenticated, 401, "unauthenticated"),
+            (AppError::InvalidCredentials, 401, "invalid_credentials"),
+            (AppError::BadRequest("nope".into()), 400, "invalid_request"),
+            (
+                AppError::TranslationLanguageNotConfigured,
+                400,
+                "translation_language_not_configured",
+            ),
+            (
+                AppError::Internal("secret detail".into()),
+                500,
+                "internal_error",
+            ),
+        ];
+        for (error, status, code) in cases {
+            let (actual_status, body) = rendered(error).await;
+            assert_eq!(actual_status.as_u16(), status, "{code}");
+            assert_eq!(body["code"], code);
+            assert!(body["error"].is_string(), "{code}");
+        }
+        let (_, body) = rendered(AppError::Internal("secret detail".into())).await;
+        assert!(!body["error"].as_str().unwrap().contains("secret"));
+        let (_, body) = rendered(AppError::BadRequest("nope".into())).await;
+        assert_eq!(body["error"], "nope");
     }
 }

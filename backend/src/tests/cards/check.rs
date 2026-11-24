@@ -536,12 +536,7 @@ async fn reveal_failure_rolls_back_review_and_allows_retry() {
         }),
     )
     .await;
-    assert!(matches!(
-        result,
-        Err(AppError::TranslationLanguage(
-            crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage
-        ))
-    ));
+    assert!(matches!(result, Err(AppError::UnknownTranslationLanguage)));
     for table in ["cards_states", "review_history", "wrong_answers"] {
         let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(&pool)
@@ -728,4 +723,33 @@ async fn token_identifies_card_and_freshness_does_not_record_a_review() {
     .await
     .unwrap();
     assert!(!fresh.0.valid);
+}
+
+#[tokio::test]
+async fn answering_a_suppressed_card_conflicts_without_recording_a_review() {
+    let pool = test_pool().await;
+    let user_id = test_user(&pool).await;
+    let answer = target_for(&pool, 1).await;
+    let attempt_token = crate::cards::issue_attempt_token(user_id, 1, 1, 0, 0, "eng").unwrap();
+    sqlx::query("INSERT INTO users_card_flags (user_id, card_id, suppressed) VALUES (?, 1, 1)")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let result = check_answer(
+        State(pool.clone()),
+        AuthUser(user_id),
+        AppJson(CheckRequest {
+            answer,
+            attempt_token,
+        }),
+    )
+    .await;
+    assert!(matches!(result, Err(AppError::CardSuppressed)));
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_history WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
 }

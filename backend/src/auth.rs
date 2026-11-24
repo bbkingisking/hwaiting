@@ -292,7 +292,7 @@ pub(crate) fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError
     .map(|data| data.claims)
     .map_err(|e| {
         warn!("Token validation failed: {:?}", e);
-        AppError::InvalidCredentials
+        AppError::Unauthenticated
     })
 }
 
@@ -380,7 +380,7 @@ where
                 "Non-admin user {} attempted to access admin endpoint",
                 user_id
             );
-            return Err(AppError::Forbidden);
+            return Err(AppError::AdminRequired);
         }
 
         Ok(AdminUser(user_id))

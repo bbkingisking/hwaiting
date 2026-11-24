@@ -95,7 +95,7 @@ export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogPro
       onOpenChange(false)
     } catch (err) {
       setError(
-        err instanceof ApiError && err.status === 409
+        err instanceof ApiError && err.code === 'stale_content'
           ? 'This card has changed since you opened it. Your edits have not been saved. Copy your changes, then close and reopen the card from refreshed results before trying again.'
           : err instanceof Error
           ? err.message

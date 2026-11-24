@@ -220,10 +220,44 @@ export type DayHistory = {
 };
 
 /**
- * Common error envelope; language selection failures include an actionable code.
+ * Stable machine-readable error code. Each code always comes with the same
+ * HTTP status:
+ *
+ * - 400 `invalid_request`: malformed body, path, or query, or a failed validation rule
+ * - 400 `translation_language_not_configured`: choose a translation language in settings first
+ * - 400 `unknown_translation_language`: the code is well-formed but not an available language
+ * - 400 `invalid_translation_language`: not a lowercase three-letter code
+ * - 400 `passkey_ceremony_failed`: the authenticator response failed verification
+ * - 400 `passkey_ceremony_not_found`: unknown or already-used ceremony id; start over
+ * - 401 `unauthenticated`: missing, invalid, or expired authentication cookie
+ * - 401 `invalid_credentials`: wrong username or password
+ * - 401 `unknown_passkey`: no account owns the presented passkey
+ * - 403 `csrf_header_missing`: a write request lacks `X-Requested-With: XMLHttpRequest`
+ * - 403 `admin_required`: authenticated, but not an administrator
+ * - 403 `signups_disabled`: this deployment does not allow new accounts
+ * - 403 `passkey_ceremony_account_mismatch`: the ceremony was started by a different account
+ * - 404 `not_found`: the resource does not exist or is not visible to the caller
+ * - 409 `username_exists`: that username is taken
+ * - 409 `card_suppressed`: the card was suppressed after it was fetched
+ * - 409 `stale_review`: the card's review state changed since it was fetched
+ * - 409 `stale_content`: the card's content changed since it was fetched
+ * - 409 `stale_prompt`: the selected sentence changed since it was fetched
+ * - 409 `last_sign_in_method`: removing this passkey would leave the account with no way to sign in
+ * - 410 `passkey_ceremony_expired`: the ceremony timed out; start over
+ * - 500 `internal_error`: unexpected server failure
+ * - 501 `passkeys_disabled`: passkey sign-in is not configured on this server
+ */
+export type ErrorCode = 'invalid_request' | 'translation_language_not_configured' | 'unknown_translation_language' | 'invalid_translation_language' | 'passkey_ceremony_failed' | 'passkey_ceremony_not_found' | 'unauthenticated' | 'invalid_credentials' | 'unknown_passkey' | 'csrf_header_missing' | 'admin_required' | 'signups_disabled' | 'passkey_ceremony_account_mismatch' | 'not_found' | 'username_exists' | 'card_suppressed' | 'stale_review' | 'stale_content' | 'stale_prompt' | 'last_sign_in_method' | 'passkey_ceremony_expired' | 'internal_error' | 'passkeys_disabled';
+
+/**
+ * Envelope for every JSON error response. Branch on `code`; `error` is
+ * human-readable text whose wording may change.
  */
 export type ErrorResponse = {
-    code?: TranslationLanguageErrorCode;
+    code: ErrorCode;
+    /**
+     * Human-readable message, suitable for display.
+     */
     error: string;
 };
 
@@ -374,7 +408,14 @@ export type ListUsersResponse = {
 };
 
 export type LoginRequest = {
+    /**
+     * Leading and trailing whitespace is trimmed before verification,
+     * matching how sign-up hashes passwords.
+     */
     password: string;
+    /**
+     * Leading and trailing whitespace is trimmed before lookup.
+     */
     username: string;
 };
 
@@ -512,18 +553,18 @@ export type SaveAdminCardResponse = {
 };
 
 export type SignupRequest = {
+    /**
+     * Leading and trailing whitespace is trimmed before hashing (and again
+     * on every login), so it is not part of the password; the trimmed value
+     * must not be empty. `maxLength` applies to the value as sent.
+     */
     password: string;
+    /**
+     * Leading and trailing whitespace is trimmed before the account is
+     * created; the trimmed value must not be empty. `maxLength` applies to
+     * the value as sent.
+     */
     username: string;
-};
-
-export type StaleAnswerCode = 'stale_review' | 'stale_content' | 'stale_prompt';
-
-/**
- * Machine-readable response for a rejected stale answer.
- */
-export type StaleAnswerResponse = {
-    code: StaleAnswerCode;
-    error: string;
 };
 
 export type StartResponse = {
@@ -579,8 +620,6 @@ export type TodayStatsResponse = {
      */
     study_day: string;
 };
-
-export type TranslationLanguageErrorCode = 'translation_language_not_configured' | 'unknown_translation_language' | 'invalid_translation_language';
 
 /**
  * Partial card edit. Omitted fields are unchanged. For text content, target,
@@ -873,6 +912,9 @@ export type SaveAdminCardData = {
 };
 
 export type SaveAdminCardErrors = {
+    /**
+     * Invalid edit (`invalid_request` or `unknown_translation_language`)
+     */
     400: ErrorResponse;
     /**
      * Missing or invalid authentication cookie
@@ -886,7 +928,10 @@ export type SaveAdminCardErrors = {
      * Card not found
      */
     404: ErrorResponse;
-    409: StaleAnswerResponse;
+    /**
+     * Card content changed since expected_content_revision (`stale_content`); nothing was saved
+     */
+    409: ErrorResponse;
     /**
      * Internal server error
      */
@@ -896,6 +941,9 @@ export type SaveAdminCardErrors = {
 export type SaveAdminCardError = SaveAdminCardErrors[keyof SaveAdminCardErrors];
 
 export type SaveAdminCardResponses = {
+    /**
+     * Card saved; returns the updated authoring content
+     */
     200: SaveAdminCardResponse;
 };
 
@@ -1292,7 +1340,7 @@ export type SignupData = {
 
 export type SignupErrors = {
     /**
-     * Malformed request body
+     * Malformed request body, username or password empty after trimming, username longer than 64 characters, or password longer than 1024 characters
      */
     400: ErrorResponse;
     /**
@@ -1513,6 +1561,10 @@ export type GetHanjaDrillData = {
 
 export type GetHanjaDrillErrors = {
     /**
+     * Translation language is not configured or is unknown
+     */
+    400: ErrorResponse;
+    /**
      * Missing/invalid JWT
      */
     401: ErrorResponse;
@@ -1689,7 +1741,7 @@ export type CheckAnswerErrors = {
      */
     401: ErrorResponse;
     /**
-     * Card is suppressed; also returned for a missing or invalid X-Requested-With header
+     * Missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
     /**
@@ -1697,9 +1749,9 @@ export type CheckAnswerErrors = {
      */
     404: ErrorResponse;
     /**
-     * Review state, selected sentence, or card content changed since the card was fetched
+     * Card was suppressed (`card_suppressed`), or its review state (`stale_review`), selected sentence (`stale_prompt`), or content (`stale_content`) changed since it was fetched
      */
-    409: StaleAnswerResponse;
+    409: ErrorResponse;
     /**
      * Internal server error
      */
@@ -2195,10 +2247,6 @@ export type DeletePasskeyData = {
 
 export type DeletePasskeyErrors = {
     /**
-     * That passkey is the caller's only sign-in method
-     */
-    400: ErrorResponse;
-    /**
      * Missing/invalid JWT
      */
     401: ErrorResponse;
@@ -2210,6 +2258,10 @@ export type DeletePasskeyErrors = {
      * No such passkey on the caller's account
      */
     404: ErrorResponse;
+    /**
+     * That passkey is the caller's only sign-in method
+     */
+    409: ErrorResponse;
     /**
      * Internal server error
      */

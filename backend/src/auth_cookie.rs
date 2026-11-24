@@ -94,20 +94,20 @@ pub fn clear() -> Cookie<'static> {
 pub fn token(headers: &HeaderMap) -> Result<String, AppError> {
     let mut token = None;
     for header in headers.get_all(header::COOKIE) {
-        let value = header.to_str().map_err(|_| AppError::InvalidCredentials)?;
+        let value = header.to_str().map_err(|_| AppError::Unauthenticated)?;
         for parsed in Cookie::split_parse(value) {
-            let parsed = parsed.map_err(|_| AppError::InvalidCredentials)?;
+            let parsed = parsed.map_err(|_| AppError::Unauthenticated)?;
             if parsed.name() == COOKIE_NAME {
                 // Reject ambiguity between different cookie scopes.
                 if token.replace(parsed.value().to_owned()).is_some() {
-                    return Err(AppError::InvalidCredentials);
+                    return Err(AppError::Unauthenticated);
                 }
             }
         }
     }
     token
         .filter(|value| !value.is_empty())
-        .ok_or(AppError::InvalidCredentials)
+        .ok_or(AppError::Unauthenticated)
 }
 
 pub async fn protect_api(request: Request, next: Next) -> Result<Response, AppError> {
@@ -123,7 +123,7 @@ pub async fn protect_api(request: Request, next: Next) -> Result<Response, AppEr
         .and_then(|value| value.to_str().ok())
         != Some(CSRF_VALUE)
     {
-        return Err(AppError::Forbidden);
+        return Err(AppError::CsrfHeaderMissing);
     }
     let mut response = next.run(request).await;
     // Unlike Authorization headers, cookies alone do not prohibit shared

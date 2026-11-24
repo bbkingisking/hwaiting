@@ -17,9 +17,8 @@ impl TranslationLanguage {
                 .fetch_optional(executor)
                 .await?
                 .flatten();
-        code.map(Self).ok_or(AppError::TranslationLanguage(
-            crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured,
-        ))
+        code.map(Self)
+            .ok_or(AppError::TranslationLanguageNotConfigured)
     }
 
     pub async fn id<'e, E>(&self, executor: E) -> Result<i64, AppError>
@@ -30,9 +29,7 @@ impl TranslationLanguage {
             .bind(&self.0)
             .fetch_optional(executor)
             .await?
-            .ok_or(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage,
-            ))
+            .ok_or(AppError::UnknownTranslationLanguage)
     }
 }
 
@@ -74,9 +71,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             TranslationLanguage("zzz".into()).id(&pool).await,
-            Err(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::UnknownTranslationLanguage
-            ))
+            Err(AppError::UnknownTranslationLanguage)
         ));
         let languages = available_translation_languages(State(pool.clone()), AuthUser(user))
             .await
@@ -262,16 +257,12 @@ mod tests {
         .await;
         assert!(matches!(
             result,
-            Err(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured
-            ))
+            Err(AppError::TranslationLanguageNotConfigured)
         ));
         crate::user::ensure_settings_row(&pool, user).await.unwrap();
         assert!(matches!(
             TranslationLanguage::for_user(&pool, user).await,
-            Err(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::TranslationLanguageNotConfigured
-            ))
+            Err(AppError::TranslationLanguageNotConfigured)
         ));
     }
 }

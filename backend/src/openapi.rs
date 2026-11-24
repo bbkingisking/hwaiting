@@ -197,7 +197,6 @@ impl Modify for SecurityAddon {
     components(schemas(
         crate::events::Notification,
         crate::error::ErrorResponse,
-        crate::error::StaleAnswerResponse,
         crate::auth::LoginRequest,
         crate::auth::SignupRequest,
         crate::auth::AuthResponse,

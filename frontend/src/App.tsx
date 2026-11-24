@@ -398,13 +398,14 @@ function AppContent() {
       return { correct, reveal }
     } catch (err) {
       if (submission !== submissionVersion.current) return null
-      if (err instanceof ApiError && err.status === 409 && err.code === 'stale_review') {
+      if (err instanceof ApiError && (err.code === 'stale_review' || err.code === 'card_suppressed')) {
+        // No review was recorded; drop this prompt and move on.
         cancelPrefetch()
         discardInvalidPrompt()
         setStatsKey(value => value + 1)
         return null
       }
-      if (err instanceof ApiError && err.status === 409 && (err.code === 'stale_content' || err.code === 'stale_prompt')) {
+      if (err instanceof ApiError && (err.code === 'stale_content' || err.code === 'stale_prompt')) {
         // The answer belongs to an older prompt. Fetch the current version;
         // no review was recorded, so there is no reveal or stats refresh.
         setStaleReason(err.code === 'stale_prompt'

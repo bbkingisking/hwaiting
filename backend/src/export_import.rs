@@ -140,9 +140,7 @@ fn validate_import_data(data: &ExportData) -> Result<(), AppError> {
     crate::user::parse_study_timezone(data.settings.core.study_timezone.as_deref())?;
     if let Some(code) = &data.settings.core.translation_language {
         if code.len() != 3 || !code.bytes().all(|c| c.is_ascii_lowercase()) {
-            return Err(AppError::TranslationLanguage(
-                crate::error::TranslationLanguageErrorCode::InvalidTranslationLanguage,
-            ));
+            return Err(AppError::InvalidTranslationLanguage);
         }
     }
 

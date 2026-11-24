@@ -87,7 +87,7 @@ pub(crate) async fn validate_attempt(
     .await?
     .ok_or(AppError::NotFound)?;
     if row.get::<i64, _>("suppressed") != 0 {
-        return Err(AppError::Forbidden);
+        return Err(AppError::CardSuppressed);
     }
     if claims.review_revision != row.get::<i64, _>("review_revision") {
         return Err(AppError::StaleReview);
@@ -150,7 +150,7 @@ pub async fn validate_card_attempt(
         Ok(_) => true,
         Err(
             AppError::BadRequest(_)
-            | AppError::Forbidden
+            | AppError::CardSuppressed
             | AppError::NotFound
             | AppError::StaleReview
             | AppError::StaleContent
