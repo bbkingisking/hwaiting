@@ -1,12 +1,27 @@
 use utoipa::{
     Modify, OpenApi,
-    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    openapi::security::{ApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme},
     openapi::{
-        Required,
+        Ref, Required,
+        content::ContentBuilder,
         path::{ParameterBuilder, ParameterIn},
+        response::ResponseBuilder,
         schema::{ObjectBuilder, Type},
     },
 };
+
+fn error_response(description: &str) -> utoipa::openapi::RefOr<utoipa::openapi::Response> {
+    ResponseBuilder::new()
+        .description(description)
+        .content(
+            "application/json",
+            ContentBuilder::new()
+                .schema(Some(Ref::from_schema_name("ErrorResponse")))
+                .build(),
+        )
+        .build()
+        .into()
+}
 
 struct SecurityAddon;
 
@@ -20,6 +35,40 @@ impl Modify for SecurityAddon {
                 ))),
             );
         }
+        // Shared failures follow the same authentication and middleware rules as
+        // the router. Preserve endpoint-specific descriptions when present.
+        for path in openapi.paths.paths.values_mut() {
+            for operation in [
+                &mut path.get,
+                &mut path.post,
+                &mut path.put,
+                &mut path.patch,
+                &mut path.delete,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                operation
+                    .responses
+                    .responses
+                    .entry("500".into())
+                    .or_insert_with(|| error_response("Internal server error"));
+                if operation.security.as_ref().is_some_and(|requirements| {
+                    requirements.iter().any(|requirement| {
+                        *requirement
+                            == SecurityRequirement::new("cookie_auth", std::iter::empty::<&str>())
+                    })
+                }) {
+                    operation
+                        .responses
+                        .responses
+                        .entry("401".into())
+                        .or_insert_with(|| {
+                            error_response("Missing or invalid authentication cookie")
+                        });
+                }
+            }
+        }
         // Keep the write requirement executable in Swagger UI and visible
         // to generated clients, including unauthenticated login endpoints.
         for path in openapi.paths.paths.values_mut() {
@@ -32,6 +81,20 @@ impl Modify for SecurityAddon {
             .into_iter()
             .flatten()
             {
+                operation
+                    .responses
+                    .responses
+                    .entry("403".into())
+                    .and_modify(|response| {
+                        if let utoipa::openapi::RefOr::T(response) = response {
+                            response.description.push_str(
+                                "; also returned for a missing or invalid X-Requested-With header",
+                            );
+                        }
+                    })
+                    .or_insert_with(|| {
+                        error_response("Missing or invalid X-Requested-With header")
+                    });
                 operation.parameters.get_or_insert_with(Vec::new).push(
                     ParameterBuilder::new()
                         .name("X-Mutation-Id")
@@ -172,6 +235,32 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_failures_match_authentication_and_write_middleware() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        for item in spec["paths"].as_object().unwrap().values() {
+            for (method, operation) in item.as_object().unwrap() {
+                assert!(operation["responses"].get("500").is_some());
+                if operation.get("security").is_some() {
+                    assert!(operation["responses"].get("401").is_some());
+                }
+                if matches!(method.as_str(), "post" | "put" | "patch" | "delete") {
+                    assert!(operation["responses"].get("403").is_some());
+                }
+            }
+        }
+        assert!(
+            spec["paths"]["/api/capabilities"]["get"]["responses"]
+                .get("401")
+                .is_none()
+        );
+        assert!(
+            spec["paths"]["/api/admin/cards/{card_id}"]["patch"]["responses"]
+                .get("404")
+                .is_some()
+        );
+    }
 
     #[test]
     fn passkey_ceremonies_describe_their_wire_envelopes() {

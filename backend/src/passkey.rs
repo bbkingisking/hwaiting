@@ -657,6 +657,7 @@ async fn finish_registration(
     path = "/api/auth/passkey/register/start",
     description = "Begin creating a new passkey-only account and return a ceremony ID and WebAuthn creation options. Complete the browser ceremony and submit its credential to the registration finish endpoint; sign-ups and passkeys must be enabled.",
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 200, body = StartResponse, description = "WebAuthn creation options for a new passkey account. \
             Opaque to OpenAPI - pass straight to navigator.credentials.create() after \
@@ -682,6 +683,7 @@ pub async fn register_start(
     description = "Verify the credential from a new-account registration ceremony, create a passkey-only account, and set the HttpOnly authentication cookie. The ceremony must be unexpired and sign-ups must still be enabled.",
     request_body = PasskeyFinishRequest,
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
         (status = 201, description = "Account created from the verified passkey", body = AuthResponse),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
@@ -718,6 +720,7 @@ pub async fn register_finish(
     path = "/api/auth/passkey/login/start",
     description = "Begin passkey sign-in and return a ceremony ID and WebAuthn request options. The browser lets the user choose a discoverable credential; submit the result to the login finish endpoint.",
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 200, body = StartResponse, description = "WebAuthn request options for a discoverable-credential \
             sign-in (empty allowCredentials - the browser's own picker lists every passkey \
             registered for this site). Opaque to OpenAPI."),
@@ -752,6 +755,7 @@ pub async fn login_start(State(state): State<AppState>) -> Result<Json<StartResp
     description = "Verify the credential from a passkey sign-in ceremony and set the HttpOnly authentication cookie for its account. Unknown or expired ceremonies and credentials that match no account are rejected.",
     request_body = PasskeyFinishRequest,
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 200, description = "Signed in", body = AuthResponse),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 401, description = "No account matches that passkey", body = crate::error::ErrorResponse),
@@ -995,6 +999,7 @@ pub async fn update_passkey(
     path = "/api/user/passkeys/register/start",
     description = "Begin adding a passkey to the current user's existing account and return a ceremony ID and WebAuthn creation options. Submit the browser credential to the authenticated registration finish endpoint.",
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 200, body = StartResponse, description = "WebAuthn creation options for adding a passkey to the \
             caller's existing account. Opaque to OpenAPI."),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
@@ -1024,6 +1029,7 @@ pub async fn add_passkey_start(
     description = "Verify a passkey registration ceremony and attach the credential to the current user's account. The ceremony must be unexpired and belong to the same account.",
     request_body = PasskeyFinishRequest,
     responses(
+        (status = 501, description = "Passkeys are not configured on this deployment", body = crate::error::ErrorResponse),
         (status = 201, description = "Passkey added to the caller's account", body = PasskeySummary),
         (status = 400, description = "Ceremony verification failed, or unknown ceremony id", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),

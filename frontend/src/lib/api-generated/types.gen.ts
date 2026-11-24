@@ -715,6 +715,27 @@ export type SearchCardSummariesData = {
     url: '/api/admin/cards/search';
 };
 
+export type SearchCardSummariesErrors = {
+    /**
+     * Invalid path or query parameters
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid authentication cookie
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type SearchCardSummariesError = SearchCardSummariesErrors[keyof SearchCardSummariesErrors];
+
 export type SearchCardSummariesResponses = {
     200: AdminSearchResponse;
 };
@@ -731,7 +752,23 @@ export type GetAdminCardData = {
 };
 
 export type GetAdminCardErrors = {
+    /**
+     * Invalid path or query parameters
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid authentication cookie
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required
+     */
+    403: ErrorResponse;
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetAdminCardError = GetAdminCardErrors[keyof GetAdminCardErrors];
@@ -763,7 +800,23 @@ export type SaveAdminCardData = {
 
 export type SaveAdminCardErrors = {
     400: ErrorResponse;
+    /**
+     * Missing or invalid authentication cookie
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required; also returned for a missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Card not found
+     */
+    404: ErrorResponse;
     409: StaleAnswerResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type SaveAdminCardError = SaveAdminCardErrors[keyof SaveAdminCardErrors];
@@ -799,6 +852,10 @@ export type GetCardInflectionsErrors = {
      * Card doesn't exist
      */
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetCardInflectionsError = GetCardInflectionsErrors[keyof GetCardInflectionsErrors];
@@ -837,6 +894,10 @@ export type ListFeedbackErrors = {
      * Admin access required
      */
     403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ListFeedbackError = ListFeedbackErrors[keyof ListFeedbackErrors];
@@ -871,6 +932,10 @@ export type ListUsersErrors = {
      * Valid JWT but not an admin
      */
     403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ListUsersError = ListUsersErrors[keyof ListUsersErrors];
@@ -910,6 +975,14 @@ export type LoginErrors = {
      * Invalid credentials
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type LoginError = LoginErrors[keyof LoginErrors];
@@ -939,6 +1012,19 @@ export type LogoutData = {
     query?: never;
     url: '/api/auth/logout';
 };
+
+export type LogoutErrors = {
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
 
 export type LogoutResponses = {
     /**
@@ -976,9 +1062,21 @@ export type LoginFinishErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * Ceremony expired
      */
     410: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
 };
 
 export type LoginFinishError = LoginFinishErrors[keyof LoginFinishErrors];
@@ -1008,6 +1106,23 @@ export type LoginStartData = {
     query?: never;
     url: '/api/auth/passkey/login/start';
 };
+
+export type LoginStartErrors = {
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
+};
+
+export type LoginStartError = LoginStartErrors[keyof LoginStartErrors];
 
 export type LoginStartResponses = {
     /**
@@ -1041,13 +1156,21 @@ export type RegisterFinishErrors = {
      */
     400: ErrorResponse;
     /**
-     * Sign-ups are disabled
+     * Sign-ups are disabled; also returned for a missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
     /**
      * Ceremony expired
      */
     410: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
 };
 
 export type RegisterFinishError = RegisterFinishErrors[keyof RegisterFinishErrors];
@@ -1080,9 +1203,17 @@ export type RegisterStartData = {
 
 export type RegisterStartErrors = {
     /**
-     * Sign-ups are disabled
+     * Sign-ups are disabled; also returned for a missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
 };
 
 export type RegisterStartError = RegisterStartErrors[keyof RegisterStartErrors];
@@ -1119,13 +1250,17 @@ export type SignupErrors = {
      */
     400: ErrorResponse;
     /**
-     * Sign-ups are disabled
+     * Sign-ups are disabled; also returned for a missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
     /**
      * Username already exists
      */
     409: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type SignupError = SignupErrors[keyof SignupErrors];
@@ -1146,6 +1281,15 @@ export type CapabilitiesData = {
     url: '/api/capabilities';
 };
 
+export type CapabilitiesErrors = {
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type CapabilitiesError = CapabilitiesErrors[keyof CapabilitiesErrors];
+
 export type CapabilitiesResponses = {
     /**
      * Which optional features this deployment has turned on
@@ -1161,6 +1305,19 @@ export type AvailableTranslationLanguagesData = {
     query?: never;
     url: '/api/cards/languages';
 };
+
+export type AvailableTranslationLanguagesErrors = {
+    /**
+     * Missing or invalid authentication cookie
+     */
+    401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type AvailableTranslationLanguagesError = AvailableTranslationLanguagesErrors[keyof AvailableTranslationLanguagesErrors];
 
 export type AvailableTranslationLanguagesResponses = {
     200: Array<AvailableTranslationLanguage>;
@@ -1180,6 +1337,10 @@ export type ListSuppressedCardsErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ListSuppressedCardsError = ListSuppressedCardsErrors[keyof ListSuppressedCardsErrors];
@@ -1221,9 +1382,17 @@ export type SuppressCardErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * Card not found
      */
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type SuppressCardError = SuppressCardErrors[keyof SuppressCardErrors];
@@ -1264,6 +1433,14 @@ export type UnsuppressCardErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type UnsuppressCardError = UnsuppressCardErrors[keyof UnsuppressCardErrors];
@@ -1289,6 +1466,10 @@ export type GetHanjaDrillErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetHanjaDrillError = GetHanjaDrillErrors[keyof GetHanjaDrillErrors];
@@ -1314,7 +1495,13 @@ export type SubscribeErrors = {
      * Missing or expired authentication
      */
     401: unknown;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
+
+export type SubscribeError = SubscribeErrors[keyof SubscribeErrors];
 
 export type SubscribeResponses = {
     /**
@@ -1357,9 +1544,17 @@ export type SubmitFeedbackErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * Sentence not found
      */
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
@@ -1380,6 +1575,15 @@ export type HealthCheckData = {
     url: '/api/health';
 };
 
+export type HealthCheckErrors = {
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type HealthCheckError = HealthCheckErrors[keyof HealthCheckErrors];
+
 export type HealthCheckResponses = {
     /**
      * Service is up
@@ -1398,6 +1602,10 @@ export type ListGrammarPatternsData = {
 
 export type ListGrammarPatternsErrors = {
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
@@ -1435,7 +1643,7 @@ export type CheckAnswerErrors = {
      */
     401: ErrorResponse;
     /**
-     * Card is suppressed
+     * Card is suppressed; also returned for a missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
     /**
@@ -1446,6 +1654,10 @@ export type CheckAnswerErrors = {
      * Review state, selected sentence, or card content changed since the card was fetched
      */
     409: StaleAnswerResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type CheckAnswerError = CheckAnswerErrors[keyof CheckAnswerErrors];
@@ -1486,6 +1698,10 @@ export type ValidateCardAttemptErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * Operational failure
      */
     500: ErrorResponse;
@@ -1524,6 +1740,10 @@ export type GetReviewQueueErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetReviewQueueError = GetReviewQueueErrors[keyof GetReviewQueueErrors];
@@ -1559,6 +1779,14 @@ export type ResetFsrsParametersErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ResetFsrsParametersError = ResetFsrsParametersErrors[keyof ResetFsrsParametersErrors];
@@ -1598,6 +1826,14 @@ export type OptimizeFsrsErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type OptimizeFsrsError = OptimizeFsrsErrors[keyof OptimizeFsrsErrors];
@@ -1623,6 +1859,10 @@ export type GetHistoryErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetHistoryError = GetHistoryErrors[keyof GetHistoryErrors];
@@ -1648,6 +1888,10 @@ export type GetTodayStatsErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetTodayStatsError = GetTodayStatsErrors[keyof GetTodayStatsErrors];
@@ -1673,6 +1917,10 @@ export type ExportDataErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ExportDataError = ExportDataErrors[keyof ExportDataErrors];
@@ -1712,6 +1960,14 @@ export type ImportDataErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ImportDataError = ImportDataErrors[keyof ImportDataErrors];
@@ -1737,6 +1993,10 @@ export type GetProfileErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetProfileError = GetProfileErrors[keyof GetProfileErrors];
@@ -1762,6 +2022,10 @@ export type ListPasskeysErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type ListPasskeysError = ListPasskeysErrors[keyof ListPasskeysErrors];
@@ -1802,13 +2066,21 @@ export type AddPasskeyFinishErrors = {
      */
     401: ErrorResponse;
     /**
-     * Ceremony belongs to a different account
+     * Ceremony belongs to a different account; also returned for a missing or invalid X-Requested-With header
      */
     403: ErrorResponse;
     /**
      * Ceremony expired
      */
     410: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
 };
 
 export type AddPasskeyFinishError = AddPasskeyFinishErrors[keyof AddPasskeyFinishErrors];
@@ -1844,6 +2116,18 @@ export type AddPasskeyStartErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+    /**
+     * Passkeys are not configured on this deployment
+     */
+    501: ErrorResponse;
 };
 
 export type AddPasskeyStartError = AddPasskeyStartErrors[keyof AddPasskeyStartErrors];
@@ -1889,9 +2173,17 @@ export type DeletePasskeyErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * No such passkey on the caller's account
      */
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type DeletePasskeyError = DeletePasskeyErrors[keyof DeletePasskeyErrors];
@@ -1937,9 +2229,17 @@ export type UpdatePasskeyErrors = {
      */
     401: ErrorResponse;
     /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
      * No such passkey on the caller's account
      */
     404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type UpdatePasskeyError = UpdatePasskeyErrors[keyof UpdatePasskeyErrors];
@@ -1965,6 +2265,10 @@ export type GetSettingsErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type GetSettingsError = GetSettingsErrors[keyof GetSettingsErrors];
@@ -2004,6 +2308,14 @@ export type UpdateSettingsErrors = {
      * Missing/invalid JWT
      */
     401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
 };
 
 export type UpdateSettingsError = UpdateSettingsErrors[keyof UpdateSettingsErrors];
