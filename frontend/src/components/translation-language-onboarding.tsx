@@ -119,7 +119,7 @@ export function TranslationLanguageOnboarding({ saving, saveError, onSelect }: P
             const result = await logout()
             if (!result.success) setSignoutError(result.error ?? 'Could not sign out')
           }}
-          className='mt-6 text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-50'
+          className='mx-auto mt-6 block text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-50'
         >
           Sign out
         </button>
