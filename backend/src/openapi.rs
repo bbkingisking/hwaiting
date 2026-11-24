@@ -6,7 +6,7 @@ use utoipa::{
         content::ContentBuilder,
         path::{ParameterBuilder, ParameterIn},
         response::ResponseBuilder,
-        schema::{ObjectBuilder, Type},
+        schema::{AllOfBuilder, ObjectBuilder, OneOfBuilder, Type},
     },
 };
 
@@ -42,25 +42,46 @@ impl Modify for SecurityAddon {
             // Notification serialized as JSON in `data`.
             components.schemas.insert(
                 "NotificationEvent".into(),
-                ObjectBuilder::new()
-                    .description(Some(
-                        "One server-sent event: `event` names the notification type and `data` carries the Notification as JSON.",
-                    ))
-                    .property(
-                        "event",
-                        ObjectBuilder::new()
-                            .schema_type(Type::String)
-                            .enum_values(Some(["card-mutated", "state-changed", "resync-required"])),
+                ["card-mutated", "state-changed", "resync-required"]
+                    .into_iter()
+                    .fold(
+                        OneOfBuilder::new().description(Some(
+                            "One server-sent event: `event` equals the notification `type` in the JSON carried by `data`.",
+                        )),
+                        |events, kind| {
+                            events.item(
+                                ObjectBuilder::new()
+                                    .property(
+                                        "event",
+                                        ObjectBuilder::new()
+                                            .schema_type(Type::String)
+                                            .enum_values(Some([kind])),
+                                    )
+                                    .property(
+                                        "data",
+                                        ObjectBuilder::new()
+                                            .schema_type(Type::String)
+                                            .content_media_type("application/json")
+                                            .content_schema(Some(
+                                                AllOfBuilder::new()
+                                                    .item(Ref::from_schema_name("Notification"))
+                                                    .item(
+                                                        ObjectBuilder::new()
+                                                            .property(
+                                                                "type",
+                                                                ObjectBuilder::new()
+                                                                    .schema_type(Type::String)
+                                                                    .enum_values(Some([kind])),
+                                                            )
+                                                            .required("type"),
+                                                    ),
+                                            )),
+                                    )
+                                    .required("event")
+                                    .required("data"),
+                            )
+                        },
                     )
-                    .property(
-                        "data",
-                        ObjectBuilder::new()
-                            .schema_type(Type::String)
-                            .content_media_type("application/json")
-                            .content_schema(Some(Ref::from_schema_name("Notification"))),
-                    )
-                    .required("event")
-                    .required("data")
                     .into(),
             );
             // Translation maps are keyed by language code; utoipa only types keys as strings.
@@ -378,24 +399,33 @@ mod tests {
             "#/components/schemas/NotificationEvent"
         );
         let event = &spec["components"]["schemas"]["NotificationEvent"];
-        assert_eq!(
-            event["properties"]["data"]["contentSchema"]["$ref"],
-            "#/components/schemas/Notification"
-        );
-        // The documented event names must cover every Notification variant.
-        let names = event["properties"]["event"]["enum"].as_array().unwrap();
-        for notification in [
-            crate::events::Notification::CardMutated {
-                card_id: 1,
-                mutation_id: None,
-            },
-            crate::events::Notification::StateChanged { mutation_id: None },
-            crate::events::Notification::ResyncRequired { mutation_id: None },
-        ] {
-            let kind = serde_json::to_value(notification).unwrap()["type"].clone();
-            assert!(
-                names.contains(&kind),
-                "{kind} missing from NotificationEvent"
+        let branches = event["oneOf"].as_array().unwrap();
+        let notification_variants = schemas["Notification"]["oneOf"].as_array().unwrap();
+        assert_eq!(branches.len(), notification_variants.len());
+        // Each event name permits only the matching decoded payload type, while
+        // retaining the full Notification constraints (e.g. card_id is required).
+        for variant in notification_variants {
+            let kind = &variant["properties"]["type"]["enum"][0];
+            let matching: Vec<_> = branches
+                .iter()
+                .filter(|branch| branch["properties"]["event"]["enum"] == serde_json::json!([kind]))
+                .collect();
+            assert_eq!(
+                matching.len(),
+                1,
+                "{kind} must have exactly one event branch"
+            );
+            let branch = matching[0];
+            assert_eq!(branch["required"], serde_json::json!(["event", "data"]));
+            let data = &branch["properties"]["data"];
+            assert_eq!(data["type"], "string");
+            assert_eq!(data["contentMediaType"], "application/json");
+            let payload = &data["contentSchema"]["allOf"];
+            assert_eq!(payload[0]["$ref"], "#/components/schemas/Notification");
+            assert_eq!(payload[1]["required"], serde_json::json!(["type"]));
+            assert_eq!(
+                payload[1]["properties"]["type"]["enum"],
+                serde_json::json!([kind])
             );
         }
         // OpenAPI requires a description on every response object.

@@ -430,11 +430,17 @@ export type Notification = {
 };
 
 /**
- * One server-sent event: `event` names the notification type and `data` carries the Notification as JSON.
+ * One server-sent event: `event` equals the notification `type` in the JSON carried by `data`.
  */
 export type NotificationEvent = {
     data: string;
-    event: 'card-mutated' | 'state-changed' | 'resync-required';
+    event: 'card-mutated';
+} | {
+    data: string;
+    event: 'state-changed';
+} | {
+    data: string;
+    event: 'resync-required';
 };
 
 export type OptimizeFsrsResponse = {
