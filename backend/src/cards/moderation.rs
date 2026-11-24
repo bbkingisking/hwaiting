@@ -1,18 +1,13 @@
 //! Per-card moderation/curation actions that sit outside the FSRS review
 //! flow: the suppress/unsuppress rotation flags.
 
-use axum::{Json, extract::State};
+use axum::{Json, extract::State, http::StatusCode};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 use utoipa::ToSchema;
 
 use crate::error::{AppError, AppPath};
-
-#[derive(Serialize, ToSchema)]
-pub struct ReviewResponse {
-    success: bool,
-}
 
 #[derive(Serialize, ToSchema)]
 pub struct SuppressedCard {
@@ -34,11 +29,11 @@ pub struct SuppressedCardsResponse {
 
 #[utoipa::path(
     put,
-    path = "/api/cards/{card_id}/suppress",
+    path = "/api/cards/{card_id}/suppression",
     description = "Exclude a card from the current user's review rotation. Repeating the request keeps the card suppressed; other users are unaffected.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
-        (status = 200, description = "Card suppressed from review rotation", body = ReviewResponse),
+        (status = 204, description = "Card suppressed from review rotation"),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
     ),
@@ -49,7 +44,7 @@ pub async fn suppress_card(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
-) -> Result<Json<ReviewResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     info!(
         "Suppressing card for user_id: {}, card_id: {}",
@@ -77,7 +72,7 @@ pub async fn suppress_card(
 
     info!("Card suppressed successfully");
 
-    Ok(Json(ReviewResponse { success: true }))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // List all suppressed cards for the user
@@ -146,12 +141,13 @@ pub async fn list_suppressed_cards(
 }
 
 #[utoipa::path(
-    put,
-    path = "/api/cards/{card_id}/unsuppress",
-    description = "Clear the current user's suppression flag so the card can return to the review rotation when eligible. Succeeds even if no suppression flag or card exists.",
+    delete,
+    path = "/api/cards/{card_id}/suppression",
+    description = "Clear the current user's suppression flag so the card can return to the review rotation when eligible. Repeating the request, or clearing a card that was never suppressed, also succeeds.",
     params(("card_id" = i64, Path, description = "Card ID")),
     responses(
-        (status = 200, description = "Card unsuppressed", body = ReviewResponse),
+        (status = 204, description = "Card unsuppressed"),
+        (status = 404, description = "Card not found", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
     ),
     security(("cookie_auth" = [])),
@@ -161,28 +157,29 @@ pub async fn unsuppress_card(
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
-) -> Result<Json<ReviewResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     info!(
         "Unsuppressing card for user_id: {}, card_id: {}",
         user_id, card_id
     );
 
-    sqlx::query(
-        r#"
-        UPDATE users_card_flags
-        SET suppressed = 0
-        WHERE user_id = ? AND card_id = ?
-        "#,
-    )
-    .bind(user_id)
-    .bind(card_id)
-    .execute(&pool)
-    .await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE id = ?)")
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await?;
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+    sqlx::query("UPDATE users_card_flags SET suppressed = 0 WHERE user_id = ? AND card_id = ?")
+        .bind(user_id)
+        .bind(card_id)
+        .execute(&pool)
+        .await?;
 
     info!("Card unsuppressed successfully");
 
-    Ok(Json(ReviewResponse { success: true }))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]

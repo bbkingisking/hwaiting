@@ -212,7 +212,6 @@ impl Modify for SecurityAddon {
         crate::feedback::FeedbackRequest,
         crate::feedback::FeedbackResponse,
         crate::feedback::ListFeedbackResponse,
-        crate::cards::ReviewResponse,
         crate::cards::TodayStatsResponse,
         crate::cards::SuppressedCardsResponse,
         crate::cards::HanjaDrill,

@@ -223,7 +223,7 @@ pub fn answer(guess: &str, attempt_token: &str) -> Result<Value, AppError> {
         obj.remove("hanja_hints");
     }
 
-    put(&format!("/api/cards/{card_id}/suppress"), &client)?;
+    put(&format!("/api/cards/{card_id}/suppression"), &client)?;
 
     // Free the lease `review` took out on this card, now that it's
     // suppressed server-side and will never be handed out again anyway.
@@ -239,7 +239,7 @@ pub fn feedback(sentence_id: i64, text: &str) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
     let body = json!({ "body": text });
     parse(&post_json(
-        &format!("/api/feedback/submit?sentence_id={sentence_id}"),
+        &format!("/api/sentences/{sentence_id}/feedback"),
         &client,
         &body,
     )?)

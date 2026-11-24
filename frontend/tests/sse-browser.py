@@ -261,7 +261,7 @@ class BrowserScenarios(unittest.TestCase):
         self.wait.until(lambda d:d.find_elements(By.CSS_SELECTOR,'article[data-card-id]'))
         cid=int(self.driver.find_element(By.CSS_SELECTOR,'article[data-card-id]').get_attribute('data-card-id'))
         self.driver.find_element(By.CSS_SELECTOR,'input[aria-label="Answer"]').send_keys('keep on suppression')
-        assert self.request(f'/api/cards/{cid}/suppress','PUT')[0]==200
+        assert self.request(f'/api/cards/{cid}/suppression','PUT')[0]==204
         self.wait.until(lambda d: not d.find_elements(By.CSS_SELECTOR, f'article[data-card-id="{cid}"]'))
         self.wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, 'article[data-card-id]'))
         assert self.driver.find_element(By.CSS_SELECTOR, 'input[aria-label="Answer"]').get_attribute('value') == ''
@@ -348,7 +348,7 @@ class BrowserScenarios(unittest.TestCase):
         self.driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
         self.wait.until(lambda d: 'Incorrect. You typed' in d.find_element(By.TAG_NAME, 'body').text)
         self.driver.execute_script('window.blockNext=true')
-        assert self.request('/api/cards/2/suppress', 'PUT')[0] == 200
+        assert self.request('/api/cards/2/suppression', 'PUT')[0] == 204
         self.wait.until(lambda d: d.execute_script('return !!window.releaseNext'))
         self.driver.find_element(By.XPATH, "//button[text()='Next']").click()
         assert not self.driver.find_elements(By.CSS_SELECTOR, 'article[data-card-id="2"]')
@@ -377,7 +377,7 @@ class BrowserScenarios(unittest.TestCase):
         self.wait.until(lambda d:d.execute_script('return !!window.releaseCheck'))
         with sqlite3.connect(self.work/'test.db') as db:
             assert db.execute('SELECT review_revision FROM cards_states WHERE user_id=? AND card_id=1',(uid,)).fetchone()[0]==1
-        assert self.request('/api/cards/1/suppress', 'PUT')[0] == 200
+        assert self.request('/api/cards/1/suppression', 'PUT')[0] == 204
         self.driver.execute_script('window.releaseCheck()')
         self.wait.until(lambda d: d.find_elements(By.XPATH, "//button[text()='Next']"))
         self.driver.find_element(By.XPATH, "//button[text()='Next']").click()

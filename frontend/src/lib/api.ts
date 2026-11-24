@@ -13,7 +13,6 @@ import { fetchWithCookies } from './http'
 
 type CheckRequest = Schemas.CheckRequest
 type CheckResponse = Schemas.CheckResponse
-type ReviewResponse = Schemas.ReviewResponse
 type UserProfile = Schemas.UserProfile
 
 export type ReviewQueueChange = 'availability' | 'import'
@@ -121,11 +120,8 @@ export async function validateAttempt(attemptToken: string): Promise<boolean> {
   return result.valid
 }
 
-export async function suppressCard(cardId: number): Promise<ReviewResponse> {
-  const url = `${apiBase()}/api/cards/${cardId}/suppress`
-  return fetchWithAuth(url, {
-    method: 'PUT',
-  })
+export async function suppressCard(cardId: number): Promise<void> {
+  await fetchWithAuth(`${apiBase()}/api/cards/${cardId}/suppression`, { method: 'PUT' })
 }
 
 type SuppressedCard = Schemas.SuppressedCard
@@ -136,13 +132,9 @@ export async function listSuppressedCards(signal?: AbortSignal): Promise<Suppres
   return fetchWithAuth(url, { signal })
 }
 
-export async function unsuppressCard(cardId: number): Promise<ReviewResponse> {
-  const url = `${apiBase()}/api/cards/${cardId}/unsuppress`
-  const result = await fetchWithAuth(url, {
-    method: 'PUT',
-  })
+export async function unsuppressCard(cardId: number): Promise<void> {
+  await fetchWithAuth(`${apiBase()}/api/cards/${cardId}/suppression`, { method: 'DELETE' })
   notifyReviewQueueChanged('availability')
-  return result
 }
 
 type HanjaDrill = Schemas.HanjaDrill
@@ -369,7 +361,7 @@ export type FeedbackEntry = Schemas.FeedbackEntry
 
 export async function submitFeedback(sentenceId: number, text: string): Promise<Schemas.FeedbackResponse> {
   const body: Schemas.FeedbackRequest = { body: text }
-  return fetchWithAuth(`${apiBase()}/api/feedback/submit?sentence_id=${sentenceId}`, {
+  return fetchWithAuth(`${apiBase()}/api/sentences/${sentenceId}/feedback`, {
     method: 'POST',
     body: JSON.stringify(body),
   })

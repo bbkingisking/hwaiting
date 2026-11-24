@@ -120,18 +120,17 @@ async fn main() -> anyhow::Result<()> {
             get(cards::list_grammar_patterns),
         )
         .route("/reviews/answer", post(events::mutations::check_answer))
-        .route("/feedback/submit", post(feedback::submit_feedback))
+        .route(
+            "/sentences/{sentence_id}/feedback",
+            post(feedback::submit_feedback),
+        )
         .route("/admin/feedback", get(feedback::list_feedback))
         .route(
-            "/cards/{card_id}/suppress",
-            put(events::mutations::suppress_card),
+            "/cards/{card_id}/suppression",
+            put(events::mutations::suppress_card).delete(events::mutations::unsuppress_card),
         )
         .route("/cards/suppressed", get(cards::list_suppressed_cards))
         .route("/drills/hanja", get(cards::get_hanja_drill))
-        .route(
-            "/cards/{card_id}/unsuppress",
-            put(events::mutations::unsuppress_card),
-        )
         .route("/stats/today", get(cards::get_today_stats))
         .route("/stats/history", get(cards::get_history))
         .route(

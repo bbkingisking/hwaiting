@@ -32,7 +32,7 @@ pub async fn suppress_card(
     path: AppPath<i64>,
     auth: AuthUser,
     headers: HeaderMap,
-) -> Result<Json<cards::ReviewResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     let card_id = path.0;
     let response = cards::suppress_card(State(state.pool), path, auth).await?;
@@ -44,7 +44,7 @@ pub async fn unsuppress_card(
     path: AppPath<i64>,
     auth: AuthUser,
     headers: HeaderMap,
-) -> Result<Json<cards::ReviewResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let user_id = auth.0;
     let card_id = path.0;
     let response = cards::unsuppress_card(State(state.pool), path, auth).await?;

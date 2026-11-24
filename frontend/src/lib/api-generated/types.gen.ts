@@ -536,10 +536,6 @@ export type ReviewQueueResponse = {
 
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
 
-export type ReviewResponse = {
-    success: boolean;
-};
-
 export type ReviewState = 'learning' | 'review' | 'relearning';
 
 /**
@@ -1452,6 +1448,58 @@ export type ListSuppressedCardsResponses = {
 
 export type ListSuppressedCardsResponse = ListSuppressedCardsResponses[keyof ListSuppressedCardsResponses];
 
+export type UnsuppressCardData = {
+    body?: never;
+    headers: {
+        /**
+         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
+         */
+        'X-Mutation-Id'?: string;
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path: {
+        /**
+         * Card ID
+         */
+        card_id: number;
+    };
+    query?: never;
+    url: '/api/cards/{card_id}/suppression';
+};
+
+export type UnsuppressCardErrors = {
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Card not found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type UnsuppressCardError = UnsuppressCardErrors[keyof UnsuppressCardErrors];
+
+export type UnsuppressCardResponses = {
+    /**
+     * Card unsuppressed
+     */
+    204: void;
+};
+
+export type UnsuppressCardResponse = UnsuppressCardResponses[keyof UnsuppressCardResponses];
+
 export type SuppressCardData = {
     body?: never;
     headers: {
@@ -1471,7 +1519,7 @@ export type SuppressCardData = {
         card_id: number;
     };
     query?: never;
-    url: '/api/cards/{card_id}/suppress';
+    url: '/api/cards/{card_id}/suppression';
 };
 
 export type SuppressCardErrors = {
@@ -1499,58 +1547,10 @@ export type SuppressCardResponses = {
     /**
      * Card suppressed from review rotation
      */
-    200: ReviewResponse;
+    204: void;
 };
 
 export type SuppressCardResponse = SuppressCardResponses[keyof SuppressCardResponses];
-
-export type UnsuppressCardData = {
-    body?: never;
-    headers: {
-        /**
-         * Optional UUID echoed in SSE notifications for successful mutations, including import-triggered resync-required; invalid UUIDs are ignored. Connection and lag notifications omit it. Not an identity or idempotency key.
-         */
-        'X-Mutation-Id'?: string;
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path: {
-        /**
-         * Card ID
-         */
-        card_id: number;
-    };
-    query?: never;
-    url: '/api/cards/{card_id}/unsuppress';
-};
-
-export type UnsuppressCardErrors = {
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Missing or invalid X-Requested-With header
-     */
-    403: ErrorResponse;
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
-};
-
-export type UnsuppressCardError = UnsuppressCardErrors[keyof UnsuppressCardErrors];
-
-export type UnsuppressCardResponses = {
-    /**
-     * Card unsuppressed
-     */
-    200: ReviewResponse;
-};
-
-export type UnsuppressCardResponse = UnsuppressCardResponses[keyof UnsuppressCardResponses];
 
 export type GetHanjaDrillData = {
     body?: never;
@@ -1613,58 +1613,6 @@ export type SubscribeResponses = {
 };
 
 export type SubscribeResponse = SubscribeResponses[keyof SubscribeResponses];
-
-export type SubmitFeedbackData = {
-    body: FeedbackRequest;
-    headers: {
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path?: never;
-    query: {
-        /**
-         * Sentence ID
-         */
-        sentence_id: number;
-    };
-    url: '/api/feedback/submit';
-};
-
-export type SubmitFeedbackErrors = {
-    /**
-     * Missing or invalid sentence_id or JSON body
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Missing or invalid X-Requested-With header
-     */
-    403: ErrorResponse;
-    /**
-     * Sentence not found
-     */
-    404: ErrorResponse;
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
-};
-
-export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
-
-export type SubmitFeedbackResponses = {
-    /**
-     * Feedback recorded
-     */
-    200: FeedbackResponse;
-};
-
-export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
 
 export type HealthCheckData = {
     body?: never;
@@ -1940,6 +1888,58 @@ export type OptimizeFsrsResponses = {
 };
 
 export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResponses];
+
+export type SubmitFeedbackData = {
+    body: FeedbackRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path: {
+        /**
+         * Sentence ID
+         */
+        sentence_id: number;
+    };
+    query?: never;
+    url: '/api/sentences/{sentence_id}/feedback';
+};
+
+export type SubmitFeedbackErrors = {
+    /**
+     * Non-numeric sentence_id or invalid JSON body
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Sentence not found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
+
+export type SubmitFeedbackResponses = {
+    /**
+     * Feedback recorded
+     */
+    201: FeedbackResponse;
+};
+
+export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
 
 export type GetHistoryData = {
     body?: never;

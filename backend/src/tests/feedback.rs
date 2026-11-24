@@ -14,7 +14,7 @@ async fn submission_records_sentence_user_and_body() {
         .unwrap();
     let response = submit_feedback(
         State(pool.clone()),
-        AppQuery(FeedbackQuery { sentence_id }),
+        AppPath(sentence_id),
         AuthUser(user_id),
         AppJson(FeedbackRequest {
             body: "Please check the tense".into(),
@@ -22,9 +22,10 @@ async fn submission_records_sentence_user_and_body() {
     )
     .await
     .unwrap();
+    assert_eq!(response.0, axum::http::StatusCode::CREATED);
     let stored: (i64, i64, String) =
         sqlx::query_as("SELECT sentence_id, user_id, body FROM feedback WHERE id = ?")
-            .bind(response.0.id)
+            .bind(response.1.0.id)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -40,9 +41,7 @@ async fn missing_sentence_returns_404_without_feedback() {
     let user_id = test_user(&pool).await;
     let result = submit_feedback(
         State(pool.clone()),
-        AppQuery(FeedbackQuery {
-            sentence_id: 999999,
-        }),
+        AppPath(999999),
         AuthUser(user_id),
         AppJson(FeedbackRequest {
             body: "Check this".into(),
@@ -58,10 +57,11 @@ async fn missing_sentence_returns_404_without_feedback() {
 }
 
 #[test]
-fn feedback_contract_requires_sentence_query_and_uses_own_tag() {
+fn feedback_contract_takes_sentence_path_and_uses_own_tag() {
     use utoipa::OpenApi;
     let spec = serde_json::to_value(crate::openapi::ApiDoc::openapi()).unwrap();
     assert!(spec["paths"].get("/api/cards/{card_id}/comment").is_none());
+    assert!(spec["paths"].get("/api/feedback/submit").is_none());
     let listing = &spec["paths"]["/api/admin/feedback"]["get"];
     assert_eq!(listing["tags"], serde_json::json!(["admin"]));
     assert!(
@@ -74,14 +74,14 @@ fn feedback_contract_requires_sentence_query_and_uses_own_tag() {
                 && p["required"] == false
                 && p["schema"]["minimum"] == 1)
     );
-    let operation = &spec["paths"]["/api/feedback/submit"]["post"];
+    let operation = &spec["paths"]["/api/sentences/{sentence_id}/feedback"]["post"];
     assert_eq!(operation["tags"], serde_json::json!(["feedback"]));
     assert!(
         operation["parameters"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|p| p["name"] == "sentence_id" && p["in"] == "query" && p["required"] == true)
+            .any(|p| p["name"] == "sentence_id" && p["in"] == "path" && p["required"] == true)
     );
 }
 

@@ -120,7 +120,7 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
         for path in [
             "get /api/reviews/queue?limit=1 ",
             "post /api/reviews/answer ",
-            "put /api/cards/991/suppress ",
+            "put /api/cards/991/suppression ",
         ] {
             let (mut socket, _) = listener.accept().unwrap();
             let (headers, body) = read_request(&mut socket);
@@ -137,7 +137,8 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
                     );
                     json!({"correct":true,"hanja_hints":[]})
                 } else {
-                    json!({"success":true})
+                    write!(socket, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n").unwrap();
+                    continue;
                 }
             };
             respond(&mut socket, body, false);
