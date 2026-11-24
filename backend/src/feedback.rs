@@ -6,10 +6,12 @@ use sqlx::SqlitePool;
 use tracing::info;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::error::{AppError, AppJson, AppPath, AppQuery};
+use crate::error::{AppError, AppJson, AppQuery};
 
 #[derive(Deserialize, ToSchema)]
 pub struct FeedbackRequest {
+    /// The sentence the feedback is about.
+    pub sentence_id: i64,
     pub body: String,
 }
 
@@ -46,13 +48,12 @@ pub struct ListFeedbackResponse {
 
 #[utoipa::path(
     post,
-    path = "/api/sentences/{sentence_id}/feedback",
-    description = "Submit content feedback about a sentence for admin triage. Feedback does not change review scheduling or card content.",
-    params(("sentence_id" = i64, Path, description = "Sentence ID")),
+    path = "/api/feedback",
+    description = "Submit content feedback about a sentence for admin triage. Any signed-in user may submit; listing requires an admin. Feedback does not change review scheduling or card content.",
     request_body = FeedbackRequest,
     responses(
         (status = 201, description = "Feedback recorded", body = FeedbackResponse),
-        (status = 400, description = "Non-numeric sentence_id or invalid JSON body", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid JSON body", body = crate::error::ErrorResponse),
         (status = 401, description = "Missing/invalid JWT", body = crate::error::ErrorResponse),
         (status = 404, description = "Sentence not found", body = crate::error::ErrorResponse),
     ),
@@ -61,11 +62,11 @@ pub struct ListFeedbackResponse {
 )]
 pub async fn submit_feedback(
     State(pool): State<SqlitePool>,
-    AppPath(sentence_id): AppPath<i64>,
     auth: crate::auth::AuthUser,
     AppJson(payload): AppJson<FeedbackRequest>,
 ) -> Result<(StatusCode, Json<FeedbackResponse>), AppError> {
     let user_id = auth.0;
+    let sentence_id = payload.sentence_id;
 
     // Return the API's 404 for an unknown sentence. The FK also protects this
     // relationship if another write path forgets the check.
@@ -95,8 +96,8 @@ pub async fn submit_feedback(
 
 #[utoipa::path(
     get,
-    path = "/api/admin/feedback",
-    description = "List everyone's sentence feedback for admin triage, oldest first (submission time, then ID). Omit limit to return all entries. Requires an admin account.",
+    path = "/api/feedback",
+    description = "List everyone's sentence feedback for admin triage, oldest first (submission time, then ID). Omit limit to return all entries. Requires an admin account, unlike submitting feedback.",
     params(ListFeedbackQuery),
     responses(
         (status = 200, description = "Feedback for admin triage", body = ListFeedbackResponse),

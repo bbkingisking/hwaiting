@@ -14,9 +14,9 @@ async fn submission_records_sentence_user_and_body() {
         .unwrap();
     let response = submit_feedback(
         State(pool.clone()),
-        AppPath(sentence_id),
         AuthUser(user_id),
         AppJson(FeedbackRequest {
+            sentence_id,
             body: "Please check the tense".into(),
         }),
     )
@@ -41,9 +41,9 @@ async fn missing_sentence_returns_404_without_feedback() {
     let user_id = test_user(&pool).await;
     let result = submit_feedback(
         State(pool.clone()),
-        AppPath(999999),
         AuthUser(user_id),
         AppJson(FeedbackRequest {
+            sentence_id: 999999,
             body: "Check this".into(),
         }),
     )
@@ -57,12 +57,13 @@ async fn missing_sentence_returns_404_without_feedback() {
 }
 
 #[test]
-fn feedback_contract_takes_sentence_path_and_uses_own_tag() {
+fn feedback_contract_shares_one_path_with_admin_only_listing() {
     use utoipa::OpenApi;
     let spec = serde_json::to_value(crate::openapi::ApiDoc::openapi()).unwrap();
     assert!(spec["paths"].get("/api/cards/{card_id}/comment").is_none());
     assert!(spec["paths"].get("/api/feedback/submit").is_none());
-    let listing = &spec["paths"]["/api/admin/feedback"]["get"];
+    assert!(spec["paths"].get("/api/admin/feedback").is_none());
+    let listing = &spec["paths"]["/api/feedback"]["get"];
     assert_eq!(listing["tags"], serde_json::json!(["admin"]));
     assert!(
         listing["parameters"]
@@ -74,14 +75,14 @@ fn feedback_contract_takes_sentence_path_and_uses_own_tag() {
                 && p["required"] == false
                 && p["schema"]["minimum"] == 1)
     );
-    let operation = &spec["paths"]["/api/sentences/{sentence_id}/feedback"]["post"];
+    assert!(listing["responses"].get("403").is_some());
+    let operation = &spec["paths"]["/api/feedback"]["post"];
     assert_eq!(operation["tags"], serde_json::json!(["feedback"]));
     assert!(
-        operation["parameters"]
+        spec["components"]["schemas"]["FeedbackRequest"]["required"]
             .as_array()
             .unwrap()
-            .iter()
-            .any(|p| p["name"] == "sentence_id" && p["in"] == "path" && p["required"] == true)
+            .contains(&serde_json::json!("sentence_id"))
     );
 }
 
@@ -176,10 +177,11 @@ async fn feedback_list_rejects_non_admin_and_invalid_limits_over_http() {
     let user_id = test_user(&pool).await;
     let admin_id = test_admin_user(&pool).await;
     let app = Router::new()
-        .route("/api/admin/feedback", get(list_feedback))
-        .with_state(pool);
+        .route("/api/feedback", get(list_feedback).post(submit_feedback))
+        .with_state(pool.clone());
+    let pool_for_post = pool;
     let request = |query: &str, user: Option<i64>| {
-        let mut builder = Request::builder().uri(format!("/api/admin/feedback{query}"));
+        let mut builder = Request::builder().uri(format!("/api/feedback{query}"));
         if let Some(id) = user {
             let token = crate::auth::generate_token(id).unwrap();
             builder = builder.header(
@@ -222,10 +224,33 @@ async fn feedback_list_rejects_non_admin_and_invalid_limits_over_http() {
         );
     }
     assert_eq!(
-        app.oneshot(request("?limit=1", Some(admin_id)))
+        app.clone()
+            .oneshot(request("?limit=1", Some(admin_id)))
             .await
             .unwrap()
             .status(),
         StatusCode::OK
+    );
+    // Same path, different method: any signed-in user may submit.
+    let sentence_id: i64 = sqlx::query_scalar("SELECT id FROM sentences LIMIT 1")
+        .fetch_one(&pool_for_post)
+        .await
+        .unwrap();
+    let token = crate::auth::generate_token(user_id).unwrap();
+    let post = Request::builder()
+        .method("POST")
+        .uri("/api/feedback")
+        .header("content-type", "application/json")
+        .header(
+            "cookie",
+            format!("{}={token}", crate::auth_cookie::COOKIE_NAME),
+        )
+        .body(axum::body::Body::from(
+            serde_json::json!({ "sentence_id": sentence_id, "body": "Typo" }).to_string(),
+        ))
+        .unwrap();
+    assert_eq!(
+        app.oneshot(post).await.unwrap().status(),
+        StatusCode::CREATED
     );
 }

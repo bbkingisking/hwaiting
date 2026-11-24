@@ -281,6 +281,10 @@ export type FeedbackEntry = {
 
 export type FeedbackRequest = {
     body: string;
+    /**
+     * The sentence the feedback is about.
+     */
+    sentence_id: number;
 };
 
 export type FeedbackResponse = {
@@ -972,48 +976,6 @@ export type GetCardInflectionsResponses = {
 
 export type GetCardInflectionsResponse = GetCardInflectionsResponses[keyof GetCardInflectionsResponses];
 
-export type ListFeedbackData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Maximum number of entries. Omit to return all feedback.
-         */
-        limit?: number;
-    };
-    url: '/api/admin/feedback';
-};
-
-export type ListFeedbackErrors = {
-    /**
-     * Limit must be a positive integer
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Admin access required
-     */
-    403: ErrorResponse;
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
-};
-
-export type ListFeedbackError = ListFeedbackErrors[keyof ListFeedbackErrors];
-
-export type ListFeedbackResponses = {
-    /**
-     * Feedback for admin triage
-     */
-    200: ListFeedbackResponse;
-};
-
-export type ListFeedbackResponse2 = ListFeedbackResponses[keyof ListFeedbackResponses];
-
 export type ListUsersData = {
     body?: never;
     path?: never;
@@ -1599,6 +1561,95 @@ export type SubscribeResponses = {
 
 export type SubscribeResponse = SubscribeResponses[keyof SubscribeResponses];
 
+export type ListFeedbackData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum number of entries. Omit to return all feedback.
+         */
+        limit?: number;
+    };
+    url: '/api/feedback';
+};
+
+export type ListFeedbackErrors = {
+    /**
+     * Limit must be a positive integer
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Admin access required
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListFeedbackError = ListFeedbackErrors[keyof ListFeedbackErrors];
+
+export type ListFeedbackResponses = {
+    /**
+     * Feedback for admin triage
+     */
+    200: ListFeedbackResponse;
+};
+
+export type ListFeedbackResponse2 = ListFeedbackResponses[keyof ListFeedbackResponses];
+
+export type SubmitFeedbackData = {
+    body: FeedbackRequest;
+    headers: {
+        /**
+         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
+         */
+        'X-Requested-With': 'hwaiting';
+    };
+    path?: never;
+    query?: never;
+    url: '/api/feedback';
+};
+
+export type SubmitFeedbackErrors = {
+    /**
+     * Invalid JSON body
+     */
+    400: ErrorResponse;
+    /**
+     * Missing/invalid JWT
+     */
+    401: ErrorResponse;
+    /**
+     * Missing or invalid X-Requested-With header
+     */
+    403: ErrorResponse;
+    /**
+     * Sentence not found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
+
+export type SubmitFeedbackResponses = {
+    /**
+     * Feedback recorded
+     */
+    201: FeedbackResponse;
+};
+
+export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
+
 export type HealthCheckData = {
     body?: never;
     path?: never;
@@ -1873,58 +1924,6 @@ export type OptimizeFsrsResponses = {
 };
 
 export type OptimizeFsrsResponse2 = OptimizeFsrsResponses[keyof OptimizeFsrsResponses];
-
-export type SubmitFeedbackData = {
-    body: FeedbackRequest;
-    headers: {
-        /**
-         * CSRF protection: cross-origin browser writes require an allowed CORS origin.
-         */
-        'X-Requested-With': 'hwaiting';
-    };
-    path: {
-        /**
-         * Sentence ID
-         */
-        sentence_id: number;
-    };
-    query?: never;
-    url: '/api/sentences/{sentence_id}/feedback';
-};
-
-export type SubmitFeedbackErrors = {
-    /**
-     * Non-numeric sentence_id or invalid JSON body
-     */
-    400: ErrorResponse;
-    /**
-     * Missing/invalid JWT
-     */
-    401: ErrorResponse;
-    /**
-     * Missing or invalid X-Requested-With header
-     */
-    403: ErrorResponse;
-    /**
-     * Sentence not found
-     */
-    404: ErrorResponse;
-    /**
-     * Internal server error
-     */
-    500: ErrorResponse;
-};
-
-export type SubmitFeedbackError = SubmitFeedbackErrors[keyof SubmitFeedbackErrors];
-
-export type SubmitFeedbackResponses = {
-    /**
-     * Feedback recorded
-     */
-    201: FeedbackResponse;
-};
-
-export type SubmitFeedbackResponse = SubmitFeedbackResponses[keyof SubmitFeedbackResponses];
 
 export type GetHistoryData = {
     body?: never;

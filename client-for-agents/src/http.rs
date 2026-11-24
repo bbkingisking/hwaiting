@@ -237,12 +237,8 @@ pub fn answer(guess: &str, attempt_token: &str) -> Result<Value, AppError> {
 /// Submits content feedback about a sentence server-side.
 pub fn feedback(sentence_id: i64, text: &str) -> Result<Value, AppError> {
     let client = authenticated_agent()?;
-    let body = json!({ "body": text });
-    parse(&post_json(
-        &format!("/api/sentences/{sentence_id}/feedback"),
-        &client,
-        &body,
-    )?)
+    let body = json!({ "sentence_id": sentence_id, "body": text });
+    parse(&post_json("/api/feedback", &client, &body)?)
 }
 
 /// Shared authored grammar catalog for authenticated users. Fixed vocabulary labels are
