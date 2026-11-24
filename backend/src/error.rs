@@ -38,7 +38,7 @@ pub struct ErrorResponse {
 /// - 409 `card_suppressed`: the card was suppressed after it was fetched
 /// - 409 `stale_review`: the card's review state changed since it was fetched
 /// - 409 `stale_content`: the card's content changed since it was fetched
-/// - 409 `stale_prompt`: the selected sentence changed since it was fetched
+/// - 409 `stale_prompt`: the sentence selected for the card changed since it was fetched
 /// - 409 `last_sign_in_method`: removing this passkey would leave the account with no way to sign in
 /// - 410 `passkey_ceremony_expired`: the ceremony timed out; start over
 /// - 500 `internal_error`: unexpected server failure

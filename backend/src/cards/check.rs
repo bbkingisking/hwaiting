@@ -20,7 +20,7 @@ use super::{HanjaHint, hanja_hints_on_connection};
 #[derive(Deserialize, ToSchema)]
 pub struct CheckRequest {
     pub answer: String,
-    /// Signed prompt identity returned by the review queue; no separate card ID is needed.
+    /// Signed card identity returned by the review queue; no separate card ID is needed.
     pub attempt_token: String,
 }
 
@@ -81,7 +81,7 @@ fn is_correct(answer: &str, target: &str, alternatives: &[String]) -> bool {
 #[utoipa::path(
     post,
     path = "/api/reviews/answer",
-    description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates prompt freshness within the same transaction; stale prompts record no review. A successful answer consumes the prompt state: resubmitting its attempt token returns 409 and records no additional review. X-Mutation-Id correlates notifications and does not deduplicate requests.",
+    description = "Submit an answer, grade it, record the review, update FSRS scheduling, and reveal the answer. Validates card freshness within the same transaction; answers to stale cards record no review. A successful answer consumes the card's review state: resubmitting its attempt token returns 409 and records no additional review. X-Mutation-Id correlates notifications and does not deduplicate requests.",
     request_body = CheckRequest,
     responses(
         (status = 200, description = "Answer graded, FSRS state updated, secret fields revealed", body = CheckResponse),

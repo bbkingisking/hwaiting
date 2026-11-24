@@ -117,7 +117,7 @@ function AppContent() {
     currentCard.current = null
     setCard(null)
     // A ready, still-eligible successor is promoted synchronously. Otherwise
-    // show loading, never leave an invalid prompt available to submit.
+    // show loading, never leave an invalid card available to submit.
     setLoading(true)
     void advanceToNextCard().catch(() => { void loadCardCold() })
   }
@@ -350,7 +350,7 @@ function AppContent() {
   // Grades `answer` against the current card server-side and records the
   // FSRS review in the same call - see backend/src/cards.rs's check_answer.
   // Resolves with the reveal rather than stashing it in `card` state here:
-  // `card` only ever holds the prompt (see its type above), and handing the
+  // `card` only ever holds the card front (see its type above), and handing the
   // reveal back as a plain return value lets Flashcard set it as its own
   // local state in the same synchronous continuation as `answered`/
   // `correct`, instead of racing a second, independently-timed update to
@@ -399,14 +399,14 @@ function AppContent() {
     } catch (err) {
       if (submission !== submissionVersion.current) return null
       if (err instanceof ApiError && (err.code === 'stale_review' || err.code === 'card_suppressed')) {
-        // No review was recorded; drop this prompt and move on.
+        // No review was recorded; drop this card and move on.
         cancelPrefetch()
         discardInvalidPrompt()
         setStatsKey(value => value + 1)
         return null
       }
       if (err instanceof ApiError && (err.code === 'stale_content' || err.code === 'stale_prompt')) {
-        // The answer belongs to an older prompt. Fetch the current version;
+        // The answer belongs to an older version of the card. Fetch the current one;
         // no review was recorded, so there is no reveal or stats refresh.
         setStaleReason(err.code === 'stale_prompt'
           ? 'The selected sentence changed. Continue to load a fresh card.'

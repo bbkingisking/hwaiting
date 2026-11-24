@@ -21,7 +21,7 @@ use super::time::{logical_day_start, sqlite_datetime};
 pub struct CardFront {
     pub content_revision: i64,
     pub card_id: i64,
-    /// The particular prompt selected for this review of the card.
+    /// The particular sentence selected for this review of the card.
     pub sentence_id: i64,
     /// KRDICT's `ParaWordNo` for this word, when it came from KRDICT.
     #[schema(required)]
@@ -75,7 +75,7 @@ pub(crate) fn split_sentence(sentence: &str, target: &str) -> (String, String) {
 #[derive(Serialize, ToSchema)]
 pub struct ReviewContext {
     /// Return unchanged when submitting an answer. No time-based expiry; valid until
-    /// the prompt content, review state, or availability changes. A successful answer
+    /// the card content, review state, or availability changes. A successful answer
     /// changes review state, so the same token cannot record a second review.
     attempt_token: String,
     #[schema(required)]
@@ -98,7 +98,7 @@ pub struct ReviewQueueCard {
 #[derive(Serialize, ToSchema)]
 pub struct ReviewQueueResponse {
     pub cards: Vec<ReviewQueueCard>,
-    /// Total eligible prompts before the response limit, including allowed new cards.
+    /// Total eligible cards before the response limit, including allowed new cards.
     pub available_count: i64,
     /// Earliest future eligibility change: a scheduled review or an allowance
     /// reset that unlocks waiting new cards. Independent of response limit or
@@ -119,7 +119,7 @@ pub struct ReviewQueueQuery {
 
 #[utoipa::path(
     get, path = "/api/reviews/queue",
-    description = "Return an ordered snapshot of eligible due and new review prompts, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Includes the next future card availability time, even when cards are available now.", params(ReviewQueueQuery),
+    description = "Return an ordered snapshot of eligible due and new review cards, withholding answers and including attempt tokens for submission. Respects the user's translation language, suppression flags, and daily new-card allowance; fetching does not consume that allowance. Includes the next future card availability time, even when cards are available now.", params(ReviewQueueQuery),
     responses(
         (status = 200, description = "Ordered review queue snapshot", body = ReviewQueueResponse),
         (status = 400, description = "Invalid queue limit, or preferred translation language missing or unknown", body = crate::error::ErrorResponse),

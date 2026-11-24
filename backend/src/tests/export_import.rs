@@ -705,7 +705,7 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
     sqlx::query("INSERT INTO cards_states (user_id, card_id, stability, difficulty, last_review, state, review_revision) VALUES (?, 10, 3, 2, '2026-01-01 00:00:00', 'review', 7)")
         .bind(dest_id).execute(&pool).await.unwrap();
     // Card 1 initially has no row (revision zero). Merging must invalidate
-    // that prompt; later merges and overwrites must keep advancing it.
+    // that card; later merges and overwrites must keep advancing it.
     let mut previous_revision = 0;
     for overwrite in [false, false, true, true] {
         let data = export_data(State(pool.clone()), AuthUser(source_id))
@@ -730,7 +730,7 @@ async fn imports_advance_revisions_and_overwrite_preserves_reset_markers() {
         previous_revision = revision;
     }
     // Card 10 is absent from the import: its learning history is cleared,
-    // but its revision must survive so a prompt with revision 7 stays stale.
+    // but its revision must survive so a card with revision 7 stays stale.
     let (revision, last_review, stability, state): (i64, Option<String>, f64, String) = sqlx::query_as(
         "SELECT review_revision, last_review, stability, state FROM cards_states WHERE user_id = ? AND card_id = 10")
         .bind(dest_id).fetch_one(&pool).await.unwrap();

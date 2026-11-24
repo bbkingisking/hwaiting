@@ -16,7 +16,7 @@ pub(crate) struct AttemptClaims {
     pub sentence_id: i64,
     // Version of this user's review state; rejects stale submissions after another client reviews.
     pub review_revision: i64,
-    // Grading must use the content version returned with the prompt.
+    // Grading must use the content version returned with the card.
     pub content_revision: i64,
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn issue_attempt_token(
     content_revision: i64,
     translation_language: &str,
 ) -> Result<String, AppError> {
-    // No timestamps or randomness: identical prompt state produces identical readable tokens.
+    // No timestamps or randomness: identical card state produces identical readable tokens.
     encode(
         &Header::new(Algorithm::HS256),
         &AttemptClaims {
@@ -115,13 +115,13 @@ pub(crate) async fn validate_attempt(
 
 #[derive(Deserialize, ToSchema)]
 pub struct ValidateRequest {
-    /// Signed prompt identity returned by the review queue; includes the card and revisions.
+    /// Signed card identity returned by the review queue; includes the card and revisions.
     pub attempt_token: String,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct ValidateResponse {
-    /// True if the prompt still matches current content and review state and is available.
+    /// True if the card still matches current content and review state and is available.
     pub valid: bool,
 }
 

@@ -151,7 +151,7 @@ export type CardFront = InflectionHint & {
      */
     sentence_before: string;
     /**
-     * The particular prompt selected for this review of the card.
+     * The particular sentence selected for this review of the card.
      */
     sentence_id: number;
     sentence_translation: string;
@@ -204,7 +204,7 @@ export type CardReveal = CardBack & {
 export type CheckRequest = {
     answer: string;
     /**
-     * Signed prompt identity returned by the review queue; no separate card ID is needed.
+     * Signed card identity returned by the review queue; no separate card ID is needed.
      */
     attempt_token: string;
 };
@@ -245,7 +245,7 @@ export type DayHistory = {
  * - 409 `card_suppressed`: the card was suppressed after it was fetched
  * - 409 `stale_review`: the card's review state changed since it was fetched
  * - 409 `stale_content`: the card's content changed since it was fetched
- * - 409 `stale_prompt`: the selected sentence changed since it was fetched
+ * - 409 `stale_prompt`: the sentence selected for the card changed since it was fetched
  * - 409 `last_sign_in_method`: removing this passkey would leave the account with no way to sign in
  * - 410 `passkey_ceremony_expired`: the ceremony timed out; start over
  * - 500 `internal_error`: unexpected server failure
@@ -301,7 +301,7 @@ export type FeedbackResponse = {
 
 /**
  * The selected pattern's authored content. Literal endings belong to the
- * answer reveal or the resource catalog, never embedded in the pre-answer prompt.
+ * answer reveal or the resource catalog, never embedded in the pre-answer card.
  */
 export type GrammarPattern = {
     explanation: string | null;
@@ -476,7 +476,7 @@ export type PasskeySummary = {
 export type ReviewContext = {
     /**
      * Return unchanged when submitting an answer. No time-based expiry; valid until
-     * the prompt content, review state, or availability changes. A successful answer
+     * the card content, review state, or availability changes. A successful answer
      * changes review state, so the same token cannot record a second review.
      */
     attempt_token: string;
@@ -522,7 +522,7 @@ export type ReviewQueueCard = {
  */
 export type ReviewQueueResponse = {
     /**
-     * Total eligible prompts before the response limit, including allowed new cards.
+     * Total eligible cards before the response limit, including allowed new cards.
      */
     available_count: number;
     cards: Array<ReviewQueueCard>;
@@ -798,14 +798,14 @@ export type UserSettingsExport = UserSettingsCore & {
 
 export type ValidateRequest = {
     /**
-     * Signed prompt identity returned by the review queue; includes the card and revisions.
+     * Signed card identity returned by the review queue; includes the card and revisions.
      */
     attempt_token: string;
 };
 
 export type ValidateResponse = {
     /**
-     * True if the prompt still matches current content and review state and is available.
+     * True if the card still matches current content and review state and is available.
      */
     valid: boolean;
 };
@@ -1607,7 +1607,7 @@ export type SubscribeError = SubscribeErrors[keyof SubscribeErrors];
 
 export type SubscribeResponses = {
     /**
-     * Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS and generic background updates (same user); resync-required {type, mutation_id?: UUID string} requests broad refresh and prompt validation after imports (same user) or initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.
+     * Named SSE events matching the JSON type: card-mutated {type, card_id: integer (int64), mutation_id?: UUID string} for successful reviews/suppression (same user) and changed edits (all users); state-changed {type, mutation_id?: UUID string} for settings/FSRS and generic background updates (same user); resync-required {type, mutation_id?: UUID string} requests broad refresh and card validation after imports (same user) or initial subscription, reconnect, or lag. Initial/reconnect/lag notifications omit mutation_id. Absent mutation IDs are omitted. See Notification schema. No replay or Last-Event-ID contract.
      */
     200: string;
 };

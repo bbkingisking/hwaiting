@@ -299,7 +299,7 @@ pub async fn export_data(
 #[utoipa::path(
     post,
     path = "/api/user/import",
-    description = "Import a versioned backup of settings, review history, FSRS parameters, and suppressed cards in one transaction, rebuilding card state and scheduling. With overwrite enabled, clears existing review and suppression data first; otherwise imports into existing data. Previously displayed prompts may become stale.",
+    description = "Import a versioned backup of settings, review history, FSRS parameters, and suppressed cards in one transaction, rebuilding card state and scheduling. With overwrite enabled, clears existing review and suppression data first; otherwise imports into existing data. Previously displayed cards may become stale.",
     request_body = ImportDataRequest,
     responses(
         (status = 200, description = "Data imported (cards_states derived from imported review_history)", body = ImportDataResponse),
@@ -351,7 +351,7 @@ pub async fn import_data(
             .execute(&mut *tx)
             .await?;
 
-        // Keep revision tombstones so an old prompt cannot become valid again
+        // Keep revision tombstones so an old card cannot become valid again
         // after an overwrite removes this card's review history.
         sqlx::query(
             "UPDATE cards_states SET stability = 0, difficulty = 0, last_review = NULL,

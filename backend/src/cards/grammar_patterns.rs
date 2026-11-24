@@ -6,7 +6,7 @@ use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use utoipa::ToSchema;
 
 /// The selected pattern's authored content. Literal endings belong to the
-/// answer reveal or the resource catalog, never embedded in the pre-answer prompt.
+/// answer reveal or the resource catalog, never embedded in the pre-answer card.
 #[derive(Serialize, ToSchema)]
 pub struct GrammarPattern {
     pub slug: String,

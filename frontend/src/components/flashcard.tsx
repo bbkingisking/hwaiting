@@ -249,7 +249,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     // Keyboard stays open across cards on mobile (see below), so the check
     // button can end up hidden behind it once the new card's content settles.
     submitButtonRef.current?.scrollIntoView({ block: 'nearest' })
-    // A fresh prompt revision starts a new attempt after a content edit or
+    // A fresh card revision starts a new attempt after a content edit or
     // stale submission. The input stays mounted across that transition.
   }, [card.review.attempt_token])
 
@@ -291,7 +291,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
     try {
       const result = await onCheck(trimmed)
       // A superseded attempt must not reveal its result or auto-advance the
-      // replacement prompt, even if its HTTP response arrives late.
+      // replacement card, even if its HTTP response arrives late.
       if (result === null || promptKeyRef.current !== submittedPrompt) return
       const { correct: isCorrect, reveal: revealData } = result
       setCorrect(isCorrect)

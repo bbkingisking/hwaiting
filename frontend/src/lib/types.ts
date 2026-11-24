@@ -51,7 +51,7 @@ export type ReviewQueueCard = Api.ReviewQueueCard
 export type CardReveal = Api.CardReveal
 
 // The admin editor fetches its own complete AdminCardDetail snapshot.
-// Review prompts and reveals never stand in for the authoring aggregate.
+// Review cards and reveals never stand in for the authoring aggregate.
 
 // Theme types
 export type Theme = 'light' | 'dark' | 'system'

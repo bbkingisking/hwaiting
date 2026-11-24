@@ -98,7 +98,7 @@ export async function getGrammarPatterns(signal?: AbortSignal): Promise<Schemas.
   return response.grammar_patterns
 }
 
-// Grades `answer` against the token’s prompt server-side, records the FSRS review,
+// Grades `answer` against the token’s card server-side, records the FSRS review,
 // and returns the card's secret half (target, word, hanja reading/gloss,
 // grammar pattern endings) - none of which the client had before this call.
 export async function checkAnswer(attemptToken: string, answer: string): Promise<CheckResponse> {

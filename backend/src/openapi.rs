@@ -235,7 +235,7 @@ impl Modify for SecurityAddon {
     modifiers(&SecurityAddon),
     tags(
         (name = "auth", description = "Deployment-controlled sign-up and login, via either username/password or passkey (WebAuthn) - two independent ways to reach the same JWT"),
-        (name = "reviews", description = "Review queue, prompt freshness, and answer submission"),
+        (name = "reviews", description = "Review queue, card freshness, and answer submission"),
         (name = "user", description = "Profile, settings, data export/import"),
         (name = "admin", description = "Requires is_admin = true on the JWT's user"),
         (name = "cards", description = "Card languages and suppression"),
