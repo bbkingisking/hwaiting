@@ -40,13 +40,18 @@ pub struct AvailableTranslationLanguage {
     pub card_count: i64,
 }
 
-#[utoipa::path(get, path = "/api/cards/languages", description = "Available translation languages for Korean card content.", responses((status = 200, body = Vec<AvailableTranslationLanguage>)), security(("cookie_auth" = [])), tag = "cards")]
+#[derive(serde::Serialize, utoipa::ToSchema, Debug)]
+pub struct AvailableTranslationLanguagesResponse {
+    pub languages: Vec<AvailableTranslationLanguage>,
+}
+
+#[utoipa::path(get, path = "/api/cards/languages", description = "Available translation languages for Korean card content.", responses((status = 200, body = AvailableTranslationLanguagesResponse)), security(("cookie_auth" = [])), tag = "cards")]
 pub async fn available_translation_languages(
     State(pool): State<SqlitePool>,
     _auth: AuthUser,
-) -> Result<Json<Vec<AvailableTranslationLanguage>>, AppError> {
-    Ok(Json(
-        sqlx::query_as(
+) -> Result<Json<AvailableTranslationLanguagesResponse>, AppError> {
+    Ok(Json(AvailableTranslationLanguagesResponse {
+        languages: sqlx::query_as(
             "SELECT l.slug AS code, COUNT(DISTINCT ct.card_id) AS card_count
          FROM languages l
          JOIN cards_translations ct ON ct.language_id = l.id
@@ -55,7 +60,7 @@ pub async fn available_translation_languages(
         )
         .fetch_all(&pool)
         .await?,
-    ))
+    }))
 }
 
 #[cfg(test)]
@@ -76,7 +81,8 @@ mod tests {
         let languages = available_translation_languages(State(pool.clone()), AuthUser(user))
             .await
             .unwrap()
-            .0;
+            .0
+            .languages;
         assert_eq!(
             languages
                 .iter()
@@ -131,7 +137,8 @@ mod tests {
         let languages = available_translation_languages(State(pool.clone()), AuthUser(admin))
             .await
             .unwrap()
-            .0;
+            .0
+            .languages;
         assert_eq!(
             languages
                 .iter()

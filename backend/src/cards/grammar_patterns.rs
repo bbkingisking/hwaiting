@@ -35,12 +35,17 @@ pub struct GrammarPatternOption {
     pub endings: Vec<String>,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GrammarPatternsResponse {
+    pub grammar_patterns: Vec<GrammarPatternOption>,
+}
+
 #[utoipa::path(get, path = "/api/resources/grammar-patterns",
-    description = "List authored grammar patterns with English labels, explanations, and accepted endings for authenticated users and card editors.", responses((status = 200, body = Vec<GrammarPatternOption>), (status = 401, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "resources")]
+    description = "List authored grammar patterns with English labels, explanations, and accepted endings for authenticated users and card editors.", responses((status = 200, body = GrammarPatternsResponse), (status = 401, body = crate::error::ErrorResponse)), security(("cookie_auth" = [])), tag = "resources")]
 pub async fn list_grammar_patterns(
     _auth: AuthUser,
     State(pool): State<SqlitePool>,
-) -> Result<Json<Vec<GrammarPatternOption>>, AppError> {
+) -> Result<Json<GrammarPatternsResponse>, AppError> {
     let rows = sqlx::query(r#"
         SELECT gp.slug AS grammar_pattern,
                gpl.label AS grammar_pattern_name,
@@ -54,8 +59,9 @@ pub async fn list_grammar_patterns(
           AND gpt.language_id = (SELECT id FROM languages WHERE slug = 'eng')
         ORDER BY gp.id
     "#).fetch_all(&pool).await?;
-    Ok(Json(
-        rows.iter()
+    Ok(Json(GrammarPatternsResponse {
+        grammar_patterns: rows
+            .iter()
             .map(|row| {
                 let endings: String = row.get("endings");
                 Ok(GrammarPatternOption {
@@ -65,7 +71,7 @@ pub async fn list_grammar_patterns(
                 })
             })
             .collect::<Result<_, AppError>>()?,
-    ))
+    }))
 }
 
 #[cfg(test)]

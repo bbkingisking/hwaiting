@@ -89,6 +89,10 @@ export type AvailableTranslationLanguage = {
     code: string;
 };
 
+export type AvailableTranslationLanguagesResponse = {
+    languages: Array<AvailableTranslationLanguage>;
+};
+
 export type BackupVersion = '1.0';
 
 export type BreakdownRow = {
@@ -307,6 +311,10 @@ export type GrammarPattern = {
 
 export type GrammarPatternOption = GrammarPattern & {
     endings: Array<string>;
+};
+
+export type GrammarPatternsResponse = {
+    grammar_patterns: Array<GrammarPatternOption>;
 };
 
 export type HanjaDrill = {
@@ -1414,10 +1422,10 @@ export type AvailableTranslationLanguagesErrors = {
 export type AvailableTranslationLanguagesError = AvailableTranslationLanguagesErrors[keyof AvailableTranslationLanguagesErrors];
 
 export type AvailableTranslationLanguagesResponses = {
-    200: Array<AvailableTranslationLanguage>;
+    200: AvailableTranslationLanguagesResponse;
 };
 
-export type AvailableTranslationLanguagesResponse = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];
+export type AvailableTranslationLanguagesResponse2 = AvailableTranslationLanguagesResponses[keyof AvailableTranslationLanguagesResponses];
 
 export type ListSuppressedCardsData = {
     body?: never;
@@ -1709,7 +1717,7 @@ export type ListGrammarPatternsErrors = {
 export type ListGrammarPatternsError = ListGrammarPatternsErrors[keyof ListGrammarPatternsErrors];
 
 export type ListGrammarPatternsResponses = {
-    200: Array<GrammarPatternOption>;
+    200: GrammarPatternsResponse;
 };
 
 export type ListGrammarPatternsResponse = ListGrammarPatternsResponses[keyof ListGrammarPatternsResponses];

@@ -81,7 +81,8 @@ export type ReviewQueueResponse = Schemas.ReviewQueueResponse
 // Review content requests send the account’s saved translation language explicitly.
 // Admin browsing and editing choose their translation language independently.
 export async function getAvailableTranslationLanguages(signal?: AbortSignal): Promise<Schemas.AvailableTranslationLanguage[]> {
-  return fetchWithAuth(`${apiBase()}/api/cards/languages`, { signal })
+  const response: Schemas.AvailableTranslationLanguagesResponse = await fetchWithAuth(`${apiBase()}/api/cards/languages`, { signal })
+  return response.languages
 }
 
 export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueResponse> {
@@ -94,7 +95,8 @@ export async function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueueR
 
 export type CardInflection = Schemas.CardInflection
 export async function getGrammarPatterns(signal?: AbortSignal): Promise<Schemas.GrammarPatternOption[]> {
-  return fetchWithAuth(`${apiBase()}/api/resources/grammar-patterns`, { signal })
+  const response: Schemas.GrammarPatternsResponse = await fetchWithAuth(`${apiBase()}/api/resources/grammar-patterns`, { signal })
+  return response.grammar_patterns
 }
 
 // Grades `answer` against the token’s prompt server-side, records the FSRS review,

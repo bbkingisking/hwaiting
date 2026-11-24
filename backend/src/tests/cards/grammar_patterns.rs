@@ -45,7 +45,8 @@ async fn selected_grammar_content_is_embedded_without_revealing_endings() {
         list_grammar_patterns(AuthUser(user), State(pool.clone()))
             .await
             .unwrap()
-            .0,
+            .0
+            .grammar_patterns,
     )
     .unwrap();
     assert_eq!(
@@ -111,8 +112,8 @@ async fn grammar_catalog_allows_normal_users_and_requires_authentication() {
         .await
         .unwrap();
     let catalog: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(!catalog.as_array().unwrap().is_empty());
-    assert!(catalog[0]["endings"].is_array());
+    assert!(!catalog["grammar_patterns"].as_array().unwrap().is_empty());
+    assert!(catalog["grammar_patterns"][0]["endings"].is_array());
     let anonymous = app
         .oneshot(
             Request::builder()
