@@ -19,14 +19,64 @@ use crate::error::{AppError, AppJson};
 
 #[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
+    /// Leading and trailing whitespace is trimmed before lookup.
     pub username: String,
+    /// Leading and trailing whitespace is trimmed before verification,
+    /// matching how sign-up hashes passwords.
     pub password: String,
 }
 
+/// Longest accepted sign-up username, in Unicode characters (JSON Schema
+/// `maxLength` semantics), counted on the raw value before trimming.
+/// utoipa's `max_length` only takes a literal, so `SignupRequest` repeats
+/// this value; a test checks the published schema against it.
+pub(crate) const USERNAME_MAX_CHARS: usize = 64;
+/// Longest accepted sign-up password, in Unicode characters, counted on the
+/// raw value before trimming. Generous for passphrases while keeping
+/// megabyte-sized inputs away from the database and Argon2.
+pub(crate) const PASSWORD_MAX_CHARS: usize = 1024;
+
 #[derive(Deserialize, ToSchema)]
 pub struct SignupRequest {
+    /// Leading and trailing whitespace is trimmed before the account is
+    /// created; the trimmed value must not be empty. `maxLength` applies to
+    /// the value as sent.
+    #[schema(min_length = 1, max_length = 64)]
     pub username: String,
+    /// Leading and trailing whitespace is trimmed before hashing (and again
+    /// on every login), so it is not part of the password; the trimmed value
+    /// must not be empty. `maxLength` applies to the value as sent.
+    #[schema(min_length = 1, max_length = 1024)]
     pub password: String,
+}
+
+/// Rejects sign-up input the account table must never hold: an empty
+/// (after trimming) username would be a real `""` username distinct from
+/// the NULL a passkey-only account has, and an empty password is no
+/// password at all. Length caps are checked on the raw values so they line
+/// up exactly with the `maxLength` published in the OpenAPI schema.
+fn validate_signup(raw_username: &str, raw_password: &str) -> Result<(), AppError> {
+    if raw_username.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "username must not be empty".to_string(),
+        ));
+    }
+    if raw_username.chars().count() > USERNAME_MAX_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "username must be at most {USERNAME_MAX_CHARS} characters"
+        )));
+    }
+    if raw_password.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "password must not be empty".to_string(),
+        ));
+    }
+    if raw_password.chars().count() > PASSWORD_MAX_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "password must be at most {PASSWORD_MAX_CHARS} characters"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Serialize, ToSchema)]
@@ -105,12 +155,12 @@ pub async fn login(
 #[utoipa::path(
     post,
     path = "/api/auth/signup",
-    description = "Create a username/password account and sign in by setting the HttpOnly authentication cookie. Available only when this deployment allows sign-ups.",
+    description = "Create a username/password account and sign in by setting the HttpOnly authentication cookie. Available only when this deployment allows sign-ups. Username and password are trimmed of leading and trailing whitespace; neither may be empty after trimming.",
     request_body = SignupRequest,
     responses(
         (status = 201, description = "Account created", body = AuthResponse),
+        (status = 400, description = "Malformed request body, username or password empty after trimming, username longer than 64 characters, or password longer than 1024 characters", body = crate::error::ErrorResponse),
         (status = 403, description = "Sign-ups are disabled", body = crate::error::ErrorResponse),
-        (status = 400, description = "Malformed request body", body = crate::error::ErrorResponse),
         (status = 409, description = "Username already exists", body = crate::error::ErrorResponse),
     ),
     tag = "auth"
@@ -120,6 +170,7 @@ pub async fn signup(
     AppJson(payload): AppJson<SignupRequest>,
 ) -> Result<(StatusCode, Response), AppError> {
     state.require_signups_enabled()?;
+    validate_signup(&payload.username, &payload.password)?;
     let pool = &state.pool;
     let username = payload.username.trim();
     let password = payload.password.trim();

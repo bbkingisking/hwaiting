@@ -82,3 +82,107 @@ fn wrong_secret_is_rejected() {
 
 // No "garbage token is rejected" test: that exercises jsonwebtoken's
 // own parse-failure path, not any logic of ours.
+
+// --- signup validation ---------------------------------------------------
+
+fn signup_state(pool: SqlitePool) -> crate::passkey::AppState {
+    let mut state = crate::passkey::AppState::new(pool);
+    state.signups_enabled = true;
+    state
+}
+
+async fn signup_as(
+    state: &crate::passkey::AppState,
+    username: &str,
+    password: &str,
+) -> Result<(StatusCode, Response), AppError> {
+    signup(
+        State(state.clone()),
+        AppJson(SignupRequest {
+            username: username.to_string(),
+            password: password.to_string(),
+        }),
+    )
+    .await
+}
+
+async fn user_count(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn signup_rejects_empty_or_oversized_input_without_creating_a_user() {
+    let pool = crate::test_support::test_pool().await;
+    let state = signup_state(pool.clone());
+    let long_username = "u".repeat(USERNAME_MAX_CHARS + 1);
+    let long_password = "p".repeat(PASSWORD_MAX_CHARS + 1);
+
+    for (username, password) in [
+        ("", "password"),
+        ("   ", "password"),
+        ("\t\n", "password"),
+        ("alice", ""),
+        ("alice", "   "),
+        ("  ", ""),
+        (long_username.as_str(), "password"),
+        ("alice", long_password.as_str()),
+    ] {
+        let error = signup_as(&state, username, password).await.unwrap_err();
+        assert!(
+            matches!(error, AppError::BadRequest(_)),
+            "{username:?}/{password:?} gave {error:?}"
+        );
+        assert_eq!(error.into_response().status(), StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(user_count(&pool).await, 0);
+}
+
+#[tokio::test]
+async fn signup_accepts_trimmed_input_up_to_the_limits() {
+    let pool = crate::test_support::test_pool().await;
+    let state = signup_state(pool.clone());
+
+    let (status, _) = signup_as(&state, "  alice  ", "  secret  ").await.unwrap();
+    assert_eq!(status, StatusCode::CREATED);
+    let (username, hash): (String, String) =
+        sqlx::query_as("SELECT username, password_hash FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(username, "alice");
+    // The stored hash is of the trimmed password, which login also trims.
+    let parsed = PasswordHash::new(&hash).unwrap();
+    assert!(
+        Argon2::default()
+            .verify_password(b"secret", &parsed)
+            .is_ok()
+    );
+
+    // Exactly at the limits (multi-byte characters count once each).
+    let max_username = "한".repeat(USERNAME_MAX_CHARS);
+    let max_password = "비".repeat(PASSWORD_MAX_CHARS);
+    let (status, _) = signup_as(&state, &max_username, &max_password)
+        .await
+        .unwrap();
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(user_count(&pool).await, 2);
+}
+
+#[test]
+fn signup_schema_publishes_the_enforced_limits() {
+    use utoipa::OpenApi;
+    let spec = serde_json::to_value(crate::openapi::ApiDoc::openapi()).unwrap();
+    let props = &spec["components"]["schemas"]["SignupRequest"]["properties"];
+    assert_eq!(props["username"]["minLength"], 1);
+    assert_eq!(props["username"]["maxLength"], USERNAME_MAX_CHARS);
+    assert_eq!(props["password"]["minLength"], 1);
+    assert_eq!(props["password"]["maxLength"], PASSWORD_MAX_CHARS);
+    let login = &spec["components"]["schemas"]["LoginRequest"]["properties"];
+    assert!(login["username"].get("minLength").is_none());
+    assert!(login["password"].get("maxLength").is_none());
+    let responses = &spec["paths"]["/api/auth/signup"]["post"]["responses"];
+    assert!(responses.get("400").is_some());
+}
