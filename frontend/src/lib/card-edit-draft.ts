@@ -62,7 +62,6 @@ export function cardEditPatch(baseline: AdminCard, form: FormState): UpdateCardR
   )
   return {
     ...changed,
-    sentence_id: baseline.sentence_id,
     expected_content_revision: baseline.content_revision,
   }
 }

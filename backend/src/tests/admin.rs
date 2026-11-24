@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn key_absent_is_none() {
     let req: UpdateCardRequest =
-        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1}"#).unwrap();
+        serde_json::from_str(r#"{"expected_content_revision":0}"#).unwrap();
     assert!(req.hanja.is_none());
 }
 
@@ -18,16 +18,14 @@ fn key_explicit_null_is_some_none() {
     // an explicit `null` (clear the column) used to be indistinguishable
     // from the key being absent (leave the column alone).
     let req: UpdateCardRequest =
-        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1,"hanja": null}"#)
-            .unwrap();
+        serde_json::from_str(r#"{"expected_content_revision":0,"hanja": null}"#).unwrap();
     assert_eq!(req.hanja, Some(None));
 }
 
 #[test]
 fn key_with_value_is_some_some() {
     let req: UpdateCardRequest =
-        serde_json::from_str(r#"{"expected_content_revision":0,"sentence_id":1,"hanja": "漢字"}"#)
-            .unwrap();
+        serde_json::from_str(r#"{"expected_content_revision":0,"hanja": "漢字"}"#).unwrap();
     assert_eq!(req.hanja, Some(Some("漢字".to_string())));
 }
 
@@ -308,8 +306,8 @@ async fn complete_editor_reads_all_translations_and_saves_atomically() {
     let snapshot = serde_json::to_value(&detail).unwrap();
     assert!(snapshot.get("primary_sentence_id").is_none());
     let body = serde_json::json!({"expected_content_revision": 0, "changes": [
-        {"sentence_id": 1, "translation_language": "eng", "trans_word": "updated word"},
-        {"sentence_id": 1, "translation_language": "fra", "sentence_translation": "Une chose mise à jour."}
+        {"translation_language": "eng", "trans_word": "updated word"},
+        {"translation_language": "fra", "sentence_translation": "Une chose mise à jour."}
     ]});
     let saved = save_admin_card(
         AdminUser(admin),
@@ -327,18 +325,22 @@ async fn complete_editor_reads_all_translations_and_saves_atomically() {
         "Une chose mise à jour."
     );
     let invalid = serde_json::json!({"expected_content_revision": 1, "changes": [
-        {"sentence_id": 1, "translation_language": "eng", "trans_word": "must roll back"},
-        {"sentence_id": -999, "translation_language": "eng", "sentence_translation": "invalid"}
+        {"translation_language": "eng", "trans_word": "must roll back"},
+        {"translation_language": "fra", "sentence_translation": "   "}
     ]});
+    // The blank French translation fails only after the English change was
+    // written, so this checks that the whole save rolls back.
+    let result = save_admin_card(
+        AdminUser(admin),
+        State(pool.clone()),
+        AppPath(1),
+        AppJson(serde_json::from_value(invalid).unwrap()),
+    )
+    .await;
     assert!(
-        save_admin_card(
-            AdminUser(admin),
-            State(pool.clone()),
-            AppPath(1),
-            AppJson(serde_json::from_value(invalid).unwrap())
-        )
-        .await
-        .is_err()
+        matches!(&result, Err(AppError::BadRequest(m)) if !m.contains("Duplicate")),
+        "{:?}",
+        result.as_ref().err()
     );
     let after = get_admin_card(AdminUser(admin), State(pool.clone()), AppPath(1))
         .await
@@ -430,8 +432,8 @@ async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchan
     sqlx::raw_sql("INSERT INTO languages (id,slug) VALUES (100,'fra'); INSERT INTO cards_translations (card_id,language_id,trans_word,required_sentence_id) VALUES (1,100,'chose',1); INSERT INTO sentences_translations (sentence_id,card_id,language_id,translation) VALUES (1,1,100,'Une chose.');").execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
     let conflict = serde_json::json!({"expected_content_revision":0,"changes":[
-        {"sentence_id":1,"translation_language":"eng","hanja":"first","trans_word":"must not save"},
-        {"sentence_id":1,"translation_language":"fra","hanja":"second"}
+        {"translation_language":"eng","hanja":"first","trans_word":"must not save"},
+        {"translation_language":"fra","hanja":"second"}
     ]});
     assert!(matches!(
         save_admin_card(
@@ -450,8 +452,8 @@ async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchan
     assert_eq!(card.content_revision, 0);
     assert_ne!(card.translations["eng"].word, "must not save");
     let noop = serde_json::json!({"expected_content_revision":0,"changes":[
-        {"sentence_id":1,"translation_language":"eng","trans_word":card.translations["eng"].word},
-        {"sentence_id":1,"translation_language":"fra","trans_word":"chose"}
+        {"translation_language":"eng","trans_word":card.translations["eng"].word},
+        {"translation_language":"fra","trans_word":"chose"}
     ]});
     let response = save_admin_card(
         AdminUser(admin),
@@ -470,16 +472,16 @@ async fn aggregate_save_rejects_conflicting_shared_fields_and_keeps_noops_unchan
 async fn aggregate_shared_sentence_and_target_do_not_depend_on_language_grouping() {
     let cases = [
         serde_json::json!([
-            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","target":"답","trans_word":"answer"},
-            {"sentence_id":1,"translation_language":"fra","sentence_translation":"Une réponse."}
+            {"translation_language":"eng","sentence":"새 답입니다.","target":"답","trans_word":"answer"},
+            {"translation_language":"fra","sentence_translation":"Une réponse."}
         ]),
         serde_json::json!([
-            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"},
-            {"sentence_id":1,"translation_language":"fra","target":"답","sentence_translation":"Une réponse."}
+            {"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"},
+            {"translation_language":"fra","target":"답","sentence_translation":"Une réponse."}
         ]),
         serde_json::json!([
-            {"sentence_id":1,"translation_language":"fra","target":"답","sentence_translation":"Une réponse."},
-            {"sentence_id":1,"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"}
+            {"translation_language":"fra","target":"답","sentence_translation":"Une réponse."},
+            {"translation_language":"eng","sentence":"새 답입니다.","trans_word":"answer"}
         ]),
     ];
     let mut reference = None;
@@ -527,8 +529,8 @@ async fn invalid_merged_sentence_and_target_roll_back_the_entire_save() {
     )
     .unwrap();
     let request = serde_json::from_value(serde_json::json!({"expected_content_revision":0,"changes":[
-        {"sentence_id":1,"translation_language":"eng","word":"must roll back","sentence":"새 답입니다.","trans_word":"must also roll back"},
-        {"sentence_id":1,"translation_language":"fra","target":"없는표현"}
+        {"translation_language":"eng","word":"must roll back","sentence":"새 답입니다.","trans_word":"must also roll back"},
+        {"translation_language":"fra","target":"없는표현"}
     ]})).unwrap();
     assert!(matches!(
         save_admin_card(
@@ -557,7 +559,7 @@ async fn malformed_and_unknown_language_codes_are_distinct_errors() {
     for (code, malformed) in [("EN", true), ("english", true), ("zzz", false)] {
         let request = serde_json::from_value(serde_json::json!({
             "expected_content_revision": 0,
-            "changes": [{"sentence_id": 1, "translation_language": code, "trans_word": "x"}]
+            "changes": [{"translation_language": code, "trans_word": "x"}]
         }))
         .unwrap();
         let result = save_admin_card(
@@ -578,5 +580,37 @@ async fn malformed_and_unknown_language_codes_are_distinct_errors() {
                 "{code}"
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn blank_text_fields_are_rejected_with_the_field_name() {
+    let pool = test_pool().await;
+    let admin = test_admin_user(&pool).await;
+    for field in [
+        "word",
+        "trans_word",
+        "trans_dfn",
+        "sentence",
+        "sentence_translation",
+        "target",
+    ] {
+        let request = serde_json::from_value(serde_json::json!({
+            "expected_content_revision": 0,
+            "changes": [{"translation_language": "eng", field: " \t "}]
+        }))
+        .unwrap();
+        let result = save_admin_card(
+            AdminUser(admin),
+            State(pool.clone()),
+            AppPath(1),
+            AppJson(request),
+        )
+        .await;
+        assert!(
+            matches!(&result, Err(AppError::BadRequest(m)) if m == &format!("{field} must not be blank")),
+            "{field}: {:?}",
+            result.as_ref().err()
+        );
     }
 }

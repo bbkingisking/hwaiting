@@ -203,14 +203,10 @@ pub async fn save_admin_card(
     let mut seen = BTreeSet::new();
     let mut has_shared = false;
     for change in &mut changes {
-        if change.fields.sentence_id != sentence_id {
-            return Err(AppError::NotFound);
-        }
+        change.fields.sentence_id = sentence_id;
         crate::translation_language::validate_code(&change.translation_language)?;
         if !seen.insert(change.translation_language.clone()) {
-            return Err(AppError::BadRequest(
-                "Duplicate sentence/language change".into(),
-            ));
+            return Err(AppError::BadRequest("Duplicate language change".into()));
         }
         // Shared facts form one edit regardless of which translation item supplied
         // them. In particular, validate the final sentence/target pair together.

@@ -56,6 +56,6 @@ export function draftChanges(views: Record<string, AdminCard>, drafts: Record<st
       included.add(field)
       return true
     }))
-    return Object.keys(scoped).length > 1 ? [{ ...scoped, sentence_id: baseline.sentence_id, translation_language: key.split(':')[1] }] : []
+    return Object.keys(scoped).length > 0 ? [{ ...scoped, translation_language: key.split(':')[1] }] : []
   })
 }

@@ -664,10 +664,6 @@ export type UpdateCardRequest = {
      */
     sentence?: string | null;
     /**
-     * The card’s sentence; it must belong to the card in the path.
-     */
-    sentence_id: number;
-    /**
      * Omitted or null leaves the current value unchanged.
      */
     sentence_translation?: string | null;

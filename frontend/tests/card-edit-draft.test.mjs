@@ -12,7 +12,7 @@ const card = {
   sentence_id: 3, content_revision: 7, word: 'word', hanja: '漢字',
   trans_word: 'translation', alternatives: ['one', 'two'], is_honorific: true,
 }
-const precondition = { sentence_id: 3, expected_content_revision: 7 }
+const precondition = { expected_content_revision: 7 }
 
 test('unchanged and reverted form fields are omitted', () => {
   assert.deepEqual(cardEditPatch(card, toFormState(card)), precondition)

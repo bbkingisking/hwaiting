@@ -218,7 +218,8 @@ pub struct UpdateCardRequest {
     /// Internal revision check; the aggregate HTTP request supplies its revision once.
     #[serde(skip)]
     pub expected_content_revision: i64,
-    /// The card’s sentence; it must belong to the card in the path.
+    /// Internal: the card's single sentence, filled in by the editor.
+    #[serde(skip)]
     pub sentence_id: i64,
     /// Omitted or null leaves the current value unchanged.
     pub word: Option<String>,
@@ -286,10 +287,16 @@ pub async fn edit_card(
     _admin: AdminUser,
     State(pool): State<SqlitePool>,
     AppPath(card_id): AppPath<i64>,
-    AppJson(payload): AppJson<UpdateCardRequest>,
+    AppJson(mut payload): AppJson<UpdateCardRequest>,
     translation_language: crate::translation_language::TranslationLanguage,
 ) -> Result<Json<EditCardResponse>, AppError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    // Like the real editor, resolve the card's single sentence server-side.
+    payload.sentence_id = sqlx::query_scalar("SELECT id FROM sentences WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(AppError::NotFound)?;
     let response =
         edit_card_in_transaction(&mut tx, card_id, payload, &translation_language, true).await?;
     tx.commit().await?;
@@ -326,6 +333,20 @@ async fn edit_card_in_transaction(
         is_honorific,
         is_humble,
     } = payload;
+    // These columns have non-blank CHECK constraints; report a 400 that names
+    // the field instead of letting the database turn it into a 500.
+    for (field, value) in [
+        ("word", word.as_deref()),
+        ("trans_word", trans_word.as_deref()),
+        ("trans_dfn", trans_dfn.as_ref().and_then(|v| v.as_deref())),
+        ("sentence", sentence.as_deref()),
+        ("sentence_translation", sentence_translation.as_deref()),
+        ("target", target.as_deref()),
+    ] {
+        if value.is_some_and(|v| v.trim().is_empty()) {
+            return Err(AppError::BadRequest(format!("{field} must not be blank")));
+        }
+    }
 
     debug!(
         "Parsed fields: word={:?}, hanja={:?}, definition={:?}",
