@@ -82,7 +82,7 @@ fn serve_queue(listener: &TcpListener, limit: usize, cards: &[i64]) {
         .collect();
     respond(
         &mut socket,
-        json!({"cards":entries,"next_due_at":null,"refresh_at":"2026-11-23T04:00:00Z"}),
+        json!({"cards":entries,"next_available_at":"2026-11-23T04:00:00Z"}),
         false,
     );
 }
@@ -127,7 +127,7 @@ fn review_and_answer_use_nested_queue_and_signed_attempt_token() {
             assert!(headers.starts_with(path), "{headers}");
             assert!(headers.contains("cookie: hwaiting-auth=test-jwt"));
             let body = if path.contains("queue") {
-                json!({"cards":[{"card":{"card_id":991,"grammar_pattern":{"slug":"realization","name":"Realization","explanation":"Authored content"}},"review":{"attempt_token":token,"hanja_hint_words":[]}}],"next_due_at":null,"refresh_at":"2026-11-23T04:00:00Z"})
+                json!({"cards":[{"card":{"card_id":991,"grammar_pattern":{"slug":"realization","name":"Realization","explanation":"Authored content"}},"review":{"attempt_token":token,"hanja_hint_words":[]}}],"next_available_at":"2026-11-23T04:00:00Z"})
             } else {
                 assert!(headers.contains("x-requested-with: hwaiting"));
                 if path.contains("answer") {
@@ -205,7 +205,7 @@ fn review_retries_lost_claims_but_stops_when_all_entries_are_already_leased() {
     assert_eq!(run(&base, &directory, &["review"])["card"]["card_id"], 992);
     let empty = run(&base, &directory, &["review"]);
     assert!(empty["card"].is_null());
-    assert_eq!(empty["refresh_at"], "2026-11-23T04:00:00Z");
+    assert_eq!(empty["next_available_at"], "2026-11-23T04:00:00Z");
     server.join().unwrap();
     fs::remove_dir_all(directory).unwrap();
 }

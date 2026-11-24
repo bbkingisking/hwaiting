@@ -190,7 +190,7 @@ pub fn review() -> Result<Value, AppError> {
         }
         // No unleased entry is available; preserve the server's refresh metadata.
         return Ok(json!({"card": null, "review": null,
-            "next_due_at": envelope["next_due_at"], "refresh_at": envelope["refresh_at"]}));
+            "next_available_at": envelope["next_available_at"]}));
     }
     Err(AppError::Message(format!(
         "could not claim a review card after {MAX_CLAIM_ATTEMPTS} attempts; other reviewers kept claiming it first"
