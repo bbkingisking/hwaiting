@@ -363,7 +363,7 @@ async fn assemble_reveal(
     } = content;
     // Keep hint reads on the writer's connection: acquiring another pool
     // connection here can deadlock with writers waiting for this transaction.
-    let eng_id = crate::translation_language::TranslationLanguage(translation_language.into())
+    let language_id = crate::translation_language::TranslationLanguage(translation_language.into())
         .id(&mut *connection)
         .await?;
     let show_hanja_hints: bool =
@@ -373,7 +373,10 @@ async fn assemble_reveal(
             .await?
             .unwrap_or(true);
     let hanja_hints = if show_hanja_hints {
-        Some(hanja_hints_on_connection(&mut *connection, eng_id, user_id, card_id, &hanja).await?)
+        Some(
+            hanja_hints_on_connection(&mut *connection, language_id, user_id, card_id, &hanja)
+                .await?,
+        )
     } else {
         None
     };

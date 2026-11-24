@@ -293,11 +293,7 @@ pub(crate) fn decode_token(token: &str, secret: &str) -> Result<Claims, AppError
 /// username/password path does - passkey auth is just another way to reach
 /// this function, not a separate token scheme.
 pub(crate) fn generate_token(user_id: i64) -> Result<String, AppError> {
-    encode_token(
-        user_id,
-        crate::credentials::jwt_secret(),
-        jwt_ttl_seconds(),
-    )
+    encode_token(user_id, crate::credentials::jwt_secret(), jwt_ttl_seconds())
 }
 
 /// Both password and passkey sign-in issue the same HttpOnly JWT cookie.
