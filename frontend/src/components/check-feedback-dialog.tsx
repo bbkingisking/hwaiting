@@ -78,10 +78,12 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
               {feedback.length === 0 ? <p className="py-8 text-center text-muted-foreground">No feedback yet.</p> : (
                 <ol className="space-y-3">
                   {feedback.map(entry => (
-                    <li key={entry.id} className="group relative">
+                    // Two sibling buttons in one bordered row: edit fills the
+                    // width, delete is a full-height strip on the right.
+                    <li key={entry.id} className="group flex overflow-hidden rounded-lg border">
                       <button type="button" data-card-id={entry.card_id}
                         onClick={() => { setSelectedCardId(entry.card_id); setEditOpen(true) }}
-                        className="w-full space-y-3 rounded-lg border p-4 pr-12 text-left hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        className="min-w-0 flex-1 space-y-3 p-4 text-left hover:bg-accent/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                         <span className="sr-only">Edit card #{entry.card_id}: </span>
                         <span className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span>Sentence #{entry.sentence_id} · User #{entry.user_id}</span>
@@ -89,18 +91,18 @@ export function CheckFeedbackDialog({ open, onOpenChange }: CheckFeedbackDialogP
                         </span>
                         <span className="block whitespace-pre-wrap wrap-anywhere leading-relaxed">{entry.body}</span>
                       </button>
-                      {/* Hidden until hover or focus on mouse devices; always shown on touch screens. */}
-                      <Button
+                      <button
                         type="button"
-                        size="icon"
-                        variant="ghost"
                         aria-label={`Delete feedback #${entry.id}`}
                         disabled={deletingId === entry.id}
                         onClick={() => handleDelete(entry.id)}
-                        className="absolute right-2 top-2 text-destructive hover:text-destructive transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
+                        className="flex w-12 shrink-0 items-center justify-center border-l text-muted-foreground transition-colors outline-none hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50"
                       >
-                        {deletingId === entry.id ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden className="h-4 w-4" />}
-                      </Button>
+                        {/* Icon hidden until hover or focus on mouse devices; always shown on touch screens. */}
+                        {deletingId === entry.id
+                          ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                          : <Trash2 aria-hidden className="h-4 w-4 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100" />}
+                      </button>
                     </li>
                   ))}
                 </ol>
