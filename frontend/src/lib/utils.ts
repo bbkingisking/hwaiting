@@ -30,7 +30,10 @@ export function formatTimeUntil(isoTimestamp: string): string | null {
   if (!Number.isFinite(dueAt)) return null
   const diffMs = dueAt - Date.now()
   if (diffMs <= 0) return null
-  if (diffMs < 60000) return '<1m'
+  if (diffMs < 60000) {
+    const seconds = Math.ceil(diffMs / 1000)
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+  }
   const diffMinutes = Math.floor(diffMs / 60000)
   const hours = Math.floor(diffMinutes / 60)
   const minutes = diffMinutes % 60

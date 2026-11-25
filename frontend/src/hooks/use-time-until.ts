@@ -15,8 +15,11 @@ export function useTimeUntil(timestamp: string | null): string | null {
       tick(value => value + 1)
       const remaining = dueAt - Date.now()
       if (remaining > 0 && document.visibilityState !== 'hidden') {
-        // Wake at the next minute-label change, or when the card is due.
-        timer = setTimeout(update, remaining < 60000 ? remaining : remaining % 60000 + 1)
+        // Tick each second during the final minute; otherwise at minute boundaries.
+        const delay = remaining < 60000
+          ? remaining % 1000 + 1
+          : remaining % 60000 + 1
+        timer = setTimeout(update, delay)
       }
     }
     const onVisible = () => {
