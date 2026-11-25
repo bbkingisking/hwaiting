@@ -1,3 +1,4 @@
+import { toCardJson } from '@/lib/card-json'
 import { copyJson } from '@/lib/clipboard'
 import { Check, Copy } from 'lucide-react'
 import { type FormState } from '@/lib/card-edit-draft'
@@ -107,7 +108,8 @@ export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogPro
   }
 
   async function handleCopy() {
-    await copyJson(detail)
+    if (!baseline) return
+    await copyJson(toCardJson(baseline, baseline))
     setCopied(true)
   }
 
@@ -305,9 +307,9 @@ export function EditCardDialog({ open, onOpenChange, cardId }: EditCardDialogPro
         {error && <p role='alert' className='text-sm text-destructive'>{error}</p>}
 
         <DialogFooter className='flex-col sm:flex-row sm:justify-between'>
-          <Button variant='outline' onClick={handleCopy} disabled={loading || !detail}>
+          <Button variant='outline' onClick={handleCopy} disabled={loading || !baseline}>
             {copied ? <Check /> : <Copy />}
-            {copied ? 'Copied!' : 'Copy full card as JSON'}
+            {copied ? 'Copied!' : 'Copy card as JSON'}
           </Button>
           <div className='flex flex-col gap-2 sm:flex-row'>
             <Button variant='outline' onClick={() => handleOpenChange(false)} disabled={saving}>Close</Button>

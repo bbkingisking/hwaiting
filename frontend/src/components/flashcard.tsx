@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ReviewQueueCard, CardReveal, HanjaHint } from '@/lib/types'
-import { toAdminCard } from '@/lib/card-json'
+import { toCardJson } from '@/lib/card-json'
 import { copyJson } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardFooter, CardHeader } from '@/components/ui/card'
@@ -331,7 +331,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
 
   const handleCopyJson = () => {
     if (!reveal) return
-    copyJson(toAdminCard(card.card, reveal)).catch((err) => {
+    copyJson(toCardJson(card.card, reveal)).catch((err) => {
       console.error('Error copying card JSON:', err)
     })
   }
@@ -454,7 +454,7 @@ export function Flashcard({ staleReason, card, onCheck, onAdvance, onSuppress }:
               )}
               {reveal && (
                 <DropdownMenuItem onClick={handleCopyJson}>
-                  Copy full card as JSON
+                  Copy card as JSON
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
