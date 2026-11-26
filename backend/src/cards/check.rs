@@ -28,11 +28,11 @@ pub struct CheckRequest {
 /// sentence, the target form that filled the blank, and accepted alternatives.
 #[derive(Serialize, ToSchema)]
 pub struct CardBack {
-    pub word: String,
+    pub word: String, // dictionary form
     #[schema(required)]
     pub definition: Option<String>,
     pub sentence: String,
-    pub target: String,
+    pub target: String, // inflected form
     pub alternatives: Vec<String>,
 }
 
@@ -226,13 +226,7 @@ async fn record_review(
         user_id, card_id, correct
     );
 
-    // Rating is derived from correctness, not client-supplied - the UI only
-    // ever produces "again" or "good", same as the `ReviewRequest` this
-    // folds in used to receive directly (trusted, since the client alone
-    // knew whether the answer was right - no longer true now that grading
-    // happens here). Binary throughout below, rather than routed through
-    // FSRS's 4-way (again/hard/good/easy) rating scale - "hard" and "easy"
-    // are never produced by this handler.
+    // Rating is derived from correctness, not client-supplied. Binary grading throughout below, rather than routed through FSRS's 4-way (again/hard/good/easy) rating scale - "hard" and "easy" are never produced by this handler.
     let rating_str = if correct { "good" } else { "again" };
 
     // Read the model and retention under the same writer reservation as the

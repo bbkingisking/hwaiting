@@ -56,7 +56,6 @@ pub(crate) async fn validate_attempt(
     user_id: i64,
     card_id: Option<i64>,
 ) -> Result<AttemptClaims, AppError> {
-    let invalid = || AppError::BadRequest("Invalid attempt token".into());
     let mut validation = Validation::new(Algorithm::HS256);
     validation.required_spec_claims.clear();
     validation.validate_exp = false;
@@ -65,13 +64,13 @@ pub(crate) async fn validate_attempt(
         &DecodingKey::from_secret(signing_secret().as_bytes()),
         &validation,
     )
-    .map_err(|_| invalid())?
+    .map_err(|_| AppError::BadRequest("Invalid attempt token".into()))?
     .claims;
     if claims.version != 2
         || claims.user_id != user_id
         || card_id.is_some_and(|id| id != claims.card_id)
     {
-        return Err(invalid());
+        return Err(AppError::BadRequest("Invalid attempt token".into()));
     }
     let row = sqlx::query(
         "SELECT c.content_revision, COALESCE(cs.review_revision, 0) AS review_revision,
