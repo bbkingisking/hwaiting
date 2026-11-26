@@ -461,7 +461,7 @@ function AppContent() {
           <div role="status" className="text-center text-muted-foreground">
             <div aria-hidden className="w-64 mx-auto mb-4">
               <DotLottieReact
-                src="/Taegeukgi.json"
+                src="/spinner.lottie"
                 loop
                 autoplay
               />
