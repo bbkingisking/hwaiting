@@ -9,8 +9,6 @@ interface CardThemeContextValue {
 
 const CardThemeContext = createContext<CardThemeContextValue | null>(null)
 
-const FONT_LINK_ID = 'card-theme-font-link'
-
 export function CardThemeProvider({ children }: { children: ReactNode }) {
   const [cardThemeId, setCardThemeIdState] = useState<CardThemeId>(() => {
     if (typeof window === 'undefined') return DEFAULT_CARD_THEME
@@ -20,22 +18,6 @@ export function CardThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CARD_THEME, cardThemeId)
-
-    const theme = getCardTheme(cardThemeId)
-    let link = document.getElementById(FONT_LINK_ID) as HTMLLinkElement | null
-
-    if (!theme.fontUrl) {
-      link?.remove()
-      return
-    }
-
-    if (!link) {
-      link = document.createElement('link')
-      link.id = FONT_LINK_ID
-      link.rel = 'stylesheet'
-      document.head.appendChild(link)
-    }
-    link.href = theme.fontUrl
   }, [cardThemeId])
 
   const setCardThemeId = (id: CardThemeId) => setCardThemeIdState(id)

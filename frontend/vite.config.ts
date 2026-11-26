@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { readFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -18,6 +19,20 @@ export default defineConfig(async ({ mode }) => {
   plugins: [
     react(),
     tailwindcss(),
+    {
+      name: 'font-licenses',
+      async generateBundle() {
+        const manifest = JSON.parse(await readFile(path.join(__dirname, 'package.json'), 'utf8'))
+        const fonts = Object.keys(manifest.dependencies).filter(name => name.startsWith('@fontsource'))
+        for (const name of fonts) {
+          this.emitFile({
+            type: 'asset',
+            fileName: `licenses/${name.replace('@', '').replace('/', '-')}.txt`,
+            source: await readFile(path.join(__dirname, 'node_modules', name, 'LICENSE'), 'utf8'),
+          })
+        }
+      },
+    },
   ],
   build: {
     outDir: process.env.STATIC_DIR || 'dist',

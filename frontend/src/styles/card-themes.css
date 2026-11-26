@@ -186,7 +186,7 @@
   --input: #c5c9d1;
   --ring: #9aa5b8;
   --radius: 1.25rem;
-  --font-sans: 'Geist', sans-serif;
+  --font-sans: 'Geist Variable', sans-serif;
 }
 
 [data-card-theme="neumorphic"] [data-slot="card"] {

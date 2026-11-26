@@ -13,6 +13,20 @@ HWAITING_ADMIN_PASSWORD=password HWAITING_JWT_SECRET=$(openssl rand -base64 32) 
 
 Assuming defaults (see Configuration below) don't clash with anything else on your system, you should get a fully running instance with 50 cards on http://127.0.0.1:3000 that you can login with username `admin` and the password you passed to the `HWAITING_ADMIN_PASSWORD` variable. 
 
+### Offline and LAN use
+
+Dependency installation needs internet access on a fresh machine. Fonts (including
+all card themes) and the animation player's WebAssembly runtime come from locked
+npm dependencies; Vite bundles them into `frontend/dist`. Deploy that entire
+directory alongside the backend binary. Runtime use needs only access to your
+server, so it works on localhost or a LAN without an internet connection. Font
+licenses are included in the deployment.
+
+Set `HWAITING_HOST=0.0.0.0` to accept LAN connections, and open
+`http://<server-LAN-IP>:3000` from another device. Dictionary links still open an
+external website when clicked. Builds can also run offline once dependencies are
+cached; there are no build-time downloads outside the dependency manager.
+
 ## Configuration
 
 Every backend option is configurable from an env var `KEY_NAME` or a plain text file in `$CREDENTIALS_DIRECTORY/key-name`. For example, both `HWAITING_ADMIN_USERNAME=admin` and a file in `$CREDENTIALS_DIRECTORY/hwaiting-admin-username` containing the string `admin` accomplish the same thing. Env vars take precedence over plain text files. 

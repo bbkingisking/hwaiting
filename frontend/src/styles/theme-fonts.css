@@ -1,0 +1,13 @@
+/* Package fonts are emitted as local assets; no runtime font services. */
+@import "@fontsource/courier-prime/400.css";
+@import "@fontsource/courier-prime/700.css";
+@import "@fontsource/special-elite/400.css";
+@import "@fontsource/press-start-2p/400.css";
+@import "@fontsource/rubik/400.css";
+@import "@fontsource/rubik/600.css";
+@import "@fontsource/dotgothic16/400.css";
+@import "@fontsource/kalam/400.css";
+@import "@fontsource/kalam/700.css";
+@import "@fontsource/rye/400.css";
+@import "@fontsource/ma-shan-zheng/400.css";
+@import "@fontsource/cormorant-garamond/400-italic.css";
